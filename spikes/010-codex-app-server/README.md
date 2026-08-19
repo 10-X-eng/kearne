@@ -30,6 +30,12 @@ Codex 0.146.1 emits the aggregate schema definitions in nondeterministic key ord
 
 The bridge implements the [MCP lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle) and [tool contract](https://modelcontextprotocol.io/specification/2025-11-25/server/tools) needed by this probe. It accepts only the named compatible protocol versions, advertises one read-only tool, and contains no Kearne domain implementation.
 
+## Current evidence
+
+[Linux x86-64, Codex 0.146.1](evidence/linux-x86_64-codex-0.146.1.json) passed from clean revision `b5b9603`. App-server negotiated MCP `2025-06-18`, discovered and called the isolated bridge, and shut down on input EOF. Stable generation produced 275 files/2,860,975 bytes; experimental generation produced 349 files/3,344,172 bytes. Initialization completed in 285.464 ms. Timings are one sample, not a performance conclusion.
+
+This proves the scoped Linux handshake, schema, and MCP bridge path. It does not close SPIKE-010.
+
 ## Not yet proven
 
 - authenticated thread and turn lifecycle;

@@ -1,0 +1,70 @@
+{
+  "codex": {
+    "binary_sha256": "37310b27d18464f00b2dbdf2db21416a01705e45a75844fc0a5d27b15b7bcfa5",
+    "version": "0.146.1"
+  },
+  "environment": {
+    "machine": "x86_64",
+    "python": "3.12.3",
+    "system": "Linux"
+  },
+  "evidence_schema": 1,
+  "protocol": {
+    "clean_jsonl_stdout": true,
+    "clean_stderr": true,
+    "ephemeral_thread": true,
+    "graceful_eof_shutdown": true,
+    "initialize_ms": 285.464,
+    "isolated_mcp_server_count": 1,
+    "mcp_protocol_version": "2025-06-18",
+    "mcp_tool_called": true,
+    "mcp_tool_discovered": true,
+    "notification_methods": [
+      "mcpServer/startupStatus/updated",
+      "remoteControl/status/changed",
+      "thread/started"
+    ],
+    "platform_family": "unix",
+    "platform_os": "linux",
+    "preinitialize_error_code": -32600,
+    "reinitialize_error_code": -32600
+  },
+  "schemas": {
+    "contract": {
+      "dynamic_tools_experimental": true,
+      "dynamic_tools_stable": false,
+      "local_image_input": true,
+      "stable_mcp_status": true,
+      "stable_method_count": 90
+    },
+    "determinism": {
+      "raw_v2_bundle_equal": false,
+      "semantic_equal": true
+    },
+    "experimental": {
+      "elapsed_ms": 931.097,
+      "file_count": 349,
+      "total_bytes": 3344172,
+      "v2_bundle_canonical_sha256": "ccebb7fe4e29532e42bde727a3e15bd023722fab11a8d54cbf11ce3b119d7ddc",
+      "v2_bundle_raw_sha256": "b0a2df744a2e229ae589b1422a21a0df15b3615a7410abea1151cdc48932417c"
+    },
+    "stable": {
+      "elapsed_ms": 1480.742,
+      "file_count": 275,
+      "total_bytes": 2860975,
+      "v2_bundle_canonical_sha256": "0e4e0599861ed8da6902f592fc1a2f15eace5f3f0670833fc235ed7d0a940610",
+      "v2_bundle_raw_sha256": "d87dd475cf4c7af26c266c34d1c16178b462a3da20f35677f9e7c09d87897c7e"
+    },
+    "stable_repeat": {
+      "elapsed_ms": 1242.7,
+      "file_count": 275,
+      "total_bytes": 2860975,
+      "v2_bundle_canonical_sha256": "0e4e0599861ed8da6902f592fc1a2f15eace5f3f0670833fc235ed7d0a940610",
+      "v2_bundle_raw_sha256": "698bb82761178e6b4fdd15afa96224e8727edaa8d4259e33215e6a095bff0be7"
+    }
+  },
+  "source": {
+    "dirty": false,
+    "revision": "b5b96037c310d728ef7605ea005f13d966a03e17"
+  }
+}
