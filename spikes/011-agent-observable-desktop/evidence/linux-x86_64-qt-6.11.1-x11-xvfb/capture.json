@@ -1,0 +1,86 @@
+{
+    "build": {
+        "application_version": "0.1",
+        "executable_sha256": "7086824697576ef95b1a8c33ca682fa777d53debfd31252adb0a4431a65b7fa1"
+    },
+    "capture_method": "QQuickWindow::grabWindow composed in desktop coordinates",
+    "captured_at_utc": "2026-08-19T16:18:25.133Z",
+    "device_pixel_ratio": 1,
+    "environment": {
+        "cpu_architecture": "x86_64",
+        "kernel_type": "linux",
+        "kernel_version": "6.17.0-35-generic",
+        "locale": "C",
+        "quick_style": "Basic",
+        "theme": "kearne-dark-prototype"
+    },
+    "image": {
+        "color_space": "sRGB",
+        "format": "PNG",
+        "path": "application-session.png",
+        "pixel_height": 700,
+        "pixel_width": 1408,
+        "sampled_color_count": 88,
+        "sha256": "b8bcd0c0d84b2a433fffcf8d3a7313d8e75c87e9ec0184c31d1c58200261a11b"
+    },
+    "limits": [
+        "native decorations and shadows are outside QQuickWindow client capture",
+        "OS-owned, secure, and unrelated application pixels are excluded",
+        "mixed-DPI and overlapping-surface z-order require platform probes"
+    ],
+    "logical_desktop_bounds": [
+        24,
+        40,
+        1408,
+        700
+    ],
+    "observation_point": {
+        "id": "5de3e643-d0cf-4f67-bff6-3597799aa984",
+        "render_generation": 2,
+        "ui_generation": 1
+    },
+    "platform": "xcb",
+    "qt_version": "6.11.1",
+    "schema": "kearne.application-session-capture/v1",
+    "scope": "visible registered Kearne client surfaces",
+    "semantic_snapshot": "semantic-ui.json",
+    "session_id": "6aa766ce-4c20-411c-82e7-5b20412691fe",
+    "surfaces": [
+        {
+            "composite_pixel_bounds": [
+                0,
+                0,
+                1100,
+                700
+            ],
+            "device_pixel_ratio": 1,
+            "frame_generation": 2,
+            "id": "surface.main",
+            "logical_desktop_bounds": [
+                24,
+                40,
+                1100,
+                700
+            ],
+            "title": "Kearne — Mounting Plate"
+        },
+        {
+            "composite_pixel_bounds": [
+                1116,
+                82,
+                292,
+                360
+            ],
+            "device_pixel_ratio": 1,
+            "frame_generation": 2,
+            "id": "surface.operation",
+            "logical_desktop_bounds": [
+                1140,
+                122,
+                292,
+                360
+            ],
+            "title": "Operation"
+        }
+    ]
+}

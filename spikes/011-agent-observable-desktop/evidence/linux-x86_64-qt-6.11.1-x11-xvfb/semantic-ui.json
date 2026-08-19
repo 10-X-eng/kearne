@@ -1,0 +1,889 @@
+{
+    "captured_at_utc": "2026-08-19T16:18:25.133Z",
+    "nodes": [
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                24,
+                40,
+                1100,
+                700
+            ],
+            "bounds_physical_desktop": [
+                24,
+                40,
+                1100,
+                700
+            ],
+            "child_ids": [
+                "region.command_bar",
+                "panel.structure",
+                "viewport.primary",
+                "panel.properties",
+                "region.status"
+            ],
+            "description": "",
+            "id": "window.main",
+            "name": "Kearne — Mounting Plate",
+            "parent_id": null,
+            "role": "Window",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                24,
+                40,
+                1100,
+                96
+            ],
+            "bounds_physical_desktop": [
+                24,
+                40,
+                1100,
+                96
+            ],
+            "child_ids": [
+                "command.search",
+                "command.agent",
+                "workspace.design",
+                "workspace.assembly",
+                "workspace.simulation",
+                "command.sketch",
+                "command.extrude",
+                "command.fillet",
+                "command.measure"
+            ],
+            "description": "",
+            "id": "region.command_bar",
+            "name": "Command bar",
+            "parent_id": "window.main",
+            "role": "ToolBar",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                907,
+                47,
+                130,
+                34
+            ],
+            "bounds_physical_desktop": [
+                907,
+                47,
+                130,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "command.search",
+            "name": "Search commands",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                1045,
+                47,
+                63,
+                34
+            ],
+            "bounds_physical_desktop": [
+                1045,
+                47,
+                63,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "command.agent",
+            "name": "Agent",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                36,
+                96,
+                68,
+                34
+            ],
+            "bounds_physical_desktop": [
+                36,
+                96,
+                68,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "workspace.design",
+            "name": "Design",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": true,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                106,
+                96,
+                81,
+                34
+            ],
+            "bounds_physical_desktop": [
+                106,
+                96,
+                81,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "workspace.assembly",
+            "name": "Assembly",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                189,
+                96,
+                87,
+                34
+            ],
+            "bounds_physical_desktop": [
+                189,
+                96,
+                87,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "workspace.simulation",
+            "name": "Simulation",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                293,
+                96,
+                64,
+                34
+            ],
+            "bounds_physical_desktop": [
+                293,
+                96,
+                64,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "command.sketch",
+            "name": "Sketch",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                359,
+                96,
+                73,
+                34
+            ],
+            "bounds_physical_desktop": [
+                359,
+                96,
+                73,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "command.extrude",
+            "name": "Extrude",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": true,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                434,
+                96,
+                54,
+                34
+            ],
+            "bounds_physical_desktop": [
+                434,
+                96,
+                54,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "command.fillet",
+            "name": "Fillet",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                490,
+                96,
+                75,
+                34
+            ],
+            "bounds_physical_desktop": [
+                490,
+                96,
+                75,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "command.measure",
+            "name": "Measure",
+            "parent_id": "region.command_bar",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                24,
+                136,
+                220,
+                576
+            ],
+            "bounds_physical_desktop": [
+                24,
+                136,
+                220,
+                576
+            ],
+            "child_ids": [
+                "tree.feature.extrude_01"
+            ],
+            "description": "",
+            "id": "panel.structure",
+            "name": "Model structure",
+            "parent_id": "window.main",
+            "role": "Pane",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                38,
+                252,
+                192,
+                32
+            ],
+            "bounds_physical_desktop": [
+                38,
+                252,
+                192,
+                32
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "tree.feature.extrude_01",
+            "name": "Extrude 01, selected",
+            "parent_id": "panel.structure",
+            "role": "TreeItem",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": true,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                245,
+                136,
+                626,
+                576
+            ],
+            "bounds_physical_desktop": [
+                245,
+                136,
+                626,
+                576
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "viewport.primary",
+            "name": "Primary 3D viewport",
+            "parent_id": "window.main",
+            "role": "Canvas",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                872,
+                136,
+                252,
+                576
+            ],
+            "bounds_physical_desktop": [
+                872,
+                136,
+                252,
+                576
+            ],
+            "child_ids": [
+                "parameter.extrude.distance",
+                "parameter.extrude.operation",
+                "parameter.direction.normal",
+                "parameter.direction.reverse"
+            ],
+            "description": "",
+            "id": "panel.properties",
+            "name": "Properties",
+            "parent_id": "window.main",
+            "role": "Pane",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                886,
+                234,
+                224,
+                30
+            ],
+            "bounds_physical_desktop": [
+                886,
+                234,
+                224,
+                30
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "parameter.extrude.distance",
+            "name": "Extrude distance",
+            "parent_id": "panel.properties",
+            "role": "EditableText",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": "12.00 mm"
+        },
+        {
+            "actions": [
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                886,
+                297,
+                224,
+                40
+            ],
+            "bounds_physical_desktop": [
+                886,
+                297,
+                224,
+                40
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "parameter.extrude.operation",
+            "name": "Boolean operation",
+            "parent_id": "panel.properties",
+            "role": "ComboBox",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                886,
+                370,
+                72,
+                34
+            ],
+            "bounds_physical_desktop": [
+                886,
+                370,
+                72,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "parameter.direction.normal",
+            "name": "Normal",
+            "parent_id": "panel.properties",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": true,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                963,
+                370,
+                71,
+                34
+            ],
+            "bounds_physical_desktop": [
+                963,
+                370,
+                71,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "parameter.direction.reverse",
+            "name": "Reverse",
+            "parent_id": "panel.properties",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                24,
+                712,
+                1100,
+                28
+            ],
+            "bounds_physical_desktop": [
+                24,
+                712,
+                1100,
+                28
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "region.status",
+            "name": "Ready, one body, no active jobs",
+            "parent_id": "window.main",
+            "role": "StatusBar",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+            ],
+            "bounds_logical_desktop": [
+                1140,
+                122,
+                292,
+                360
+            ],
+            "bounds_physical_desktop": [
+                1140,
+                122,
+                292,
+                360
+            ],
+            "child_ids": [
+                "operation.cancel",
+                "operation.apply"
+            ],
+            "description": "",
+            "id": "window.operation",
+            "name": "Operation",
+            "parent_id": null,
+            "role": "Window",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": false,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                1285,
+                430,
+                64,
+                34
+            ],
+            "bounds_physical_desktop": [
+                1285,
+                430,
+                64,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "operation.cancel",
+            "name": "Cancel",
+            "parent_id": "window.operation",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        },
+        {
+            "actions": [
+                "Press",
+                "SetFocus"
+            ],
+            "bounds_logical_desktop": [
+                1354,
+                430,
+                60,
+                34
+            ],
+            "bounds_physical_desktop": [
+                1354,
+                430,
+                60,
+                34
+            ],
+            "child_ids": [
+            ],
+            "description": "",
+            "id": "operation.apply",
+            "name": "Apply",
+            "parent_id": "window.operation",
+            "role": "Button",
+            "state": {
+                "checked": false,
+                "collapsed": false,
+                "enabled": true,
+                "expanded": false,
+                "focusable": true,
+                "focused": false,
+                "password": false,
+                "read_only": false,
+                "selected": false,
+                "visible": true
+            },
+            "value": ""
+        }
+    ],
+    "observation_point": {
+        "id": "5de3e643-d0cf-4f67-bff6-3597799aa984",
+        "render_generation": 2,
+        "ui_generation": 1
+    },
+    "schema": "kearne.semantic-ui/v1",
+    "session_id": "6aa766ce-4c20-411c-82e7-5b20412691fe"
+}

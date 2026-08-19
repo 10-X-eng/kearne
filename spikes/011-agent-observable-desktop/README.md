@@ -22,7 +22,8 @@ The output directory is private and contains:
 - `semantic-ui.json` — stable IDs, roles, names, states, actions, relations, and bounds;
 - `capture.json` — correlated observation point, surface/frame coverage, image digest, environment, and limits.
 
+Retained Linux/X11 results are in [`evidence/`](evidence/README.md).
+
 ## Current boundary
 
 This probe does not claim completion. `grabWindow` excludes native decorations, shadows, OS-owned secure surfaces, and unrelated applications. Mixed-DPI composition, overlapping surface z-order, QML/native transient surfaces, Wayland, Windows, GPU backends, device loss, semantic actions, packaging, and app-server local-image attachment remain exit work. Physical compositor coverage cannot be replaced by Xvfb evidence.
-
