@@ -7,6 +7,6 @@ The project is in architecture definition. Start with:
 1. [Product and architecture specification](SPEC.md)
 2. [Engineering plan and document map](PLAN/README.md)
 
-Implementation begins with the risk-retiring spikes and stage gates in the engineering plan. Unresolved decisions marked `OPEN` must be settled before they affect persisted data or public interfaces.
+Implementation begins with the [risk-retiring spikes](spikes/README.md) and stage gates in the engineering plan. Unresolved decisions marked `OPEN` must be settled before they affect persisted data or public interfaces.
 
 Desktop work is accepted only when the agent harness can launch the build, inspect semantic UI state, and return a lossless capture of the complete visible Kearne session.

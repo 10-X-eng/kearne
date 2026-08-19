@@ -1,6 +1,6 @@
 # Codex App-Server Harness
 
-- **Status:** Proposed; product choice accepted, integration spike required
+- **Status:** Proposed; product choice accepted, unsupported-dependency spike required
 - **Requirement prefix:** `HAR`
 - **Depends on:** [AI system](06-ai-system.md), [Engineering API](../foundations/08-engineering-api.md), [processes and IPC](../foundations/07-processes-and-ipc.md), [security](../delivery/06-security-threat-model.md)
 - **Unblocks:** embedded AI workflows and agent-driven development
@@ -9,7 +9,7 @@
 
 Use Codex app-server for AI threads, turns, streamed items, authentication, and approvals without giving it ownership of engineering state. Kearne remains functional in `No AI` mode.
 
-The integration follows the installed version of the [official app-server protocol](https://learn.chatgpt.com/docs/app-server), not copied request types or inferred behavior.
+The integration follows the installed version of the [official app-server protocol](https://learn.chatgpt.com/docs/app-server), not copied request types or inferred behavior. The current command is documented as experimental and unsupported for production; [ADR-0008](../adr/0008-codex-app-server-compatibility.md) assigns that compatibility risk to Kearne.
 
 ## 2. Boundary
 
@@ -36,11 +36,11 @@ Only the app-server adapter knows its wire types. Domain, document, geometry, pe
 
 ## 3. Process and protocol
 
-The production baseline launches a pinned Codex executable as a supervised local child and uses JSONL over standard input/output. Experimental WebSocket transport is excluded until an ADR accepts its stability and operational value.
+The proposed production baseline launches a pinned Codex executable as a supervised local child and uses JSONL over standard input/output. It cannot pass the release gate until SPIKE-010 closes the documented support risk. Experimental WebSocket transport is excluded.
 
 ### HAR-004 — Version and schema handshake
 
-Developer, CI, and release builds pin one Codex version. CI generates JSON Schema from that executable, records its digest, and runs adapter conformance against it; language bindings are generated only for a selected host language. Startup rejects any version outside a reviewed allowlist with a structured diagnostic and leaves non-AI Kearne usable.
+Developer, CI, and release builds pin one Codex version. CI generates JSON Schema from that executable, records a canonical semantic digest, and runs adapter conformance against it; language bindings are generated only for a selected host language. Raw aggregate schema bytes are not a drift oracle because Codex 0.146.1 emits nondeterministic definition order. Startup rejects any version outside a reviewed allowlist with a structured diagnostic and leaves non-AI Kearne usable.
 
 ### HAR-005 — Explicit initialization
 

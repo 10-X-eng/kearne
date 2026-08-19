@@ -156,7 +156,7 @@ Pause feature expansion when:
 - an adapter implements engineering validation independently;
 - performance becomes proportional to total document size for a local edit;
 - repeated worker input can crash the coordinator;
-- a license blocks intended distribution.
+- a license blocks intended distribution;
 - a desktop change cannot be launched, semantically inspected, and captured by the agent harness.
 
 Resume after the owning plan/ADR and regression mechanism are corrected.

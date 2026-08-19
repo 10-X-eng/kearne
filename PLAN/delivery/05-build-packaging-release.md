@@ -111,7 +111,7 @@ An update does not migrate a project merely during background scanning. Migratio
 
 ### BLD-010 — Codex compatibility is generated and pinned
 
-Developer, CI, and release builds pin one Codex executable version and generate the app-server JSON Schema used by the adapter. A host-language binding is generated only when consumed. CI fails on unreviewed schema drift. Packaging, external discovery, and independent update policies MUST verify executable identity before launch and preserve `No AI` operation when unavailable.
+Developer, CI, and release builds pin one Codex executable version and generate the app-server JSON Schema used by the adapter. A host-language binding is generated only when consumed. CI canonicalizes JSON before semantic drift comparison; Codex 0.146.1 aggregate schema byte order is nondeterministic. Packaging, external discovery, and independent update policies MUST verify executable identity before launch and preserve `No AI` operation when unavailable.
 
 ### BLD-011 — Observation driver ships with testable artifacts
 

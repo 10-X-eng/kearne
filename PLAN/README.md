@@ -85,6 +85,7 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 - [Build, packaging, and release](delivery/05-build-packaging-release.md)
 - [Security and threat model](delivery/06-security-threat-model.md)
 - [Risk register](delivery/07-risk-register.md)
+- [Executable spike evidence](../spikes/README.md)
 - [Architecture decisions](adr/README.md)
 
 ## 4. Requirement identifiers

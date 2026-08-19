@@ -1,7 +1,8 @@
 # ADR-0006: Codex App-Server Is the AI Harness
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-19
+- **Superseded by:** [ADR-0008](0008-codex-app-server-compatibility.md)
 - **Related:** [Codex harness](../capabilities/17-codex-app-server-harness.md), [AI system](../capabilities/06-ai-system.md)
 
 ## Context

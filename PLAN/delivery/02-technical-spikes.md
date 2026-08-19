@@ -91,7 +91,9 @@ Produce a license/SBOM prototype, binary-size/build-time data, patch/update proc
 
 Generate protocol schemas from the installed executable; implement initialization, one thread/turn, streamed events, an approval, a local MCP Kearne query/command tool, local-image input, cancellation, crash/restart, and unsupported-version failure. Measure startup, event latency, memory, packaging size, schema churn, auth states, transcript storage, and platform behavior. Verify stdio framing remains clean under logs and failure.
 
-**Exit:** accept the version/packaging range, client boundary, Agent Bridge mechanism, credential ownership, sandbox/approval split, and recovery policy, or revise the harness ADR before AI implementation.
+The official documentation currently marks the app-server command experimental and unsupported for production. Evidence must either show a support-status change or explicitly accept and staff Kearne-owned compatibility maintenance.
+
+**Exit:** accept one exact version and packaging policy, client boundary, Agent Bridge mechanism, credential ownership, sandbox/approval split, recovery policy, and upstream-support risk, or revise the harness ADR before AI implementation.
 
 ## 12. SPIKE-011 — Agent-observable desktop
 
