@@ -1,0 +1,12 @@
+edition = "2024";
+
+package kearne.schema.evolution;
+
+message V1Record {
+  string known = 1;
+}
+
+message V2Record {
+  string known = 1;
+  string future = 2;
+}

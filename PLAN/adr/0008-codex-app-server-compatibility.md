@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-19
 - **Supersedes:** [ADR-0006](0006-codex-app-server-harness.md)
-- **Related:** [Codex harness](../capabilities/17-codex-app-server-harness.md), [SPIKE-010](../../spikes/010-codex-app-server/README.md)
+- **Related:** [Codex harness](../capabilities/17-codex-app-server-harness.md), [TECH-010](../../prototype/010-codex-app-server/README.md)
 
 ## Context
 
@@ -27,4 +27,4 @@ App-server cannot be described as a supported production dependency until OpenAI
 
 ## Evidence
 
-The [official app-server documentation](https://learn.chatgpt.com/docs/app-server) defines the support status, JSONL stdio protocol, initialization, binary-specific schema generation, stable/experimental capability split, MCP surface, and local-image input. SPIKE-010 records behavior for each proposed pinned build.
+The [official app-server documentation](https://learn.chatgpt.com/docs/app-server) defines the support status, JSONL stdio protocol, initialization, binary-specific schema generation, stable/experimental capability split, MCP surface, and local-image input. TECH-010 records behavior for each proposed pinned build.

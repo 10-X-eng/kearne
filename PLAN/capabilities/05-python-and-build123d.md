@@ -1,134 +1,143 @@
 # Python SDK and build123d
 
-- **Status:** Proposed; sandbox and compatibility spikes required
+- **Status:** Proposed; isolation and compatibility gates required
 - **Requirement prefix:** `PY`
-- **Depends on:** [Engineering API](../foundations/08-engineering-api.md), [processes](../foundations/07-processes-and-ipc.md), [persistence](../foundations/06-persistence-and-recovery.md)
-- **Unblocks:** procedural features, engineering automation, AI-generated scripts
+- **Depends on:** [document model](../foundations/01-document-model.md), [Engineering API](../foundations/08-engineering-api.md), [processes](../foundations/07-processes-and-ipc.md)
+- **Unblocks:** parametric geometry, AI modeling, automation, reusable features
 
 ## 1. Purpose
 
-Offer ergonomic Python automation and build123d procedural geometry without embedding Python in the application process or creating a second document model.
+Make native build123d source the editable definition of part geometry without restricting Python to a GUI-shaped subset or allowing code to control the application runtime.
 
-## 2. Two Python modes
+## 2. Canonical function model
 
-### Automation session
+### PY-001 — Function boundary
 
-A user/script client submits normal Engineering API commands and queries. It may create transactions and wait on operation handles subject to permissions.
-
-### Procedural evaluator
-
-A document feature evaluates pinned source code against declared immutable inputs and produces declared artifacts/results. It cannot submit persistent commands, inspect the mutable workspace, or recursively invoke itself.
-
-### PY-001 — Mode separation
-
-Automation and procedural evaluation use distinct capability profiles and SDK entry points. A procedural feature MUST NOT mutate the document as a side effect of evaluation.
-
-## 3. Python SDK
-
-The SDK provides typed wrappers such as:
-
-```python
-with project.transaction(base_revision=project.head) as tx:
-    sketch = tx.create_sketch(component=component, plane=xy_plane)
-    tx.add_rectangle(sketch, width=100 * mm, height=60 * mm)
-    feature = tx.create_extrude(profile=sketch.default_profile(), distance=8 * mm)
-```
-
-These calls create versioned command envelopes. Python proxy objects hold IDs and client/session context; they are not mutable mirrors of C++ entity objects.
-
-### PY-002 — Revision clarity
-
-Queries and proxies expose the observed revision. Mutating through a stale proxy either submits against its explicit revision and reports conflict or requires an explicit refresh/rebase policy.
-
-### PY-003 — Dimensional values
-
-The SDK exposes quantity types and rejects ambiguous bare numbers where a public command requires a dimension, except APIs with a documented default unit convenience layer.
-
-### PY-004 — Async-native operations
-
-Long operations expose awaitable handles plus synchronous convenience methods usable only off the UI thread. Cancellation maps to the common operation contract.
-
-## 4. Procedural feature schema
+A model function is identified by project module and qualified name. Its durable contract declares:
 
 ```text
-ProceduralFeature
-  language: python
-  source artifact/ref and digest
+ModelFunction
+  id
+  module source artifact and digest
   entry point
-  declared input schema and bindings
-  declared output slots
-  environment lock/fingerprint
+  typed inputs and bindings
+  named output slots
+  function dependencies
+  environment fingerprint
   capability profile
   topology publication mode
 ```
 
-### PY-005 — Reproducible environment
+The contract may live in a Kearne manifest or optional decorator. A decorator is not required for otherwise valid native build123d source.
 
-The evaluator fingerprint includes Python, build123d, OCP/OCCT, Kearne SDK, package lock, platform compatibility class, and source digest. Unpinned imports make a result explicitly non-reproducible and are disabled for durable procedural features by default.
+### PY-002 — Native source freedom
 
-### PY-006 — Declared dependencies
+Function bodies may use ordinary Python, helpers, classes, loops, conditionals, comprehensions, and any mixture of build123d algebra and builder modes allowed by the pinned environment. Kearne MUST NOT require translation to an internal feature language.
 
-Scripts receive only declared parameter values, semantic geometry artifacts, and approved read-only helper services. Reading arbitrary project state, environment variables, current time, filesystem, or network is prohibited unless declared and capability-approved; such access participates in reproducibility classification.
+### PY-003 — Explicit boundary
 
-### PY-007 — Explicit outputs
+Inputs are typed values or immutable named outputs. Publication requires returned values matching declared output slots. Module globals, printed values, and interpreter-resident objects are not outputs.
 
-The entry point returns outputs matching declared slots and types. Printing a shape, mutating a module global, or leaving an object in interpreter memory is not publication.
+### PY-004 — One geometry authority
 
-## 5. build123d exchange
+GUI tools, AI, direct source editing, plugins, replay, and headless clients mutate the same source/function graph. Kearne MUST NOT persist a parallel native-feature graph for source-defined geometry.
 
-The worker's OCP build must be compatible with Kearne's pinned exact-geometry artifact format. Results pass through artifact validation before publication.
+## 3. Graph granularity
 
-### PY-008 — Procedural topology contract
+Kearne does not prescribe function size. GUI tools normally create small composable functions for sketches and operations. AI and users may define a whole component in one function or factor reusable helpers into modules.
 
-A procedural feature may:
+Only declared model functions and their bindings are dependency nodes. Internal Python calls remain implementation details covered by their source and environment digests.
 
-- publish explicit stable topology labels through a Kearne helper API;
-- publish only body-level output identity; or
-- be treated as imported/dumb topology.
+### PY-005 — Dependency completeness
 
-Kearne MUST NOT promise robust subshape persistence for arbitrary build123d code without labels/provenance. The UI and API expose the chosen capability.
+Evaluation keys include the transitive digests of project modules, declared inputs, named upstream outputs, environment lock, build123d/OCP/OCCT versions, numerical profile, and capability policy. Undeclared dynamic inputs make evaluation non-reproducible and unavailable for released revisions.
 
-### PY-009 — Native translation is optional and explicit
+## 4. GUI and source coexistence
 
-Recognition or translation of a script result into native features creates a previewable command proposal with confidence. It is never required to execute a procedural feature and never silently replaces its source.
+### PY-006 — Recognition is optional
 
-## 6. Runtime and sandbox
+Kearne may recognize generated or familiar source structures and offer sketch, extrude, fillet, pattern, and other specialized editors. Recognition is derived metadata with a confidence and source digest. It is never canonical.
 
-- Each untrusted execution uses a fresh or sanitizably pooled worker identity.
-- Filesystem starts denied except brokered read-only inputs and private scratch.
-- Network starts denied.
-- CPU time, wall time, process count, output bytes, memory, and artifact sizes are bounded.
-- Native-extension loading is restricted to the pinned environment.
-- Standard output/error is bounded, structured as logs, and treated as potentially sensitive.
-- Cancellation escalates to process termination.
+### PY-007 — Honest degradation
 
-### PY-010 — Honest sandbox claim
+If a source edit invalidates recognition, the function remains valid and editable through its source, signature, parameters, inputs, and outputs. Kearne MUST NOT silently rewrite it, replace it with BREP, or claim a specialized editor can preserve semantics.
 
-Until OS-level isolation and escape testing meet the threat model on a platform, Kearne labels Python as isolated/crash-contained rather than security-sandboxed. UI copy must not overstate protection.
+### PY-008 — Structural editing
 
-## 7. Package management
+GUI edits apply source transformations against an expected source digest and return a previewable replacement. The transformation preserves unrelated source text or refuses with a diagnostic. It MUST NOT fall back to regular-expression rewriting.
 
-MVP ships one signed, pinned environment. Later custom environments are immutable lockfile-addressed assets built outside project evaluation and scanned/approved before use. `pip install` during feature evaluation is prohibited.
+Source inspection uses a parser or concrete syntax tree and never imports or executes the module.
 
-Projects store environment requirements, not an uncontrolled copy of the user's global Python environment.
+## 5. Evaluation
 
-## 8. Verification strategy
+Model functions execute asynchronously outside the UI process in a pinned worker. Evaluation has read-only declared inputs and private scratch space. It cannot submit project mutations, move a branch, invoke UI behavior, or read mutable workspace state.
 
-- Generate API command scenarios and run them through C++ and Python adapters, comparing semantic results.
-- Run SDK version compatibility against a matrix of supported server/API versions.
-- Generate procedural functions over parameter domains and verify output schema, determinism class, cancellation, quotas, and cache keys.
-- Fault-inject worker crash, infinite loop, memory growth, stdout flood, malformed artifact, forbidden file/network/process access, and incompatible OCP handshake.
-- Fuzz Python-to-wire conversion and quantity parsing.
-- Maintain a small malicious-script corpus for known sandbox escapes in addition to generative capability tests.
+### PY-009 — Artifact validation
 
-## 9. Open decisions
+Returned build123d/OCP objects cross the worker boundary as immutable versioned artifacts. Kearne validates type, size, shape health, units, output count, and protocol compatibility before publication.
 
-- **PY-OPEN-001:** Environment distribution/locking technology.
-- **PY-OPEN-002:** OS isolation mechanisms and product wording on each platform.
-- **PY-OPEN-003:** build123d/OCP/OCCT compatible version matrix.
-- **PY-OPEN-004:** Source editing, debugging, and package UX after MVP.
-- **PY-OPEN-005:** Stable explicit topology-label API for procedural features.
+### PY-010 — Failure retention
 
-## 10. Definition of done
+Syntax, import, timeout, cancellation, and geometry failures produce diagnostics for the source revision. They do not delete source, mutate the last successful artifact, or rewrite history.
 
-Python MVP is implemented when SDK parity scenarios pass, procedural evaluation is side-effect-free with respect to documents, workers obey tested resource/capability limits, environment fingerprints invalidate correctly, and incompatible or malicious output cannot corrupt the coordinator.
+### PY-011 — Topology capability
+
+A function may publish explicit topology labels and ancestry, body-level identity only, or dumb topology. Kearne MUST NOT promise stable subshape references beyond the function's declared and verified capability.
+
+## 6. Runtime policy
+
+- Python, build123d, OCP, OCCT compatibility, Kearne helpers, and packages are lockfile-addressed.
+- Filesystem and network access start denied; approved capabilities participate in provenance and release policy.
+- CPU time, wall time, memory, process count, logs, and output sizes are bounded.
+- Cancellation escalates to worker termination.
+- `pip install` during evaluation is prohibited.
+- Untrusted code uses a fresh or proven-sanitized worker identity.
+
+### PY-012 — Honest isolation claim
+
+Until platform escape testing meets the threat model, Kearne describes execution as crash-contained and capability-limited, not secure sandboxing.
+
+## 7. Automation API
+
+Python automation may query projects and submit source, binding, assembly, study, drawing, and other typed commands. Proxies carry the observed revision and cannot mutate a stale head implicitly.
+
+### PY-013 — Source replacement command
+
+Direct code editing submits the complete replacement artifact, expected prior digest, function-contract changes, and base revision. Parsing, permission, size, and contract checks precede commit. Evaluation follows commit.
+
+### PY-014 — No evaluation side effects
+
+A model function cannot mutate project state during evaluation. Automation that intentionally changes a project runs in a separate capability role through ordinary transactions.
+
+## 8. Git-like diff and merge
+
+Source modules are content-addressed revision-tree entries. Diff and merge operate in this order:
+
+1. project path and function identity;
+2. typed function contracts and bindings;
+3. syntax-aware or text three-way source merge;
+4. structural validation;
+5. asynchronous geometry comparison.
+
+Automatic source merge never implies geometric correctness. Conflicts retain base, ours, and theirs. Geometry and mass changes are derived review evidence.
+
+## 9. Verification
+
+- Generate functions across parameter domains and compare evaluation keys, output contracts, determinism, and cache reuse.
+- Generate source edits and verify parse-without-execution, exact source preservation, stale-digest rejection, and recognized-editor degradation.
+- Generate revision DAGs with module moves, concurrent function edits, binding changes, syntax failures, and merge conflicts.
+- Run the same function corpus through algebra, builder, and mixed-mode implementations where equivalent properties exist.
+- Fault-inject worker crashes, infinite loops, memory growth, log floods, malformed artifacts, forbidden capabilities, and incompatible OCP handshakes.
+- Scale generator sizes in CI profiles instead of adding fixed tests per function or feature type.
+
+## 10. Open decisions
+
+- **PY-OPEN-001:** Manifest format and optional decorator API.
+- **PY-OPEN-002:** Concrete-syntax tooling and source transformation protocol.
+- **PY-OPEN-003:** Environment distribution and build123d/OCP/OCCT version matrix.
+- **PY-OPEN-004:** Explicit topology-label and ancestry helper API.
+- **PY-OPEN-005:** Platform isolation mechanisms and product wording.
+
+## 11. Definition of done
+
+The boundary is implemented when unrestricted native build123d functions evaluate through declared contracts; GUI-generated and AI-edited source share one revision history; unrecognized source remains editable without loss; generated merge, determinism, and fault suites pass at multiple scales; and worker failure cannot corrupt project state.

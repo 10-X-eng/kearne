@@ -10,11 +10,11 @@ Separate GUI, scripting, plugin, and AI implementations would duplicate validati
 
 ## Decision
 
-GUI, CLI, Python, plugins, AI, replay, and tests submit the same typed command requests and use revision-explicit queries. Shared schema declarations generate boundary metadata and bindings where validated by SPIKE-001; strong domain validation remains handwritten once.
+GUI, CLI, Python, plugins, AI, replay, and tests submit source/function or typed engineering commands and use revision-explicit queries. Shared schema declarations generate boundary metadata and bindings where validated by TECH-001; strong domain validation remains handwritten once.
 
 ## Consequences
 
-Adapters translate presentation and transport only. Public writes cannot patch entities directly. Command/feature registration includes conformance metadata. Schema tooling becomes critical build infrastructure.
+Adapters translate presentation and transport only. Public writes cannot patch storage records directly. Command, function-contract, and operation-tooling registration includes conformance metadata. Schema tooling becomes critical build infrastructure.
 
 ## Evidence required
 

@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Provide one mutation path for human and automated actions while making undo, crash recovery, replay, branching, audit, and future synchronization consequences of the same immutable revision model.
+Provide one mutation path for source, function bindings, and typed engineering records while making undo, recovery, replay, branching, audit, and synchronization consequences of one immutable revision model.
 
 Kearne does not use command objects that hold hidden mutable state and implement bespoke inverse methods. Such objects are difficult to serialize, retry, merge, or recover after a crash.
 
@@ -28,7 +28,7 @@ CommandEnvelope
 
 ### CMD-001 — Commands express intent
 
-A command request describes an intended semantic operation such as `feature.extrude.create`, not storage edits such as “write this JSON path.” Public adapters MUST NOT submit raw entity patches.
+A command request describes an intended operation such as `model.extrude.create`, `source.module.replace`, or `assembly.joint.create`, not storage edits such as “write this JSON path.” Direct source replacement is a first-class operation with an expected digest; arbitrary record or database patches are not public APIs.
 
 ### CMD-002 — Schema and domain validation
 
@@ -43,14 +43,23 @@ A committed `request_id` maps durably to exactly one outcome. Retrying it return
 Validated commands produce a small closed set of internal mutations:
 
 ```text
-CreateEntity(record)
-ReplaceEntity(id, expected_prior_digest, new_record)
-DeleteEntity(id, expected_prior_digest)
-AttachSourceArtifact(metadata)
-DetachSourceArtifact(id, expected_prior_digest)
+PutContent(path, expected_prior_digest, content_artifact)
+MoveContent(old_path, new_path, expected_digest)
+DeleteContent(path, expected_prior_digest)
+CreateRecord(record)
+ReplaceRecord(id, expected_prior_digest, new_record)
+DeleteRecord(id, expected_prior_digest)
+CreateFunctionContract(contract)
+ReplaceFunctionContract(id, expected_prior_digest, new_contract)
+DeleteFunctionContract(id, expected_prior_digest)
+CreateModelCall(call)
+ReplaceModelCall(id, expected_prior_digest, new_call)
+DeleteModelCall(id, expected_prior_digest)
+AttachArtifact(metadata)
+DetachArtifact(id, expected_prior_digest)
 ```
 
-Records are replaced as versioned typed values rather than mutated through general path patches. This keeps validation, migration, semantic diff, and replay understandable.
+Source blobs, contracts, calls, and records are replaced as complete versioned values rather than mutated through general path patches. This keeps validation, migration, diff, and replay understandable.
 
 ### CMD-004 — Mutation isolation
 
@@ -96,7 +105,7 @@ RevisionRecord
   actor and provenance
   schema_set
   committed_at
-  semantic_digest
+  project_root_digest
 ```
 
 ### CMD-009 — Immutable revision DAG
@@ -121,37 +130,41 @@ Each revision records actor, origin, command descriptions or securely retained r
 
 Every persistent command names its base revision. If the workspace head has moved, the command fails with `RevisionConflict` unless its descriptor declares and implements a deterministic rebase rule.
 
-Automatic rebase is initially restricted to operations proven independent through entity read/write sets. “Last writer wins” is not a default engineering merge policy.
+Automatic rebase is initially restricted to operations proven independent through declared read/write sets. “Last writer wins” is not a default engineering merge policy.
 
 ### CMD-014 — Declared effects
 
-Command descriptors report conservative read, create, replace, and delete sets after validation. These support diagnostics, preview, permission checks, safe rebase analysis, semantic diff, and future collaboration.
+Command descriptors report conservative content paths and function, call, record, and artifact read/write sets after validation. These support diagnostics, preview, permissions, safe rebase analysis, diff, and collaboration.
+
+### CMD-015 — Source transformations are proposals
+
+A specialized GUI tool may ask a source service to generate or structurally transform native build123d code. The service returns replacement bytes, expected prior digest, contract changes, and diagnostics. Only the transaction engine commits them. A stale digest or unsafe transform fails without fallback text rewriting.
 
 ## 7. Preview and continuous interaction
 
-### CMD-015 — Preview is ephemeral
+### CMD-016 — Preview is ephemeral
 
 Dragging a dimension or editing a feature dialog creates generation-tagged preview snapshots and evaluation requests. Preview revisions are not added to durable history and are invalid after their base or generation changes.
 
-### CMD-016 — One gesture, one durable revision
+### CMD-017 — One gesture, one durable revision
 
 Continuous UI gestures SHOULD commit one final command. Intermediate values may be sampled for preview and telemetry but MUST NOT flood durable history.
 
-### CMD-017 — Preview equivalence
+### CMD-018 — Preview equivalence
 
 Accepting a preview submits an ordinary command. The preview implementation MUST NOT have a separate geometry or validation path. Its result may be reused only if its evaluation key exactly matches the committed snapshot.
 
 ## 8. Evaluation failure semantics
 
-Semantic validity and geometric evaluability are distinct:
+Project validity and source/geometric evaluability are distinct:
 
-- invalid references, illegal units, or impossible schema values reject the command before commit;
-- a semantically valid 100 mm fillet may commit and subsequently fail to evaluate;
-- the failed feature remains editable and carries evaluation diagnostics;
+- invalid references, illegal units, or impossible contracts reject the command before commit;
+- source with syntax errors or an infeasible fillet may commit and subsequently fail to parse or evaluate;
+- failed source remains editable and retains diagnostics;
 - downstream evaluation is blocked or uses an explicitly supported partial-output policy;
 - undo operates on the committed revision regardless of evaluation status.
 
-### CMD-018 — No silent rollback after publication
+### CMD-019 — No silent rollback after publication
 
 Once a revision is durably acknowledged, later evaluation failure MUST NOT remove or rewrite it. Repair is another command or movement of the workspace head.
 
@@ -159,7 +172,7 @@ Once a revision is durably acknowledged, later evaluation failure MUST NOT remov
 
 One model-based state machine generates:
 
-- valid and invalid commands;
+- valid and invalid source, contract, binding, and record commands;
 - multi-command transactions;
 - duplicate request delivery;
 - stale base revisions;
@@ -167,7 +180,7 @@ One model-based state machine generates:
 - injected normalization and commit failures;
 - serialization and replay at arbitrary steps.
 
-Properties include atomicity, idempotency, immutable ancestors, deterministic replay, no lost divergent revisions, and correspondence between head snapshot and reference model.
+Properties include atomicity, idempotency, immutable ancestors, deterministic replay, no lost divergent revisions, stable function identity across source moves, and correspondence between head snapshot and reference model.
 
 Every command descriptor joins a shared conformance suite that checks schema rejection, permission denial, deterministic normalization, declared effects, readable description, provenance, round-trip, and replay.
 
@@ -180,4 +193,4 @@ Every command descriptor joins a shared conformance suite that checks schema rej
 
 ## 11. Definition of done
 
-This plan is implemented when the reference state machine passes with faults and retries, every registered command passes the conformance suite, revision replay reconstructs identical semantic snapshots, and no adapter can mutate a document outside this path.
+This plan is implemented when the reference state machine passes with faults and retries, every registered command passes the conformance suite, replay reconstructs identical content trees and typed records, and no adapter can mutate project state outside this path.

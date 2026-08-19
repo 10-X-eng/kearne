@@ -11,7 +11,7 @@ Build, test, package, sign, update, debug, and reproduce Kearne across Windows a
 
 ## 2. Build system
 
-The proposed baseline is CMake presets plus Ninja, CTest integration, C++23, and a manifest/lock-based C++ dependency manager selected by spike. Python environments use a separate immutable lock.
+The proposed baseline is CMake presets plus Ninja, CTest integration, C++23, and a manifest/lock-based C++ dependency manager selected by prototype. Python environments use a separate immutable lock.
 
 ### BLD-001 — Presets are the interface
 
@@ -123,7 +123,7 @@ Build identity maps every binary, generated schema set, dependency fingerprint, 
 
 ## 10. Open decisions
 
-- **BLD-OPEN-001:** C++ dependency manager after reproducibility/license spike.
+- **BLD-OPEN-001:** C++ dependency manager after reproducibility/license prototype.
 - **BLD-OPEN-002:** Linux distribution baselines and package formats.
 - **BLD-OPEN-003:** Windows installer/updater framework and signing identity.
 - **BLD-OPEN-004:** CI and release-builder service.

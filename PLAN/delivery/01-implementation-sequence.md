@@ -2,12 +2,12 @@
 
 - **Status:** Proposed
 - **Requirement prefix:** `SEQ`
-- **Depends on:** [MVP definition](../02-mvp-definition.md), [technical spikes](02-technical-spikes.md), [test strategy](03-test-strategy.md)
+- **Depends on:** [MVP definition](../02-mvp-definition.md), [technical prototypes](02-technology-gates.md), [test strategy](03-test-strategy.md)
 - **Unblocks:** repository implementation
 
 ## 1. Delivery rule
 
-Kearne grows through permanent vertical slices. Each stage uses the final document, command, revision, evaluation, diagnostic, and API paths. A stage may use fake adapters, but it cannot create a temporary alternative core.
+Kearne grows through permanent vertical slices. Each stage uses the final source/function, typed-record, command, revision, evaluation, diagnostic, and API paths. A stage may use fake adapters, but it cannot create a temporary alternative core.
 
 ### SEQ-001 — Gate before breadth
 
@@ -21,103 +21,106 @@ Every merged change leaves supported presets buildable and required suites passi
 
 Each implementation change names requirement IDs, updates applicable descriptors/generators, and records verification. Requirements are closed by evidence, not percentage estimates.
 
-## 2. Stage 0 — Retire architecture uncertainty
+## 2. Stage 0 — Production repository and UI foundation
 
-Run the spikes in [technical spikes](02-technical-spikes.md). Required decisions before persistent production code:
+Establish the root production build, module boundaries, design tokens, reusable controls, typed frontend ports, deterministic UI data provider, application lifecycle, semantic observation, and complete-session capture. The root build excludes `prototype/`.
 
-- schema/IDL and generation path;
-- project storage and crash semantics;
-- OCCT/OCP artifact compatibility and worker topology;
-- Qt Quick viewport backend;
-- sketch solver;
-- numerical/modeling range;
-- persistent topology v1 feasibility;
-- Codex app-server protocol, packaging, and tool-bridge path;
-- complete Kearne-session capture and semantic observation on target display stacks.
+Exit gate: a packaged desktop launches deterministically, exposes build and session identity, returns a correlated semantic snapshot and lossless complete-session image, and passes architecture checks proving no prototype dependency.
 
-Output: accepted/rejected ADRs, benchmark data, small isolated prototypes, license inventory, and revised plans. Prototype code enters production only if it obeys accepted boundaries and has contract tests.
+## 3. Stage 1 — Complete desktop interaction system
 
-## 3. Stage 1 — Semantic core
+Implement the production UI before engineering backends:
+
+- project/start, editor, settings, recovery, and operation-inspector surfaces;
+- Model, Sketch, Assemble, Sheet Metal, Simulate, CAM, Drawing, and BOM workspaces;
+- version controls in History and Agent/Jobs/Diagnostics in the right dock;
+- command search, contextual command groups, structure/history, properties, jobs, diagnostics, AI proposals, and status;
+- native model-function source, signature, input, output, recognition, and diagnostic surfaces;
+- complete empty, loading, current, preview, pending, stale, failed, unavailable, read-only, and permission-denied states;
+- responsive panel behavior, keyboard navigation, accessibility semantics, density/theme variants, and workspace restoration;
+- typed requests and projections that define the backend ports without implementing engineering rules in QML.
+
+Exit gate: every declared UI surface and state is reachable through public controls using deterministic data, responsive and accessibility suites pass, and the observation driver captures every visible Kearne surface without sleeps.
+
+## 4. Stage 2 — Project core behind frontend ports
 
 Implement in dependency order:
 
 1. `kearne_base`: typed IDs, digests, finite quantities, diagnostics, results, cancellation/progress values.
 2. IDL/schema toolchain and compatibility checks.
-3. immutable entity records and document snapshots;
-4. invariant and reference indexes;
-5. command registry, normalization, transactions, immutable revisions, workspace head;
+3. immutable content trees, function contracts/calls, typed records, and project snapshots;
+4. source, invariant, dependency, and reference indexes;
+5. command registry, source/function mutations, transactions, immutable revisions, workspace head;
 6. in-memory persistence/artifact ports;
 7. deterministic scheduler and fake workers;
 8. headless command/query/replay adapter;
 9. shared generators, reference models, and contract registration.
 
-Exit gate: `MVP-A-001` passes in memory at PR scale and nightly scale. Architecture tests prove no Qt/OCCT dependency in the core.
+Exit gate: `MVP-A-001` passes in memory at PR and nightly scales. Architecture tests prove source inspection executes no project code and the core has no Qt, OCCT, or Python-runtime dependency.
 
-## 4. Stage 2 — Durable headless project
+## 5. Stage 3 — Durable headless project
 
 Implement:
 
-- selected project store, checkpoints, migrations, source artifacts;
+- selected project store, content trees, checkpoints, migrations, and artifacts;
 - durable request idempotency and workspace heads;
 - fault-injecting storage adapter;
 - process supervisor and fake worker transport;
 - CLI create/open/inspect/edit/replay;
 - structured logs and operation inspector.
 
-Exit gate: `MVP-A-002`, persistence fault matrix, protocol fuzz smoke, and migration round trips pass on Windows and Linux. Cache deletion preserves semantic state.
+Exit gate: `MVP-A-002`, persistence fault matrix, protocol fuzz smoke, and migration round trips pass on Windows and Linux. Cache deletion preserves source and typed intent.
 
-## 5. Stage 3 — First visual parametric slice
+## 6. Stage 4 — First connected parametric slice
 
 Implement:
 
-- Qt/QML shell over fake then real Engine ports;
-- application lifecycle and Desktop Observation driver before feature screens;
-- visual tokens and the reusable component/state catalog;
+- replace deterministic UI providers with real Engine port implementations without changing QML contracts;
 - render projection and selected viewport backend;
-- semantic picking for datum/sketch/body scope;
-- sketch schema, selected solver adapter, profile extraction;
-- OCCT geometry worker and extrude-new-body;
+- semantic picking for datum, profile, named output, and topology scope;
+- selected sketch solver adapter and native build123d sketch source generation;
+- pinned isolated Python/build123d/OCP worker;
+- function contracts, calls, output validation, and extrude source generation/recognition;
 - preview generations, last-known-good display, jobs/diagnostics UI.
 
-Exit gate: mounting-plate sketch/extrude workflow passes headless and GUI; the agent receives a complete lossless Kearne-session image and matching semantic snapshot without sleeps; solver, renderer, and observation conformance suites pass; camera remains responsive during blocked/failed workers.
+Exit gate: the mounting plate is generated graphically as inspectable native source and can be edited directly without changing its evaluation path; the agent receives a complete lossless Kearne-session image and matching semantic snapshot without sleeps; function, solver, renderer, and observation suites pass; camera remains responsive during blocked or failed workers.
 
-## 6. Stage 4 — Downstream topology and feature system
+## 7. Stage 5 — Downstream topology and modeling tools
 
 Implement one topology-critical chain before broad features:
 
 ```text
-sketch -> extrude -> fillet -> hole -> linear/circular pattern
+sketch() -> extrude() -> fillet() -> holes() -> pattern()
 ```
 
-Then add revolve, boolean modes, chamfer, expressions, and target-body policies through the same descriptor/evaluator harness.
+Then add revolve, boolean modes, chamfer, expressions, and target-body policies through the same source generator/recognizer and function evaluator.
 
-Exit gate: topology edit matrix, generated feature contracts, incremental evaluation properties, save/reopen/replay, and failure recovery pass. No feature with incomplete topology publication enters the MVP registry.
+Exit gate: topology edit matrix, generated function contracts, unrecognized-source evaluation, incremental evaluation properties, save/reopen/replay, and failure recovery pass. No function claims labeled topology without passing its publication suite.
 
-## 7. Stage 5 — Interchange and automation
+## 8. Stage 6 — Interchange and automation
 
 Implement:
 
 - isolated STEP import and retained source artifact;
 - STEP/STL atomic export;
-- Python worker and typed SDK;
-- pinned build123d procedural feature;
+- typed Python SDK for source/function and product commands;
 - pinned Codex app-server client, Agent Bridge, query/command tools, preview, and approval;
 - provenance views.
 
-Exit gate: Gates D acceptance scenarios, parser/worker fault suites, adapter semantic parity, and AI policy state machine pass.
+Exit gate: Gates D acceptance scenarios, parser/worker fault suites, source/function parity, and AI policy state machine pass.
 
-## 8. Stage 6 — MVP hardening
+## 9. Stage 7 — MVP hardening
 
 - complete supported-platform installers and updates;
 - run full migration, sanitizer, fuzz, fault, security, accessibility, and performance gates;
-- document supported feature/topology/import profiles and limitations;
+- document supported graphical-operation, source, topology, and import profiles and limitations;
 - freeze first public format/API major versions;
 - validate crash reporting and offline behavior;
 - remove development bypasses and unsigned defaults from release builds.
 
 Exit gate: all MVP requirements have linked evidence; no unresolved critical risk or `OPEN` decision affects persisted/public behavior.
 
-## 9. Post-MVP order
+## 10. Post-MVP order
 
 The order minimizes core rewrites:
 
@@ -130,7 +133,7 @@ The order minimizes core rewrites:
 
 Sheet metal, weldments, manufacturing analysis, and CAM receive separate plans after their prerequisite body/topology/configuration contracts are proven.
 
-## 10. Work-package rule
+## 11. Work-package rule
 
 A work package should deliver one observable vertical behavior and normally contain:
 
@@ -145,7 +148,7 @@ A work package should deliver one observable vertical behavior and normally cont
 
 Splitting these into long-lived separate branches is discouraged because incomplete paths create duplicate temporary behavior.
 
-## 11. Stop conditions
+## 12. Stop conditions
 
 Pause feature expansion when:
 
@@ -154,13 +157,13 @@ Pause feature expansion when:
 - generated state machines find unreproducible corruption;
 - UI introduces synchronous kernel/persistence work;
 - an adapter implements engineering validation independently;
-- performance becomes proportional to total document size for a local edit;
+- performance becomes proportional to total project size for a local edit;
 - repeated worker input can crash the coordinator;
 - a license blocks intended distribution;
 - a desktop change cannot be launched, semantically inspected, and captured by the agent harness.
 
 Resume after the owning plan/ADR and regression mechanism are corrected.
 
-## 12. Definition of done
+## 13. Definition of done
 
-This sequence is accepted when every stage has funded owners, selected release gates, and no dependent implementation is scheduled before its architecture spike and foundation contract.
+This sequence is accepted when every stage has funded owners, selected release gates, and no dependent implementation is scheduled before its architecture prototype and foundation contract.

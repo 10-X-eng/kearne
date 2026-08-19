@@ -11,7 +11,7 @@
 **UI:** Qt 6 / Qt Quick / QML
 **Automation and AI geometry:** Python 3 + build123d
 **AI harness:** Codex app-server behind a Kearne-owned adapter and tool policy
-**Architecture principle:** Humans, AI agents, scripts, plugins, and external APIs operate on the same document and command model.
+**Architecture principle:** Humans, AI, scripts, plugins, and external APIs edit one versioned source/function graph and typed engineering model.
 
 ---
 
@@ -41,9 +41,9 @@ A human should be able to create an extrusion by clicking a toolbar.
 
 A Python plugin should be able to create the same extrusion through an API.
 
-An AI agent should be able to create the same extrusion through a structured command.
+An AI agent should be able to create the same extrusion by writing native build123d source or using a structural command.
 
-All three shall result in the same feature node in the same document graph.
+All three shall change the same canonical build123d function graph. GUI tools generate or structurally edit native source; they do not maintain a parallel feature definition.
 
 The central architecture is therefore:
 
@@ -57,10 +57,10 @@ The central architecture is therefore:
        │               │                │
        └───────────────┼────────────────┘
                        ▼
-                COMMAND SYSTEM
+                ENGINEERING API
                        │
                        ▼
-                DOCUMENT GRAPH
+          SOURCE / FUNCTION / PRODUCT GRAPH
                        │
           ┌────────────┼────────────┐
           ▼            ▼            ▼
@@ -136,7 +136,7 @@ Users must be able to change:
 
 * dimensions;
 * sketch constraints;
-* feature parameters;
+* model-function inputs;
 * references;
 * material;
 * component configuration;
@@ -148,7 +148,7 @@ The system shall recompute downstream dependencies automatically.
 
 ## 3.4 AI actions are real CAD actions
 
-AI shall not modify opaque geometry blobs whenever a semantic operation can be represented.
+AI shall modify native build123d source rather than opaque geometry blobs whenever source can represent the operation.
 
 For example:
 
@@ -159,14 +159,14 @@ AI creates arbitrary modified BREP.
 
 Preferred:
 
-AI creates HoleFeature
-    diameter = 6 mm
-    type = clearance
-    pattern = rectangular
-    referenceFace = ...
+AI writes or updates a model function
+    typed input: diameter = 6 mm
+    named output: body
+    explicit upstream output/topology references
+    native build123d implementation
 ```
 
-The user must subsequently be able to edit the resulting hole through ordinary CAD tools.
+The user must subsequently be able to edit the function's source and exposed parameters. A specialized hole editor is available when Kearne recognizes the source structure; lack of recognition never discards or restricts the source.
 
 ---
 
@@ -236,9 +236,9 @@ The application core shall consist of independently testable services.
 ```text
 ApplicationCore
 │
-├── DocumentService
+├── ProjectService
 ├── CommandService
-├── FeatureService
+├── SourceFunctionService
 ├── GeometryService
 ├── SketchService
 ├── AssemblyService
@@ -262,27 +262,28 @@ QML shall be a presentation layer over application models.
 
 ---
 
-# 7. Document Architecture
+# 7. Project Architecture
 
-The document graph is the heart of the application.
-
-A document shall contain semantic objects rather than merely a sequence of OCCT shapes.
+The project is one immutable revision graph containing a content-addressed source tree, model-function contracts and calls, and typed engineering records. OCCT shapes are evaluated artifacts.
 
 Example:
 
 ```text
-Document
+Project
 │
+├── Source
+│   ├── base_plate.py
+│   └── motor_mount.py
+├── ModelFunctions
+│   ├── base_plate(inputs) → body
+│   └── motor_mount(inputs, base_plate.body) → body
 ├── Metadata
 ├── Variables
 ├── Configurations
 │
 ├── Component: BasePlate
 │   ├── Origin
-│   ├── Sketch001
-│   ├── Extrude001
-│   ├── HolePattern001
-│   └── Fillet001
+│   └── Geometry → base_plate.body
 │
 ├── Component: Motor
 │
@@ -298,7 +299,7 @@ Document
     └── Sheet001
 ```
 
-Every node shall possess a persistent UUID.
+Every function, call, output binding, typed record, and occurrence shall possess persistent identity independent of names, paths, or source lines.
 
 Example:
 
@@ -310,36 +311,36 @@ using ObjectId = UUID;
 
 # 8. Dependency Graph
 
-Features shall form a directed dependency graph.
+Declared model-function calls and typed engineering records shall form a directed dependency graph.
 
 Example:
 
 ```text
-Sketch001
+sketch_base()
    ↓
-Extrude001
+extrude_base(sketch)
    ↓
-Fillet001
+fillet_base(body)
    ↓
-Hole001
+hole_pattern(body)
 ```
 
 But arbitrary references are possible:
 
 ```text
-Parameter: thickness ─────┐
+Parameter: thickness ────────┐
                           ▼
-Sketch001 → Extrude001 → Shell001
+profile() → base_solid() → shell()
                           ▲
-ExternalGeometry ─────────┘
+Named upstream output ────┘
 ```
 
-Each node shall report:
+Each published node shall report:
 
 * inputs;
 * output objects;
 * dependencies;
-* dirty state;
+* source and environment digests;
 * compute state;
 * compute duration;
 * errors;
@@ -394,28 +395,25 @@ Recompute must execute asynchronously.
 
 ---
 
-# 10. Feature Evaluation Contract
+# 10. Model Function Evaluation Contract
 
-Every feature shall implement approximately:
+Every declared model function shall evaluate approximately through:
 
 ```cpp
-class Feature {
-public:
-    FeatureResult evaluate(
-        const EvaluationContext& context,
-        CancellationToken cancellation
-    );
-
-    DependencySet dependencies() const;
-
-    ParameterSchema parameterSchema() const;
-};
+evaluate(
+    function_id,
+    source_tree_digest,
+    typed_inputs,
+    named_upstream_outputs,
+    environment_fingerprint,
+    cancellation
+) -> ModelFunctionResult
 ```
 
 A result contains:
 
 ```text
-Geometry
+Named geometry outputs
 Topology identity mapping
 Metadata
 Warnings
@@ -479,28 +477,31 @@ Ambiguous references must be surfaced rather than silently guessed.
 
 # 12. Undo and Redo
 
-All persistent changes shall pass through a command system.
+All persistent changes shall pass through versioned transactions.
 
 ```cpp
-class Command {
-    execute();
-    undo();
-    describe();
-};
+CommandEnvelope
+  type
+  base revision
+  actor and origin
+  typed payload
+  expected source/record digests
 ```
 
 Examples:
 
 ```text
-CreateSketchCommand
+CreateModelFunctionCommand
+ReplaceSourceModuleCommand
+BindFunctionInputCommand
 SetParameterCommand
-DeleteFeatureCommand
+DeleteModelFunctionCommand
 CreateJointCommand
 ApplyMaterialCommand
 CreateSimulationCommand
 ```
 
-Undo/redo therefore applies equally to:
+Undo moves the workspace head through immutable revisions and therefore applies equally to:
 
 * mouse actions;
 * keyboard actions;
@@ -565,6 +566,8 @@ Expressions support:
 
 Units must be dimensional quantities, not plain floating-point values.
 
+The user default unit profile seeds new projects. Each project stores its own display/input profile. Changing either profile shall not rescale geometry, reinterpret native source, round canonical values, or alter existing projects.
+
 Invalid operations such as:
 
 ```text
@@ -597,11 +600,11 @@ Configurations may control:
 * component selections;
 * assembly joints;
 * component quantities;
-* feature parameters;
+* model-function inputs;
 * simulation parameters;
 * metadata.
 
-Onshape currently allows configurations to drive feature parameters, dimensions, part properties and assembly relationships; that level of flexibility should be considered the minimum target.
+Configurations shall drive model-function inputs, dimensions, part properties, and assembly relationships.
 
 Configurations should support tables:
 
@@ -613,9 +616,11 @@ Configurations should support tables:
 
 ---
 
-# 16. Sketcher
+# 16. Sketch
 
-The sketcher shall be a dedicated geometric constraint environment.
+Sketch shall provide a dedicated geometric constraint environment. GUI-created sketches are native build123d model functions. Kearne's optional sketch helper expresses stable IDs and constraints in source for graphical editing; arbitrary native build123d sketch functions remain valid without graphical recognition.
+
+A sketch attaches explicitly to a stable origin plane, named construction-plane output, or planar topology reference. Kearne shall not persist an implicit active plane.
 
 Supported geometry:
 
@@ -689,8 +694,9 @@ AI-generated constraints shall be visually distinguishable before confirmation w
 
 # 18. Solid Modeling
 
-Initial professional feature set:
+Initial professional modeling operations:
 
+* construction planes by offset, midplane, angle, three points, or tangent reference;
 * extrusion;
 * revolve;
 * sweep;
@@ -723,7 +729,7 @@ Initial professional feature set:
 
 ---
 
-# 19. Hole Feature
+# 19. Hole Tool and Function Pattern
 
 Holes should be engineering-aware.
 
@@ -778,13 +784,13 @@ Direct operations:
 * recognize pockets;
 * recognize patterns.
 
-Feature recognition may optionally convert dumb geometry into editable semantic features.
+Recognition may propose native build123d functions that recreate or edit dumb geometry. Acceptance preserves the import and commits explicit source; recognition never silently converts it.
 
 ---
 
 # 21. Surface Modeling
 
-Professional surfacing features shall include:
+Professional surfacing operations shall include:
 
 * surface extrude;
 * surface revolve;
@@ -1116,16 +1122,16 @@ Use cases:
 
 Changes from one branch may be merged into another.
 
-Merging shall occur at semantic document-object level when possible, not raw binary file level.
+Merging shall use project paths, stable function identity, typed contracts/bindings, syntax-aware or text source merge, and typed-record schemas. BREP is never merged.
 
 Example:
 
 ```text
 Branch A:
-changes Fillet001 radius
+changes the fillet function radius input
 
 Branch B:
-adds Hole002
+adds a hole-pattern function
 ```
 
 Both may merge automatically.
@@ -1246,8 +1252,9 @@ internally containing:
 
 ```text
 manifest
-document database
-feature graph
+content-addressed source tree
+function contracts and calls
+typed engineering records
 parameters
 materials
 history
@@ -1259,7 +1266,7 @@ simulation metadata
 drawing metadata
 ```
 
-The authoritative source is the semantic document data.
+Native build123d source is authoritative for part geometry. Typed records are authoritative for product semantics outside build123d.
 
 BREPs and meshes are caches where practical.
 
@@ -1309,14 +1316,15 @@ Example:
     "surface": "plane",
     "area": "4300 mm^2",
     "normal": [0, 0, 1],
-    "ownerFeature": "Extrude003"
+    "producer": "base_plate.body",
+    "topologyLabel": "cap:end"
   }
 }
 ```
 
 It may query:
 
-* feature graph;
+* source/function graph;
 * dimensions;
 * materials;
 * configurations;
@@ -1419,37 +1427,29 @@ red = removed geometry
 
 # 46. AI + build123d
 
-build123d shall be a first-class procedural geometry environment.
+Native Python/build123d functions shall be the canonical definition of part geometry.
 
-It is particularly useful for:
+A model function has stable identity, typed inputs, named outputs, explicit published dependencies, a pinned environment, and a topology capability. Its body may use unrestricted Python supported by that environment, including helpers, classes, control flow, and any mixture of build123d algebra and builder modes.
 
-* generative geometry;
-* mathematical shapes;
-* repetitive structures;
-* fixtures;
-* templates;
-* AI-created prototypes;
-* geometry transformations difficult to express through existing semantic features.
+The function boundary, not each statement, is the unit of evaluation, dependency tracking, diff, and merge. Kearne shall not translate function bodies into a second persistent feature graph.
+
+GUI tools generate or structurally transform native source. Recognized structures receive specialized editors. Unrecognized structures retain generic source, signature, parameter, input, and output editing. Recognition failure shall never replace source with BREP or restrict AI-authored code.
 
 Architecture:
 
 ```text
-AI
+GUI / AI / user / plugin
  ↓
-build123d script
+source-function transaction
  ↓
-Python sandbox
+versioned source/function graph
  ↓
-OCP
+pinned Python/build123d worker
  ↓
-TopoDS_Shape
+validated named OCCT artifacts
 ```
 
-The resulting shape may be:
-
-1. inserted as a procedural feature;
-2. converted into an imported body;
-3. translated into native semantic features when recognizable.
+Assemblies, materials, configurations, simulations, drawings, BOMs, and releases remain typed engineering records referencing named function outputs. They do not duplicate part geometry.
 
 ---
 
@@ -1537,9 +1537,9 @@ UI
 
 ---
 
-# 50. AI Feature Generation
+# 50. AI Reusable Function Generation
 
-The application should allow AI to create reusable feature definitions.
+The application should allow AI to create reusable native build123d functions and, when useful, graphical-operation descriptors.
 
 Example user request:
 
@@ -1548,17 +1548,14 @@ Example user request:
 AI may produce:
 
 ```text
-SnapFitFeature
-Parameters:
-    length
-    width
-    hookDepth
-    clearance
+def snap_fit_tab(length, width, hook_depth, clearance):
+    ...
+    return tab
 ```
 
-That feature becomes available in the toolbar or feature library.
+The function is immediately usable from source, AI, scripts, and headless evaluation. It appears in a toolbar or library only after an optional descriptor defines safe recognition and structural editing.
 
-This combines the extensibility idea of systems such as Onshape Custom Features with AI-generated tooling. Onshape's Custom Features/FeatureScript system demonstrates the value of making reusable user-defined CAD features a first-class capability.
+Reusable user-defined modeling operations are valuable, but Kearne retains native build123d source instead of introducing a second feature language.
 
 ---
 
@@ -1841,6 +1838,8 @@ OCCT AIS may initially handle substantial portions of:
 
 The architecture must permit replacement by a custom renderer later.
 
+The viewport shall expose a plane-aware engineering grid with origin axes, major/minor spacing, exact unit readout, visibility, and snap state. Grid spacing adapts with camera scale; grid snap operates on canonical plane coordinates, not screen pixels. A unit change reformats the readout without changing geometry.
+
 ---
 
 # 62. Renderer Abstraction
@@ -1965,16 +1964,19 @@ Default workspace:
 │ Contextual modeling toolbar                             │
 ├──────────────┬─────────────────────────┬────────────────┤
 │              │                         │                │
-│ Model Tree   │                         │ Properties     │
-│              │       3D VIEWPORT       │                │
-│              │                         │ Parameters     │
-│              │                         │                │
+│ Structure /  │                         │ Properties /   │
+│ History      │       3D VIEWPORT       │ Parameters     │
+│              │                         ├────────────────┤
+│              │                         │ Agent / Jobs / │
+│              │                         │ Diagnostics    │
 ├──────────────┴─────────────────────────┴────────────────┤
-│ Command / AI / Jobs / diagnostics                      │
+│ Status                                                  │
 └─────────────────────────────────────────────────────────┘
 ```
 
 Panels should be dockable but docking should not visually resemble legacy MDI applications.
+
+Primary workspaces are Model, Sketch, Assemble, Sheet Metal, Simulate, CAM, Drawing, and BOM. Version actions live in History. Agent, Jobs, and Diagnostics share the right dock. Materials are cross-workspace assets; fasteners are assembly tools.
 
 ---
 
@@ -2084,16 +2086,16 @@ Assembly
  └─ Motor
 ```
 
-## Feature history
+## Model history
 
 ```text
-Sketch
-Extrude
-Fillet
-Hole
+sketch_base()
+extrude_base()
+fillet_edges()
+hole_pattern()
 ```
 
-Both represent the same document graph.
+Both are projections of the same project revision; model history does not create a second feature graph.
 
 Users can switch views.
 
@@ -2536,7 +2538,7 @@ When a command fails, AI may inspect:
 operation
 kernel error
 affected topology
-feature parameters
+function source and typed inputs
 ```
 
 and propose alternatives.
@@ -2940,21 +2942,23 @@ This becomes both a user feature and AI context source.
 
 ---
 
-# 114. Extensible Feature Registry
+# 114. Extensible Operation Registry
 
-Native and plugin features shall register through a common schema.
+Kearne and plugins may register graphical tooling for source patterns through a common schema.
 
 ```text
-FeatureType
+OperationId
 ParameterSchema
 Icon
 Category
-Evaluator
-SerializationVersion
-MigrationHandler
+SourceGenerator
+SourceRecognizer
+StructuralEditor
+TopologyPolicy
+ConformanceGenerator
 ```
 
-Document loading must tolerate missing plugins by retaining opaque feature parameters and reporting unresolved dependencies.
+Project loading must retain source, function contracts, and opaque plugin records when tooling or evaluators are missing, and report unresolved dependencies.
 
 ---
 
@@ -2973,12 +2977,12 @@ Breaking internal changes must not immediately break plugins.
 
 ---
 
-# 116. Document Schema Migration
+# 116. Project Schema Migration
 
-Every document object includes a schema version.
+Every function contract and typed engineering record includes a schema version.
 
 ```text
-ExtrudeFeature schemaVersion=3
+ModelFunctionContract schemaVersion=3
 ```
 
 Loaders must migrate older schemas forward.
@@ -2994,7 +2998,7 @@ Testing layers:
 ```text
 Unit
 Geometry regression
-Document graph
+Source/function graph
 Assembly solver
 Simulation integration
 Rendering
@@ -3202,13 +3206,13 @@ Implementation
 
 The GUI itself should preferentially use the Engineering API.
 
-This ensures that if an AI command can call:
+This ensures that if AI can update:
 
 ```text
-create_hole(...)
+def hole_pattern(...):
 ```
 
-the normal Hole dialog is effectively calling the same service.
+the Hole dialog applies a structural transform to the same source/function graph when that function is recognized.
 
 ---
 
@@ -3220,10 +3224,10 @@ The first usable alpha should intentionally be narrower.
 
 * modern QML UI;
 * OCCT viewport;
-* document graph;
+* source/function and typed product graph;
 * command system;
 * undo/redo;
-* sketcher;
+* sketch;
 * constraints;
 * extrusion;
 * revolve;
@@ -3348,17 +3352,17 @@ Python remains essential but is not responsible for the core UI and engineering-
 
 All modeling flows through engineering services.
 
-## build123d as the document model
+## Parallel Python and native-feature geometry models
 
-build123d is an excellent procedural geometry interface, not the canonical application data model.
+Part geometry has one authority: native build123d functions. Kearne shall not synchronize them with a second persistent feature graph.
 
 ## Raw BREP as project state
 
 BREP is an evaluated geometry result.
 
-## AI writing arbitrary document internals
+## AI writing storage internals
 
-AI operates through validated commands and tools.
+AI may author unrestricted project source but changes durable state through validated source/function and engineering-record commands, never database internals.
 
 ## Simulation on the UI thread
 
@@ -3379,13 +3383,13 @@ User clicks Extrude
         ↓
 Extrude dialog
         ↓
-CreateExtrudeCommand
+structural source transform
         ↓
-Document transaction
+source/function transaction
         ↓
-Feature graph
+native build123d function graph
         ↓
-Geometry job
+Python/build123d job
         ↓
 OCCT
         ↓
@@ -3404,15 +3408,13 @@ User:
         ↓
 AI
         ↓
-CreateExtrude tool
+write or transform native source
         ↓
-CreateExtrudeCommand
+source/function transaction
         ↓
-Document transaction
+native build123d function graph
         ↓
-Feature graph
-        ↓
-Geometry job
+Python/build123d job
         ↓
 OCCT
         ↓
@@ -3424,11 +3426,11 @@ Renderer
 Python-created feature:
 
 ```text
-Python SDK
+native build123d source or Python SDK
         ↓
-create_extrude(...)
+declare/update model function
         ↓
-CreateExtrudeCommand
+source/function transaction
         ↓
 same pipeline
 ```
@@ -3441,31 +3443,32 @@ There are multiple ways to control it.
 
 # 133. build123d Data Flow
 
-Procedural geometry is the exception:
+Part geometry follows one path:
 
 ```text
 User / AI
     ↓
-Python build123d
+native Python/build123d function
     ↓
-OCP
+function contract and call bindings
     ↓
-TopoDS_Shape
+isolated evaluation
     ↓
-ProceduralFeature
+named OCCT artifacts
     ↓
-Document
+component/product records
 ```
 
-The feature retains:
+The revision retains:
 
 * script;
 * dependencies;
 * parameters;
-* resulting geometry;
-* execution logs.
+* named output declarations;
+* environment and capability policy;
+* topology publication mode.
 
-Changing an exposed script parameter triggers asynchronous re-evaluation.
+Resulting geometry and execution logs are revision-tagged artifacts. Changing source, an exposed parameter, a binding, or the environment invalidates affected calls and triggers asynchronous evaluation.
 
 ---
 
@@ -3525,18 +3528,18 @@ The principal differentiator should not simply be:
 
 It should be:
 
-> A programmable engineering system in which geometry, product structure, simulation, history, requirements and AI all share the same semantic model.
+> A programmable engineering system in which native geometry source, product structure, simulation, history, requirements, and AI share one revision model.
 
 Traditional CAD tends to expose UI operations to humans and APIs to programmers as separate layers.
 
 This product should instead center everything around:
 
 ```text
-Semantic Document
+Native build123d function graph
 +
-Command API
+Typed product records
 +
-Engineering Graph
+Engineering API and revision DAG
 ```
 
 Humans, scripts and AI then become peers.
@@ -3553,7 +3556,7 @@ Humans, scripts and AI then become peers.
                                   │
                 ┌─────────────────┴────────────────┐
                 │        ENGINEERING API           │
-                │ typed commands / queries / tools │
+                │ source + typed commands / queries │
                 └─────────────────┬────────────────┘
                                   │
           ┌───────────────────────┼──────────────────────┐
@@ -3563,16 +3566,16 @@ Humans, scripts and AI then become peers.
           │                       │                      │
           └───────────────────────┼──────────────────────┘
                                   ▼
-                         COMMAND / TRANSACTION
+                         TRANSACTION / REVISION
                                 SYSTEM
                                   │
                                   ▼
-                           DOCUMENT GRAPH
+                      PROJECT CONTENT TREE + GRAPH
                                   │
              ┌────────────────────┼────────────────────┐
              │                    │                    │
              ▼                    ▼                    ▼
-          FEATURES            ASSEMBLIES          SIMULATION
+ BUILD123D FUNCTIONS       ASSEMBLIES          SIMULATION
              │                    │                    │
              └────────────┬───────┴──────────┬─────────┘
                           ▼                  ▼
@@ -3604,7 +3607,7 @@ Several decisions should be treated as foundational and changed only with strong
 
 **1. OCCT is the canonical geometry kernel.**
 
-**2. The document graph, not Python code or BREP, is canonical product state.**
+**2. Native build123d source/functions are canonical part geometry; typed records are canonical nongeometry product state; BREP is derived.**
 
 **3. C++ owns the application runtime.**
 
@@ -3612,11 +3615,11 @@ Several decisions should be treated as foundational and changed only with strong
 
 **5. Python executes outside the UI process.**
 
-**6. build123d is a first-class procedural modeling environment, not the document engine.**
+**6. A declared build123d function is the geometry evaluation, dependency, diff, and merge unit; its body is unrestricted within the pinned environment.**
 
-**7. Every persistent mutation goes through commands and transactions.**
+**7. Every source, function, binding, and engineering-record mutation goes through commands and transactions.**
 
-**8. AI uses the same command API available to human-facing tools and scripting.**
+**8. AI may write native build123d source directly through the same source/function transaction API used by the GUI, scripting, and plugins.**
 
 **9. Geometry computation is asynchronous.**
 

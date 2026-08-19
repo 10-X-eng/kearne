@@ -19,19 +19,19 @@ QML owns presentation and ephemeral interaction state:
 - command palette/search presentation;
 - operation/progress notification state.
 
-The Engineering API owns semantic state, command validation, revisions, jobs, and diagnostics.
+The Engineering API owns source/function state, typed engineering records, command validation, revisions, jobs, and diagnostics.
 
 ### UI-001 — Read-only projections
 
-QML receives read-only revision/generation-tagged models. It cannot own mutable entity records, `TopoDS_Shape`, database handles, or normalized mutations.
+QML receives read-only revision/generation-tagged models. It cannot own canonical source/contracts, mutable engineering records, `TopoDS_Shape`, database handles, or normalized mutations.
 
 ### UI-002 — Controller boundary
 
-Controllers translate interaction into typed command/query requests and adapt typed results into projections. They contain no feature evaluation or duplicated domain validation.
+Controllers translate interaction into source/function or typed command/query requests and adapt results into projections. They contain no model-function evaluation or duplicated domain validation.
 
 ### UI-003 — Generated generic surfaces
 
-Command descriptors and parameter schemas drive command-palette entries, property editors, units, enum choices, help links, permission visibility, and basic forms. Specialized sketch/viewport interactions reuse the same command payloads.
+Command, function, and parameter schemas drive command-palette entries, property editors, units, enum choices, help, permission visibility, and basic forms. Specialized sketch/viewport interactions submit structural source-function requests against expected digests.
 
 ## 3. Shell layout
 
@@ -44,6 +44,7 @@ The initial shell contains:
 - structure/history panel;
 - viewport;
 - property/parameter panel;
+- native source/function inspector and editor for the selected model scope;
 - command palette and search;
 - jobs/diagnostics/AI area;
 - status and selection feedback.
@@ -70,9 +71,9 @@ Dialogs may block local interaction flow but never wait synchronously for geomet
 
 ## 5. Structure, history, properties, and diagnostics
 
-- Structure and feature-history views are projections over the same entities/dependencies.
-- Property fields show base/effective values, units, expression source, validation, revision, and editability.
-- Diagnostics link to semantic references and typed repair commands.
+- Structure and model-history views project the same function calls, output bindings, and typed records.
+- Property fields show function inputs, base/effective values, units, expression source, validation, revision, recognition capability, and editability.
+- Diagnostics link to source locations or typed references and repair commands.
 - Jobs expose stage, progress confidence, cancellation, resource contention, and revision.
 - Last-known-good geometry and stale analyses have persistent visual/status markers, not color alone.
 
@@ -96,7 +97,9 @@ User-level settings store theme, shortcuts, layout presets, and device preferenc
 
 ### UI-009 — State classification
 
-Every persisted UI value is classified as user setting, local workspace state, or shared document entity. UI code cannot write an unversioned miscellaneous project-settings blob.
+Every persisted UI value is classified as user setting, local workspace state, or shared project record. UI code cannot write an unversioned miscellaneous project-settings blob.
+
+The default unit profile is a user setting; the project display/input profile is a typed project presentation record; grid visibility and snap preference are local workspace state. Snap-derived geometry is stored only through the resulting engineering command.
 
 ### UI-010 — Observable controls
 
@@ -124,7 +127,7 @@ UI assurance favors semantic and model-level checks:
 - Input dispatch and local state update: p95 below 8 ms.
 - UI-thread frame work: p95 below 8 ms in the reference workspace, leaving render budget.
 - Opening command palette: p95 below 100 ms with the full registered command set.
-- Incremental tree/property updates scale with changed projection nodes, not total document size.
+- Incremental source/tree/property updates scale with changed projection nodes, not total project size.
 - No synchronous UI wait above 50 ms on a worker/database/network operation.
 
 ## 10. Open decisions
@@ -133,8 +136,8 @@ UI assurance favors semantic and model-level checks:
 - **UI-OPEN-002:** Dock/layout library or custom split-panel model.
 - **UI-OPEN-003:** Accessibility baseline and localization milestone.
 - **UI-OPEN-004:** Multi-window/multi-document MVP scope.
-- **UI-OPEN-005:** Search indexing backend and command/document result ranking.
+- **UI-OPEN-005:** Search indexing backend and command/source/project result ranking.
 
 ## 11. Definition of done
 
-The shell is implemented when the reference workflow is keyboard and pointer accessible, descriptor-driven forms use the same commands as other adapters, failure/job states remain inspectable, the complete session is capturable and semantically inspectable, UI-thread guards pass, and supported-platform end-to-end tests meet responsiveness budgets.
+The shell is implemented when the reference workflow is keyboard and pointer accessible, direct source and recognized graphical edits reach the same function graph, failure/job states remain inspectable, the complete session is capturable and semantically inspectable, UI-thread guards pass, and supported-platform end-to-end tests meet responsiveness budgets.

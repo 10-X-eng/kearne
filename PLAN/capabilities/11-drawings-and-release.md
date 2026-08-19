@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Create associative, editable engineering documentation tied to immutable design revisions and versioned standards data. A drawing is a semantic document projection, not a collection of disconnected rendered lines.
+Create associative, editable engineering documentation tied to immutable project revisions and versioned standards data. A drawing is a typed projection of named model outputs and product records, not disconnected rendered lines.
 
 ## 2. Canonical drawing entities
 

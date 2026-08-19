@@ -19,7 +19,7 @@ Reusable test libraries are product infrastructure:
 kearne_testkit
   deterministic IDs/time/randomness
   schema-aware value generators and shrinkers
-  document/revision reference model
+  source/function/project revision reference model
   virtual scheduler and clocks
   fake artifact store, workers, renderer, provider, filesystem
   port conformance suites
@@ -36,7 +36,7 @@ Tests SHOULD enter through domain ports, Engineering API, command logs, or publi
 
 ### TST-002 — Registration implies conformance
 
-Registering a command, entity, feature, worker role, format, plugin, solver, or backend automatically enrolls it in the applicable shared suites. The registry build fails if required generator, schema, effect, migration, or conformance metadata is missing.
+Registering a command, record schema, function contract, graphical operation, worker role, format, plugin, solver, or backend automatically enrolls it in applicable suites. Registration fails if required generators, effects, migrations, or conformance metadata are missing.
 
 ### TST-003 — Scale by parameters
 
@@ -50,11 +50,11 @@ A port publishes one behavioral suite run against all implementations: memory an
 
 ### Property-based tests
 
-Schema-aware generators create valid and targeted-invalid IDs, quantities, expressions, entities, commands, graphs, sketches, features, configurations, and protocols. Shrinkers retain semantic validity while reducing failures to a useful reproducer.
+Schema-aware generators create valid and targeted-invalid IDs, quantities, expressions, source modules, functions, calls, records, commands, graphs, sketches, configurations, and protocols. Shrinkers retain required structure while reducing failures to a useful reproducer.
 
 ### Model-based state machines
 
-A deliberately simple reference model interprets command sequences for documents, transactions, revisions, undo/redo, persistence, jobs, permissions, merge, and collaboration. The production system is compared after generated transitions and fault points.
+A deliberately simple reference model interprets source and record commands, transactions, revisions, undo/redo, persistence, jobs, permissions, merge, and collaboration. The production system is compared after generated transitions and fault points.
 
 ### Metamorphic tests
 
@@ -65,7 +65,7 @@ When exact output is unavailable or inappropriate, verify relations:
 - extrude volume relates to profile area and distance;
 - independent graph edits do not evaluate unrelated nodes;
 - mesh refinement follows declared convergence behavior;
-- serialization/reordering does not change semantic outcome;
+- serialization/reordering does not change declared outcome;
 - branch merge combines independent changes regardless of storage order.
 
 ### Fuzzing
@@ -74,7 +74,7 @@ Continuously fuzz untrusted byte and message boundaries: project headers/chunks,
 
 ### Differential tests
 
-Use an independent implementation or mathematically equivalent construction where it adds evidence: alternate solver/backend, analytic formula, import/export round trip, reference-model reducer, or distinct feature construction. Agreement is tolerance- and capability-aware; shared-library behavior is not treated as independent proof.
+Use an independent implementation or mathematically equivalent construction where it adds evidence: alternate solver/backend, analytic formula, import/export round trip, reference-model reducer, or distinct build123d construction. Agreement is tolerance- and capability-aware; shared-library behavior is not independent proof.
 
 ### Deterministic replay
 
@@ -109,11 +109,11 @@ An adapter claiming a command subset runs the same scenario semantics. Adapter-s
 
 ### Document and history
 
-Generated state machines check immutability, reference/ownership invariants, atomic transactions, idempotency, undo/redo divergence, merge, save/reload, checkpoint, migration, and unknown-payload preservation.
+Generated state machines check source-tree and record immutability, function/reference/ownership invariants, atomic transactions, idempotency, undo/redo divergence, merge, save/reload, checkpoint, migration, and unknown-source/payload preservation.
 
 ### Geometry and topology
 
-Feature descriptors provide valid/invalid domains, expected dimensionality/body rules, analytic/metamorphic relations, topology constructors, and edit matrices. Oracles check shape validity, finite bounds, mass/property relations, ancestry, and honest ambiguity. Exact BREP bytes are diagnostic only.
+Function and graphical-operation descriptors provide valid/invalid domains, output/body rules, analytic/metamorphic relations, topology labels, and edit matrices. Suites also generate valid unrecognized algebra, builder, and mixed-mode source. Oracles check shape validity, finite bounds, mass/property relations, ancestry, and honest ambiguity. Exact BREP bytes are diagnostic only.
 
 ### Solvers and simulation
 
@@ -217,7 +217,7 @@ Adding a subsystem implementation should mostly add generators and adapter-speci
 
 ### TST-011 — Hierarchical composition
 
-Small value generators compose into entities, snapshots, command sequences, feature graphs, assemblies, and collaborative histories. Shrinkers follow the same hierarchy. This keeps failures tractable as system size grows.
+Small value generators compose into source modules, functions, calls, records, snapshots, command sequences, assemblies, and collaborative histories. Shrinkers follow the same hierarchy. This keeps failures tractable as system size grows.
 
 ### TST-012 — Reference models stay simpler
 
@@ -231,9 +231,9 @@ A public extension point is incomplete without its conformance kit. New implemen
 
 Manual testing is reserved for exploration, domain judgment, and visual review. A discovered failure is captured as a replayable seed, minimized scenario, generator class, state transition, contract, or external fixture. Teams MUST NOT maintain hand-rewritten step lists as the primary regression suite when the same behavior can be generated or expressed through a stable public contract.
 
-### TST-015 — Change the model, not every test
+### TST-015 — Change the contract, not every test
 
-When behavior changes intentionally, update the owning schema, descriptor, reference model, generator, or contract once and regenerate its enrolled cases. A change that requires unrelated tests to copy new setup or expected values exposes a missing testkit abstraction and blocks feature expansion until corrected.
+When behavior changes intentionally, update the owning schema, descriptor, reference model, generator, or contract once and regenerate enrolled cases. A change that makes unrelated tests copy setup or expected values exposes a missing testkit abstraction and blocks expansion until corrected.
 
 ### TST-016 — Desktop work produces observable evidence
 
@@ -245,7 +245,7 @@ Every desktop scenario uses the Observation API for launch, semantic actions, ev
 - Requiring test execution order or shared mutable project state.
 - Asserting localized error prose instead of diagnostic code/parameters.
 - Mocking a third-party result and claiming adapter correctness without integration/conformance evidence.
-- One screenshot per UI state or exact BREP bytes per feature case.
+- One screenshot per UI state or exact BREP bytes per function case.
 - Exposing private methods solely for tests when the public invariant is testable.
 - Broad “end-to-end” tests with no observable intermediate contract or fault localization.
 - Copying a contract suite into each adapter.
@@ -255,4 +255,4 @@ Every desktop scenario uses the Observation API for launch, semantic actions, ev
 
 ## 12. Definition of done
 
-The assurance foundation is implemented when a new sample entity, command, feature, persistence backend, worker transport, and UI/Python adapter each enroll through registries and shared suites; generated failures replay and shrink; suite profiles run in CI; and quality reporting is based on requirement/contract/state coverage rather than test count.
+The assurance foundation is implemented when a sample source/function contract, record schema, command, persistence backend, worker transport, and UI/Python adapter each enroll through registries and shared suites; generated failures replay and shrink; suite profiles run in CI; and quality reporting uses requirement, contract, and state coverage rather than test count.

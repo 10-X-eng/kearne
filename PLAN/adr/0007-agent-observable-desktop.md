@@ -24,4 +24,4 @@ UI infrastructure precedes feature breadth. Controls need stable semantic IDs an
 
 ## Evidence
 
-SPIKE-011 must prove complete Kearne-session capture and semantic correlation on the selected Windows and Linux display stacks before desktop feature breadth.
+TECH-011 must prove complete Kearne-session capture and semantic correlation on the selected Windows and Linux display stacks before desktop feature breadth.

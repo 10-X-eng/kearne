@@ -1,241 +1,200 @@
-# Semantic Document Model
+# Project and Function Model
 
 - **Status:** Proposed
 - **Requirement prefix:** `DOC`
-- **Depends on:** [System architecture](../01-system-architecture.md), [glossary](../GLOSSARY.md)
-- **Unblocks:** commands, evaluation, persistence, every modeling capability
+- **Depends on:** [system architecture](../01-system-architecture.md), [ADR-0009](../adr/0009-native-build123d-function-graph.md), [glossary](../GLOSSARY.md)
+- **Unblocks:** commands, evaluation, persistence, modeling, product structure
 
 ## 1. Purpose
 
-Define the smallest durable semantic model capable of supporting parametric parts now and assemblies, configurations, simulation, drawings, branching, and collaboration later without changing identity or ownership rules.
+Define one immutable project model in which native build123d functions are part geometry and typed records carry engineering semantics build123d does not define.
 
-The document stores engineering intent. It does not store GUI models, worker state, live kernel objects, or implicit relationships discoverable only by running code.
-
-## 2. Canonical aggregate
-
-An immutable snapshot contains:
+## 2. Project snapshot
 
 ```text
-DocumentSnapshot
-  document_id: DocumentId
+ProjectSnapshot
+  project_id: ProjectId
   revision_id: RevisionId
-  root_id: EntityId<DocumentRoot>
-  entities: PersistentMap<EntityId, EntityRecord>
-  source_artifacts: PersistentMap<ArtifactId, ArtifactMetadata>
+  root_tree: ContentTreeId
+  records: PersistentMap<RecordId, EngineeringRecord>
+  function_contracts: PersistentMap<ModelFunctionId, ModelFunctionContract>
+  calls: PersistentMap<ModelCallId, ModelCall>
+  artifacts: PersistentMap<ArtifactId, ArtifactMetadata>
   schema_set: SchemaSetId
 ```
 
-The following are derived and MUST NOT be treated as canonical fields:
+The content tree maps stable project paths to content-addressed source blobs. Native Python/build123d source in that tree is canonical part intent, not a cache.
 
-- reverse-reference index;
-- dependency adjacency lists;
-- tree/timeline projections;
-- evaluation state and dirty flags;
-- BREP and render meshes produced by native features;
-- selection and expanded/collapsed UI state;
-- search index and mass-property index.
+Derived state includes parsed syntax trees, recognition metadata, reverse-reference indices, dependency adjacency, UI trees and timelines, dirty flags, BREP, meshes, mass properties, solver results, selections, and presentation state. A persisted derived value is discardable and names its source revision and evaluator digest.
 
-Persisting a derived index for load performance is allowed only when it carries a source revision/digest and can be discarded after validation failure.
+### DOC-001 — Immutable publication
 
-## 3. Entity record
+Published snapshots, records, contracts, calls, and tree entries never mutate. A transaction creates replacements in a new revision. Older revisions retain their prior bytes.
 
-Every canonical entity has an envelope:
+### DOC-002 — Stable typed identity
+
+Record, function, call, output, and occurrence IDs are globally collision-resistant, independent of names, paths, source spans, and collection positions, and never reused within a project. Public code uses typed ID wrappers.
+
+### DOC-003 — Names and paths are not identity
+
+Display names and module paths may change. Moving a module or renaming a function preserves identity through its contract mutation. Source spans, line numbers, tree indices, and Python object addresses are never durable identity.
+
+### DOC-004 — Unknown data preservation
+
+Unknown record schemas, source types, contracts, and bindings remain byte-preserved and receive an unavailable-evaluator diagnostic. Load and migration MUST NOT rewrite payloads they do not own.
+
+## 3. Model functions
 
 ```text
-EntityRecord
-  id: EntityId<T>
+ModelFunctionContract
+  id: ModelFunctionId
+  module: ProjectPath
+  qualified_name: string
+  inputs: map<InputKey, InputDeclaration>
+  outputs: map<OutputKey, OutputDeclaration>
+  environment: EnvironmentRef
+  capability_profile: CapabilityProfileRef
+  topology_mode: Labeled | BodyOnly | Dumb
+
+ModelCall
+  id: ModelCallId
+  function: ModelFunctionId
+  input_bindings: map<InputKey, Value | ParameterRef | NamedOutputRef>
+  configuration_scope: ConfigurationScope
+
+NamedOutputRef
+  call_id: ModelCallId
+  output_key: OutputKey
+```
+
+### DOC-005 — Source and contract separation
+
+Source contains implementation. The contract contains stable identity and integration metadata. It may be declared by manifest or optional decorator, but Kearne can inspect it without running project code. A contract can outlive a temporarily invalid source edit so the failed revision remains repairable.
+
+### DOC-006 — Unrestricted implementation
+
+Kearne assigns semantics only to the function boundary. Helpers, control flow, classes, and build123d algebra or builder constructs inside the body are source implementation details.
+
+### DOC-007 — Explicit inputs and outputs
+
+Every call input is bound to a typed literal, parameter, or named upstream output. Every published result occupies a declared named slot. Positional return order, module globals, and display names are not output identity.
+
+### DOC-008 — Function graph
+
+Calls and bindings form the explicit geometry dependency graph. Internal calls within one module are covered by source digests but are not separate graph nodes unless declared as model functions. Cycles in the published graph are invalid.
+
+### DOC-009 — Granularity is not prescribed
+
+A GUI may generate one function per sketch or operation. AI or a user may define a whole component in one function. Both use the same contract, evaluation, history, and output-reference rules.
+
+### DOC-010 — Recognition is derived
+
+Classification such as sketch, extrude, fillet, or generated pattern is a source-digest-tagged projection. It may enable a specialized editor but never becomes a parallel geometry definition.
+
+### DOC-011 — Topology capability is explicit
+
+Named subshape references require published labels and ancestry that pass validation. Body-only or dumb outputs remain usable, but Kearne does not invent stable face or edge identity for them.
+
+## 4. Engineering records
+
+```text
+EngineeringRecord
+  id: RecordId<T>
   kind: stable schema-qualified name
   schema_version: positive integer
-  owner: optional EntityId
+  owner: optional RecordId
   lifecycle: Active | Suppressed
-  payload: typed versioned value or preserved opaque bytes
+  payload: typed value or preserved opaque bytes
   provenance: CreationProvenance
 ```
 
-### DOC-001 — Stable typed identity
-
-Entity IDs MUST be globally collision-resistant, independent of display names and container position, and never reused within a project. Code MUST use typed ID wrappers so a `BodyId` cannot be passed as a `SketchId` without explicit checked conversion.
-
-UUIDv7 is the proposed external representation because it is portable, sortable by creation time, and branch-safe. Persistence MUST NOT rely on timestamp ordering for correctness.
-
-### DOC-002 — Immutable record publication
-
-An entity record published in a snapshot MUST NOT be modified. Editing replaces the record for the same ID in a new snapshot. Older revisions continue to observe the old value.
-
-### DOC-003 — Explicit ownership
-
-Every owned entity has exactly one canonical owner. Ownership controls lifetime and navigation, not computation order. Cross-owner dependencies are explicit semantic references.
-
-### DOC-004 — Names are not identity
-
-Display names may be duplicated and changed. Expressions that expose symbolic names MUST resolve them to IDs during validation and preserve enough source text for editing.
-
-### DOC-005 — Unknown entity preservation
-
-If an entity kind or schema version cannot be evaluated, its envelope and payload MUST be preserved byte-for-byte where the serialization format permits. Known references to it remain intact and receive `UnavailableEvaluator` diagnostics.
-
-## 4. Core entity kinds
-
-The initial schema reserves these stable concepts:
+Initial record kinds are:
 
 ```text
-DocumentRoot
-ComponentDefinition
+ProjectRoot | ComponentDefinition
 DatumFrame | DatumPlane | DatumAxis | DatumPoint
-Parameter
-Sketch
-Body
-Feature
-ImportedSource
-MaterialAssignment
-Requirement
+Parameter | MaterialAssignment | Requirement | ImportedSource
 ```
 
-Later schemas add without replacing the identity model:
+Later schemas add:
 
 ```text
 Assembly | ComponentInstance | Joint
 ConfigurationDefinition | ConfigurationInput
 SimulationStudy | Load | Fixture | Contact
 Drawing | Sheet | DrawingView | Annotation
-Comment | ReleaseRecord
+BOMDefinition | Comment | ReleaseRecord
 ```
 
-### DOC-006 — Component and body separation
+### DOC-012 — No duplicate geometry model
 
-A component definition owns zero or more bodies, datums, sketches, and features. A body is not a component and an assembly occurrence is not a copy of either. The MVP UI may expose one component, but persistence uses this full distinction from version 1.
+Component records reference named model-function outputs. They MUST NOT contain a second sketch/feature/body parameter graph for the same source-defined geometry.
 
-### DOC-007 — Feature output slots
+### DOC-013 — Ownership and dependency differ
 
-A feature descriptor declares stable, named output slots. A result reference is:
+Every owned record has one owner. Ownership controls lifetime and navigation. Cross-owner computation uses explicit typed references. Deleting an owner removes only fields declared as owned; other downstream records remain with broken-reference diagnostics.
 
-```text
-ResultRef
-  feature_id
-  output_key
-```
+### DOC-014 — Component and occurrence separation
 
-Output keys are schema-defined identifiers such as `body`, `surface`, or `profile`, never vector offsets. A feature changing the number of dynamic outputs uses persistent element keys defined by that feature type.
+A component definition owns product semantics and binds model outputs. An assembly occurrence references a component and configuration; it is not a copy of geometry or source.
 
-### DOC-008 — Bodies represent design continuity
-
-A body entity provides stable product identity and references the feature result currently defining its tip. Features may create, consume, split, or combine bodies through explicit inputs and output bindings. The feature-history display order is a projection, not the source of dependency truth.
-
-## 5. Semantic references
-
-All persisted relationships use a tagged union:
+## 5. References and coordinate context
 
 ```text
-SemanticRef =
-    EntityRef<T>
+ProjectRef =
+    RecordRef<T>
   | ParameterRef
-  | ResultRef
+  | NamedOutputRef
   | TopologyRef
-  | ExternalRef
+  | ExternalRevisionRef
 ```
 
-### DOC-009 — No positional references
+### DOC-015 — No positional references
 
-Canonical state MUST NOT contain raw pointers, collection offsets, render IDs, OCCT subshape indices, database row IDs, or user-visible names as the sole reference identity.
+Canonical state contains no raw pointers, collection offsets, render IDs, OCCT subshape indices, database row IDs, line numbers, or user-visible names as sole identity.
 
-### DOC-010 — Reference policy declaration
+### DOC-016 — Declared reference policy
 
-Every schema field containing a reference declares:
+Every reference field declares allowed targets, cardinality, ownership or dependency meaning, missing/suppressed behavior, external-reference policy, and visible rebinding behavior.
 
-- allowed target kinds;
-- required or optional;
-- ownership versus dependency semantics;
-- behavior when missing or suppressed;
-- whether an external document is allowed;
-- whether reference rebinding is user-visible.
+### DOC-017 — Coordinate and instance context
 
-### DOC-011 — Deletion preserves evidence
+Geometric values name a right-handed coordinate context and documented transform convention. Geometry in an occurrence is addressed by `InstancePath` plus definition-owned output or topology reference, never by transform or tree position.
 
-Deleting an entity removes it from the new snapshot but records a typed `DeleteEntity` mutation containing its prior digest. References are not silently cascaded unless the command schema explicitly owns dependent children. Non-owned downstream entities remain and report broken references.
+## 6. Parameters and configurations
 
-## 6. Datums and coordinate spaces
+Parameters use the shared dimensional value model. Accepted expressions retain editable source and resolved ID dependencies. Evaluation and queries carry an explicit `ConfigurationContext`; no process-global active configuration affects durable results.
 
-### DOC-012 — Explicit coordinate context
+## 7. Validation
 
-All geometric values are interpreted in a declared coordinate context. Every component definition owns an immutable origin frame and standard datum planes/axes with stable IDs.
+Validation is layered:
 
-### DOC-013 — Transform convention
+1. tree paths, content digests, encoding, and size;
+2. record and contract schemas;
+3. typed references, ownership, and function-call bindings;
+4. acyclic published dependencies;
+5. environment and capability declarations;
+6. domain rules.
 
-Kearne uses right-handed coordinate systems and one documented matrix/vector convention at all public boundaries. Units are not embedded ambiguously in transforms; translation components are dimensional quantities on semantic APIs and normalized SI values on the canonical wire form.
+Source parsing and evaluation are separate. Invalid Python can be retained as a failed revision, but it cannot publish new function outputs. Corrupt or structurally unsafe project data is quarantined before live use.
 
-### DOC-014 — Instance paths
+## 8. Queries and projections
 
-Definition-owned geometry in an assembly occurrence is addressed by an `InstancePath` plus the definition-owned semantic reference. Occurrence identity MUST NOT be synthesized from transforms or tree indices.
+Queries consume an immutable snapshot and return the observed revision. Reusable projections include content tree, function graph, recognized feature history, ownership tree, incoming references, searchable properties, and evaluation health. Every projection is reproducible from canonical state plus declared evaluator versions.
 
-## 7. Parameters and configurations
+## 9. Verification
 
-Parameters are entities or feature-owned typed fields according to their need for independent reference. Both use the shared dimensional value model.
+One generated state machine creates, replaces, moves, renames, binds, suppresses, deletes, branches, merges, saves, and reloads source and records. Properties include immutable ancestors, stable identity across moves, no dangling silent cascades, deterministic dependency invalidation, lossless unknown-data round-trip, parse-without-execution, and cache deletion without loss of intent.
 
-### DOC-015 — Resolved dependencies
+The same generators run at small pull-request and large nightly sizes. Adding a function or record schema registers generators and invariants; it does not require a fixed example per entity count.
 
-An accepted expression stores editable source plus a resolved, typed dependency representation. Evaluation never searches by display name.
+## 10. Open decisions
 
-### DOC-016 — Configuration context is explicit
+- **DOC-OPEN-001:** External ID representation and content-tree encoding.
+- **DOC-OPEN-002:** Manifest/decorator precedence and conflict diagnostics.
+- **DOC-OPEN-003:** Model-call representation for multi-body and variable-cardinality outputs.
+- **DOC-OPEN-004:** Opaque payload encoding and persistent-map implementation.
 
-Evaluation and query APIs carry a `ConfigurationContext`. The MVP uses a default context; it MUST NOT rely on process-global “active configuration” state.
+## 11. Definition of done
 
-## 8. Validation
-
-Document validation has reusable levels:
-
-1. **Structural:** envelope, schema, typed ID, required fields.
-2. **Referential:** targets exist and have allowed kinds.
-3. **Ownership:** no ownership cycles, one owner, permitted containment.
-4. **Dependency:** declared graph is acyclic where required.
-5. **Domain:** feature- or entity-specific semantic rules.
-
-### DOC-017 — Central invariant registry
-
-Schema-independent invariants MUST be implemented once in the document library. Entity descriptors contribute domain validators without bypassing structural validation.
-
-### DOC-018 — Load quarantine
-
-A structurally unsafe or corrupt record MUST NOT become a live mutable entity. The loader reports it through a recoverable quarantine representation and retains original project bytes until the user chooses recovery or export.
-
-## 9. Queries and projections
-
-Queries consume an explicit immutable snapshot and return values tagged with its revision. Common reusable projections include:
-
-- ownership tree;
-- feature dependency graph;
-- incoming-reference index;
-- searchable property index;
-- structure view and feature-history view;
-- evaluation-health summary.
-
-Projections may be incrementally maintained from mutation batches but MUST be reproducible from the snapshot.
-
-## 10. Verification strategy
-
-### Contract properties
-
-- Serialize/deserialize preserves semantic equality for every registered entity schema.
-- Replacing one record cannot modify any older snapshot.
-- Generated valid ownership forests pass validation; generated cycles fail with stable diagnostics.
-- Generated deletion leaves non-owned downstream records present and discoverably broken.
-- Random display-name changes do not change resolved identity.
-- Unknown payload round-trips without loss.
-
-### Model-based state machine
-
-Generate create, replace, suppress, unsuppress, delete, rename, reference, transaction rollback, and snapshot/reload actions. Compare the production document against a deliberately simple reference model.
-
-### DOC-019 — Scale independence
-
-The same generator and invariant suite MUST run at small PR sizes and larger nightly sizes. Test logic MUST NOT enumerate a separate case per entity count or feature type.
-
-## 11. Open decisions
-
-- **DOC-OPEN-001:** UUIDv7 library and byte-order representation.
-- **DOC-OPEN-002:** Persistent map implementation and memory-sharing measurements.
-- **DOC-OPEN-003:** Exact feature/body binding schema for split and merge operations; resolve before boolean implementation.
-- **DOC-OPEN-004:** Opaque unknown-payload encoding in the selected file format.
-
-## 12. Definition of done
-
-The model is implemented when registered schemas round-trip, the generated state machine passes at configured scales, architecture tests prove domain independence, and a future assembly/configuration schema can be expressed without changing identity or ownership fundamentals.
+The model is implemented when source, contracts, calls, and records round-trip; generated histories preserve identity and unknown data; invalid source cannot publish outputs; cache deletion preserves intent; and assemblies, configurations, studies, and drawings reference geometry without duplicating its definition.

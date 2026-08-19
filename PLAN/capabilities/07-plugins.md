@@ -3,17 +3,18 @@
 - **Status:** Proposed; post-MVP implementation
 - **Requirement prefix:** `PLG`
 - **Depends on:** [Engineering API](../foundations/08-engineering-api.md), [processes](../foundations/07-processes-and-ipc.md), [security](../delivery/06-security-threat-model.md)
-- **Unblocks:** third-party features, solvers, formats, tools, and UI extensions
+- **Unblocks:** third-party source helpers, graphical operations, solvers, formats, tools, and UI extensions
 
 ## 1. Purpose
 
-Extend Kearne without making document safety, API compatibility, determinism, or application stability depend on an unrestricted in-process binary ABI.
+Extend Kearne without making project safety, API compatibility, determinism, or application stability depend on an unrestricted in-process binary ABI.
 
 ## 2. Plugin classes
 
 ```text
 Command/query plugin
-Feature evaluator plugin
+Model-function environment/helper package
+Graphical-operation tooling
 Import/export adapter
 Analysis/simulation backend
 Material/standards data pack
@@ -39,7 +40,7 @@ globally unique plugin ID and version
 publisher/signature identity
 minimum/maximum Kearne API and schema versions
 entry points and worker roles
-entity/feature/command schemas
+record/function-contract/operation/command schemas
 requested permissions
 resource budgets
 dependencies and platform artifacts
@@ -54,7 +55,7 @@ Filesystem, network, project read/write, geometry evaluation, Python, AI, UI, ex
 
 ### PLG-004 — Stable schema ownership
 
-Plugin-defined entity and feature kinds are namespace-qualified by immutable plugin ID. Removing or renaming the plugin cannot collide with another plugin's schemas.
+Plugin-defined record, function-contract, and graphical-operation kinds are namespace-qualified by immutable plugin ID. Removing or renaming the plugin cannot collide with another plugin's schemas.
 
 ## 4. Lifecycle
 
@@ -62,7 +63,7 @@ Install, enable, upgrade, downgrade, disable, and uninstall are explicit operati
 
 ### PLG-005 — Missing plugin preservation
 
-Documents retain opaque plugin entity payload, source artifacts, requirements, and last-known-good derived artifacts when the plugin is missing. Dependent features report `UnavailableEvaluator`; Kearne MUST NOT drop unknown fields on save.
+Projects retain source, opaque plugin records/contracts, requirements, and last-known-good derived artifacts when the plugin is missing. Dependent function calls and records report `UnavailableEvaluator`; Kearne MUST NOT drop unknown fields on save.
 
 ### PLG-006 — Upgrade migration
 
@@ -74,7 +75,7 @@ A project's evaluated plugin results record the exact compatibility fingerprint.
 
 ## 5. Declarative extension points
 
-To minimize duplicated code, command/feature descriptors can supply property-editor fields, command-palette metadata, icons, documentation, AI tool metadata, and generic inspector views. Complex UI contributions use a constrained declarative surface; arbitrary QML injection into the main engine is not the default.
+To minimize duplicated code, command, function-contract, and graphical-operation descriptors can supply property fields, command-palette metadata, icons, documentation, AI tool metadata, and generic inspectors. Complex UI contributions use a constrained declarative surface; arbitrary QML injection into the main engine is not the default.
 
 Descriptors reduce repeated adapter code but do not replace domain validators or specialized interaction tools.
 
@@ -110,4 +111,4 @@ Kearne CI runs representative plugins built against oldest-supported SDK version
 
 ## 9. Definition of done
 
-The plugin system is implemented when an independently built sample for each supported class passes the SDK conformance suite, missing plugins never lose document data, permission faults are contained, and no plugin requires private headers or QML-to-core backdoors.
+The plugin system is implemented when an independently built sample for each supported class passes the SDK conformance suite, missing plugins never lose project data, permission faults are contained, and no plugin requires private headers or QML-to-core backdoors.

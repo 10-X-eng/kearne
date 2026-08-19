@@ -13,15 +13,16 @@ The original `SPEC.md` MVP feature list remains the target envelope. This plan i
 
 ## 2. Permanent domain scope
 
-The persisted model from its first version supports typed entities for:
+The persisted model from its first version supports:
 
-- project and document metadata;
+- a content-addressed native source tree;
+- model-function contracts, calls, bindings, and named outputs;
+- project metadata;
 - component definitions;
 - datum frames, planes, axes, and points;
-- sketches and sketch entities;
-- bodies and features;
 - parameters and dimensional expressions;
-- source and derived artifacts;
+- typed assembly/simulation/drawing schema reservations;
+- irreplaceable and derived artifacts;
 - provenance and structured diagnostics;
 - immutable revisions and workspace heads.
 
@@ -31,7 +32,7 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ### Required behavior
 
-- Headless creation, mutation, query, save, reopen, and replay of an empty semantic document.
+- Headless creation, mutation, query, save, reopen, and replay of an empty project content tree and typed graph.
 - Immutable revisions and atomic transactions.
 - Stable typed IDs and schema versions.
 - Command registry exposed through an in-process API and CLI/replay adapter.
@@ -41,7 +42,7 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ### Acceptance
 
-`MVP-A-001`: A generated sequence of at least 10,000 valid and invalid metadata/entity commands can be applied, undone/redone, saved/reloaded at generated checkpoints, and replayed to an equivalent semantic snapshot without an invariant violation.
+`MVP-A-001`: A generated sequence of at least 10,000 valid and invalid source, function, binding, and record commands can be applied, undone/redone, saved/reloaded at generated checkpoints, and replayed to an identical project root without an invariant violation.
 
 `MVP-A-002`: Killing the application at injected persistence boundaries yields either the previous durable revision or the next complete durable revision, never a hybrid.
 
@@ -57,6 +58,9 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ### Modeling scope
 
+- native build123d source/function graph and isolated pinned worker;
+- GUI-generated sketch/profile and extrusion functions;
+- direct source inspection and replacement;
 - extrude as new body, additive, and subtractive operation;
 - one-sided and symmetric distance extents;
 - body, face, edge, and feature selection;
@@ -66,7 +70,7 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ### Acceptance
 
-`MVP-B-001`: The reference mounting-plate workflow through sketch and extrusion passes through headless commands and GUI.
+`MVP-B-001`: The reference mounting plate can be created graphically as native build123d functions, inspected as source, edited through source, and evaluated through the same headless worker path.
 
 `MVP-B-002`: Randomly generated solvable sketches remain solver-valid after rigid transformation and unit-preserving serialization round trips.
 
@@ -76,7 +80,7 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ## 5. Gate C — Downstream references and useful modeling
 
-### Required features
+### Required graphical operations
 
 - revolve;
 - boolean union, subtract, and intersection;
@@ -90,9 +94,9 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 `MVP-C-001`: A downstream hole, pattern, and fillet retains or honestly reports its reference after each mutation in the topology edit matrix.
 
-`MVP-C-002`: Failed fillet evaluation retains semantic parameters, last-known-good upstream geometry, and an actionable structured diagnostic.
+`MVP-C-002`: Failed fillet evaluation retains source, typed inputs, last-known-good upstream geometry, and an actionable source-linked diagnostic.
 
-`MVP-C-003`: A generated feature graph is recomputed in dependency order; unrelated subgraphs are not evaluated.
+`MVP-C-003`: A generated function-call graph is recomputed in dependency order; unrelated subgraphs are not evaluated.
 
 ## 6. Gate D — Interchange and automation
 
@@ -100,23 +104,21 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 - STEP import as retained source artifact plus imported body;
 - STEP export and STL export;
-- isolated Python worker;
-- pinned build123d environment and procedural feature;
-- typed Python SDK for the supported command/query subset;
-- AI read/query tools and the supported modeling commands;
+- typed Python SDK for source/function and engineering commands;
+- AI project/source queries and native source/function transactions;
 - pinned Codex app-server harness and generated protocol conformance;
 - preview/confirm for multi-command AI transactions;
 - provenance for human, Python, replay, plugin, and AI actors.
 
 ### Acceptance
 
-`MVP-D-001`: The reference part can be constructed through GUI, Python, and typed AI commands and results in semantically equivalent entities modulo allocated IDs and provenance.
+`MVP-D-001`: The GUI can generate the reference part as native source; AI can inspect and refactor that source; both revisions evaluate equivalent declared outputs while preserving source history and provenance.
 
 `MVP-D-002`: Terminating a Python or geometry worker cannot terminate the main process or corrupt the project.
 
 `MVP-D-003`: Imported source bytes remain recoverable even when the derived BREP cache is removed.
 
-`MVP-D-004`: A Codex app-server turn receives the current Kearne-session capture, inspects and modifies the reference part only through granted Kearne tools, and verifies the committed revision through typed queries.
+`MVP-D-004`: A Codex app-server turn receives the current Kearne-session capture, inspects and modifies native model source only through granted Kearne tools, and verifies the committed revision and outputs through typed queries.
 
 ## 7. Explicitly excluded
 
@@ -135,15 +137,15 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ### MVP-001 — No temporary architecture
 
-MVP stages MAY omit capabilities but MUST NOT introduce alternate document, command, identity, units, or persistence models intended to be replaced later.
+MVP stages MAY omit capabilities but MUST NOT introduce alternate geometry, command, identity, units, or persistence models intended to be replaced later.
 
-### MVP-002 — Feature registration
+### MVP-002 — Operation tooling registration
 
-Every supported native feature uses the same descriptor, validation, evaluation, diagnostics, serialization, and topology-publication contracts intended for later feature types.
+Every graphically supported operation uses the same source generator/recognizer, function evaluation, diagnostics, and topology-publication contracts intended for later operations. Valid source does not require graphical registration.
 
 ### MVP-003 — Test scale
 
-Each gate extends generators, state machines, and conformance suites. A feature is not complete if it can only be verified by a fixed hand-authored example.
+Each gate extends generators, state machines, and conformance suites. An operation is not graphically supported if it can only be verified by a fixed hand-authored example.
 
 ### MVP-004 — No hidden synchronous fallback
 

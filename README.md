@@ -1,12 +1,18 @@
 # Kearne
 
-Kearne is a new local-first, AI-native mechanical CAD system for parametric and direct modeling, assemblies, simulation, versioned design, drawings, and automation. It is not a FreeCAD rewrite. Qt/QML provides the Windows and Linux desktop shell; C++ and OCCT provide the engineering core; Python and build123d provide procedural modeling; Codex app-server provides the AI harness without owning CAD state.
+Kearne is a new local-first, AI-native mechanical CAD system for parametric and direct modeling, assemblies, simulation, versioned design, drawings, and automation. It is not a FreeCAD rewrite. Native Python/build123d functions are canonical part geometry; C++ owns the project, product semantics, jobs, persistence, and Qt/QML desktop; OCCT evaluates geometry; Codex app-server supplies the AI harness without owning project state.
 
-The project is in architecture definition. Start with:
+The project is building the production desktop frontend first. Start with:
 
 1. [Product and architecture specification](SPEC.md)
 2. [Engineering plan and document map](PLAN/README.md)
 
-Implementation begins with the [risk-retiring spikes](spikes/README.md) and stage gates in the engineering plan. Unresolved decisions marked `OPEN` must be settled before they affect persisted data or public interfaces.
+Production code lives outside [`prototype/`](prototype/README.md). Prototypes are permitted only for unresolved feasibility risks and are excluded from the product build. The [implementation sequence](PLAN/delivery/01-implementation-sequence.md) defines frontend, backend, and release gates.
 
 Desktop work is accepted only when the agent harness can launch the build, inspect semantic UI state, and return a lossless capture of the complete visible Kearne session.
+
+```sh
+cmake --preset dev
+cmake --build --preset dev
+ctest --preset dev
+```

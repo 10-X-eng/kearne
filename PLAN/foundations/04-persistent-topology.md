@@ -1,9 +1,9 @@
 # Persistent Topology Identity
 
-- **Status:** Proposed; high-risk spike required
+- **Status:** Proposed; high-risk prototype required
 - **Requirement prefix:** `TOP`
 - **Depends on:** [Document model](01-document-model.md), [evaluation](03-evaluation-and-jobs.md), [numerics](05-units-expressions-numerics.md)
-- **Unblocks:** downstream features, drawings, comments, simulation, semantic selection
+- **Unblocks:** downstream functions, drawings, comments, simulation, semantic selection
 
 ## 1. Purpose
 
@@ -15,14 +15,14 @@ Persistent topology is a provenance and resolution system, not one clever geomet
 
 ```text
 TopologyRef
-  producer: ResultRef
+  producer: NamedOutputRef
   name: TopologyName
   expected_kind: Face | Edge | Vertex
   authored_revision: RevisionId
   authored_signature: optional GeometricSignature
 ```
 
-`TopologyName` is a versioned semantic expression composed from feature-defined constructors:
+`TopologyName` is a versioned label or expression published by the producing function:
 
 ```text
 Cap(Start)
@@ -37,7 +37,7 @@ The serialized representation is structured data, not a localized string.
 
 ### TOP-001 — Producer-defined naming
 
-Every native feature evaluator MUST declare how it names each public output subshape and how upstream names propagate through generated, modified, split, merged, and deleted results.
+Every function claiming labeled topology MUST declare how it names public output subshapes and how upstream labels propagate through generated, modified, split, merged, and deleted results. Functions may instead declare body-only or dumb topology.
 
 ### TOP-002 — No kernel index persistence
 
@@ -68,9 +68,9 @@ The worker also publishes a compact mapping from tessellated primitive ranges to
 
 Resolution uses ordered evidence:
 
-1. **SemanticExact:** the evaluator emitted the requested feature-defined name exactly once.
+1. **SemanticExact:** the evaluator emitted the requested function-published label exactly once.
 2. **OperationHistory:** OCCT operation history maps the prior named subshape to exactly one compatible result.
-3. **StructuredReconciliation:** feature-specific split/merge rules and adjacency produce one result.
+3. **StructuredReconciliation:** producer-specific split/merge rules and adjacency produce one result.
 4. **GeometricMatch:** numerical signature matching produces one candidate separated from the next candidate by configured confidence margins.
 5. **Ambiguous:** multiple candidates remain plausible.
 6. **Broken:** no compatible candidate remains.
@@ -83,9 +83,9 @@ Only levels 1–4 return a resolved subshape. Ambiguous and broken references bl
 
 Resolution returns method, score components, threshold profile, candidate count, and source/target names. UI labels such as “Exact” or “Geometric match” are projections of this evidence.
 
-### TOP-006 — Feature-specific rules precede similarity
+### TOP-006 — Producer rules precede similarity
 
-Generic geometric matching is fallback behavior. A feature with known construction semantics MUST publish those semantics rather than rely on area/centroid comparison.
+Generic geometric matching is fallback behavior. A function claiming labeled topology MUST publish construction semantics rather than rely only on area or centroid comparison.
 
 ## 5. Geometric and adjacency signatures
 
@@ -95,7 +95,7 @@ Signatures may include, with normalized tolerances:
 - analytic surface/curve kind and parameters;
 - measure: area, length;
 - centroid or representative point in producer-local coordinates;
-- orientation relative to feature frame;
+- orientation relative to the producer frame;
 - bounding box;
 - closed/open and periodic properties;
 - adjacent named topology and valence;
@@ -107,19 +107,19 @@ A signature supports reconciliation and diagnostics but is never sufficient iden
 
 ### TOP-008 — Scale-aware tolerances
 
-Comparisons use the document numerical profile and local characteristic size. Fixed global epsilons and exact floating-point equality are prohibited.
+Comparisons use the project numerical profile and local characteristic size. Fixed global epsilons and exact floating-point equality are prohibited.
 
 ## 6. Splits, merges, and disappearance
 
 - A one-to-one modified subshape retains its semantic ancestry.
-- A split emits child names containing stable split keys. Feature-specific geometric ordering is allowed only when invariant under documented transformations and tolerance perturbations.
-- A merge records all source ancestry but has one new output name; references to either source may resolve historically only if the feature contract allows it.
+- A split emits child labels containing stable split keys. Producer-specific geometric ordering is allowed only when invariant under documented transformations and tolerance perturbations.
+- A merge records all source ancestry but has one new output label; references to either source may resolve historically only if the function contract allows it.
 - A deleted subshape resolves `Broken` with deletion provenance.
-- Reappearance after parameter reversal may recover the prior semantic name only from the same feature semantics, not from global nearest matching.
+- Reappearance after parameter reversal may recover the prior label only from the same function's published semantics, not global nearest matching.
 
 ## 7. MVP edit-support matrix
 
-Every feature plan defines a matrix with upstream mutation classes:
+Every labeled function family defines a matrix with upstream mutation classes:
 
 ```text
 parameter magnitude change
@@ -129,7 +129,7 @@ operation direction reversal
 body transform
 pattern count/spacing change
 boolean tool movement
-feature reorder where legal
+function dependency reorder where legal
 suppression/unsuppression
 ```
 
@@ -159,7 +159,7 @@ Natural-language and programmatic selection return sets of `TopologyRef` values 
 
 ## 9. Verification strategy
 
-The topology suite is feature-descriptor driven. Every feature registers:
+The topology suite is producer-contract driven. Every labeled function family registers:
 
 - its name constructors;
 - valid topology invariants;
@@ -170,7 +170,7 @@ The topology suite is feature-descriptor driven. Every feature registers:
 Tests generate source models and edit sequences, then verify:
 
 - guaranteed names resolve to topologically/geometrically compatible results;
-- rigid transforms do not change feature-relative identity;
+- rigid transforms do not change producer-relative identity;
 - serialization and worker-process round trips preserve names;
 - symmetric cases become ambiguous rather than nondeterministic;
 - reordering OCCT exploration results does not change published names;
@@ -179,7 +179,7 @@ Tests generate source models and edit sequences, then verify:
 
 Exact BREP bytes and face counts alone are not valid topology oracles.
 
-## 10. Technical spike exit criteria
+## 10. Technical prototype exit criteria
 
 Before broad modeling work, implement sketch -> extrude -> fillet -> hole and exercise at least these mutations:
 
@@ -190,7 +190,7 @@ Before broad modeling work, implement sketch -> extrude -> fillet -> hole and ex
 - symmetric duplicate faces;
 - save/reload and worker restart.
 
-The spike must publish measured success by edit-matrix cell and record unresolved ambiguities. A demo that works for one hand-built plate is insufficient.
+The prototype must publish measured success by edit-matrix cell and record unresolved ambiguities. A demo that works for one hand-built plate is insufficient.
 
 ## 11. Open decisions
 
@@ -202,4 +202,4 @@ The spike must publish measured success by edit-matrix cell and record unresolve
 
 ## 12. Definition of done
 
-Persistent topology v1 is implemented when each MVP feature publishes a complete contract, generated edit-matrix tests pass on both platforms, ambiguity is deterministic and repairable, and no persisted reference relies on transient OCCT ordering.
+Persistent topology v1 is implemented when each labeled MVP function family publishes a complete contract, generated edit-matrix tests pass on both platforms, body-only functions are not overpromised, ambiguity is deterministic and repairable, and no persisted reference relies on transient OCCT ordering.

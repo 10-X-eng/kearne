@@ -44,11 +44,11 @@ The first collaborative editing model is branch/revision based:
 - fast-forward updates are automatic;
 - independent semantic changes may auto-merge through the normal merge engine;
 - conflicts produce a merge workspace;
-- a server may sequence accepted branch-reference updates but does not use last-writer-wins on document entities.
+- a server may sequence accepted branch-reference updates but does not use last-writer-wins on source, function contracts, or engineering records.
 
 ### COL-004 — No universal CAD CRDT assumption
 
-Kearne does not assume arbitrary feature operations commute. CRDTs may be used for truly commutative ancillary state such as presence or draft text, but parametric document convergence uses revision identity and schema-aware merge unless proven otherwise.
+Kearne does not assume arbitrary source/function changes commute. CRDTs may be used for truly commutative ancillary state such as presence or draft text, but project convergence uses revision identity and source/schema-aware merge unless proven otherwise.
 
 ### COL-005 — Same merge semantics
 

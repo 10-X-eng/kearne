@@ -24,6 +24,8 @@ Approximate reference proportions are 16% left panel, 64% viewport, and 20% righ
 
 ## 3. Visual intent to retain
 
+Kearne's workspace bar contains Model, Sketch, Assemble, Sheet Metal, Simulate, CAM, Drawing, and BOM. History owns checkpoints, branches, comparison, and merge. Agent, Jobs, and Diagnostics are bottom tabs in the right dock. Materials are shared tools; fasteners are assembly tools. These placements follow task scope rather than the reference image.
+
 ### VIS-001 — Viewport dominance
 
 The viewport receives remaining space after bounded side panels. Panels are resizable, collapsible, and persist as user/workspace layout state. They cannot reduce the viewport below its usable minimum without collapsing or overlaying.
@@ -54,9 +56,9 @@ Starting tokens for prototype measurement at 100% scale:
 
 | Region | Initial token | Rule |
 |---|---:|---|
-| Project bar | 44 dp | May integrate with native title bar only after window-management spike |
+| Project bar | 44 dp | May integrate with native title bar only after window-management prototype |
 | Workspace navigation | 36 dp | Horizontal overflow or compact switcher at narrow widths |
-| Context command strip | 72 dp | Grouped commands; overflow retains keyboard/search access |
+| Context command strip | 56 dp compact | White grouped icon-and-label actions; overflow retains keyboard/search access |
 | Status strip | 28 dp | Summaries only; details open inspectable panels |
 | Left panel | 256 dp default | 200–420 dp, collapsible |
 | Right panel | 336 dp default | 300–480 dp, collapsible or overlay |
@@ -143,7 +145,7 @@ Icons share a vector grid, stroke/fill policy, optical sizing, semantic naming, 
 | Pixel-identical Windows/Linux rendering | Not achievable or desirable | Preserve hierarchy and tokens; font hinting, native chrome, and GPU output may differ |
 | `⌘K` shortcut | Incompatible with target platforms as shown | Display the platform binding, initially `Ctrl+K` on Windows/Linux |
 | Avatars and `Share` | Not available in local MVP | Show only when collaboration/account capability is configured |
-| `main`, `v3`, relative edit time, rollback | Partly available by phase | Bind to revision/branch contracts; distinguish revision undo from feature/body-tip editing |
+| `main`, `v3`, relative edit time, rollback | Partly available by phase | Bind to revision/branch contracts; distinguish revision undo from source/function dependency editing |
 | All workspaces and advanced tools visible | Misstates phased scope | Registry shows available capabilities; search may label planned/documentation items outside release builds |
 | `Join/Cut/Intersect` Extrude operations | Incomplete semantic scope | Add `New Body`; `Join` maps to semantic `Add`; non-new operations expose explicit target bodies |
 | Draft field in MVP Extrude | Outside current MVP feature contract | Hide until the draft evaluator/schema is supported; never retain a nonfunctional field |
@@ -154,7 +156,7 @@ Icons share a vector grid, stroke/fill policy, optical sizing, semantic naming, 
 | AI state `local · can modify` | Achievable only with policy truth | Display provider/privacy/capability from the current permission context; actions still use preview/confirmation policy |
 | `58 fps`, face count, mass, and job count | Achievable as asynchronous telemetry | Mark pending/stale/approximate values; do not use decorative fixed numbers |
 | Fixed AI card at lower right | Achievable but space-sensitive | Collapsible panel/section with focus, history, resize, and small-window behavior |
-| Frameless integrated project bar | Platform-dependent | Retain native frame initially unless the viewport spike proves custom chrome behavior |
+| Frameless integrated project bar | Platform-dependent | Retain native frame initially unless the viewport prototype proves custom chrome behavior |
 
 ## 8. Cleanliness constraints
 

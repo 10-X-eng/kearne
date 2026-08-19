@@ -7,7 +7,7 @@
 
 ## 1. Product statement
 
-Kearne is a new local-first mechanical CAD system whose GUI, automation, plugins, and AI operate through one semantic engineering model. It is not a FreeCAD rewrite, fork, workbench replacement, or compatibility clone. Its first proof is reliable parametric editing in which the same operation behaves identically through every control surface.
+Kearne is a new local-first mechanical CAD system whose GUI, automation, plugins, and AI edit one native build123d function graph and typed engineering model. It is not a FreeCAD rewrite, fork, workbench replacement, or compatibility clone. Its first proof is reliable parametric editing without separate GUI and code geometry authorities.
 
 ## 2. Initial users
 
@@ -32,15 +32,15 @@ Opening, editing, saving, recovering, importing, and exporting an MVP part MUST 
 
 ### PROD-002 — One engineering behavior
 
-A supported modeling action MUST use the same validation and mutation implementation whether initiated by QML, CLI, Python, AI, a replay log, or a test.
+A supported modeling action MUST change the same source/function graph and use the same transaction and evaluation path whether initiated by QML, CLI, Python, AI, replay, or test.
 
-### PROD-003 — Semantic editability
+### PROD-003 — Source editability
 
-Native operations MUST remain represented as editable parameters and references. Kearne MUST NOT replace a native feature with opaque BREP merely to make an operation appear successful.
+Part geometry MUST remain represented by editable native build123d source, typed inputs, named outputs, and references. Kearne MUST NOT replace source with opaque BREP merely to make an operation appear successful.
 
 ### PROD-004 — Honest failure
 
-Kearne MUST retain the user's semantic intent and issue a structured diagnostic when geometry cannot evaluate. It MUST NOT silently choose a different face, weaken a constraint, modify a dimension, or accept an ambiguous topology match.
+Kearne MUST retain source and typed intent and issue a structured diagnostic when parsing or geometry fails. It MUST NOT silently choose a different face, weaken a constraint, modify a dimension, or accept an ambiguous topology match.
 
 ### PROD-005 — Responsive control
 
@@ -52,7 +52,7 @@ A process crash or terminated worker MUST not corrupt the last durable revision.
 
 ### PROD-007 — Explainable automation
 
-Every persistent change MUST identify its origin and normalized mutation. AI and scripts operate with explicit permissions and produce ordinary editable Kearne entities.
+Every persistent change MUST identify its origin and normalized mutation. AI and scripts operate with explicit permissions and produce ordinary editable source, functions, and engineering records.
 
 ### PROD-008 — Compatible evolution
 
@@ -68,12 +68,12 @@ The primary workflow used to judge product coherence is:
 4. Fillet selected edges using persistent semantic references.
 5. Change the plate dimensions and observe incremental recomputation.
 6. Undo and redo while jobs are active.
-7. Save, terminate the process, reopen, and reproduce the same semantic state.
+7. Save, terminate the process, reopen, and reproduce the same project state.
 8. Export STEP and STL.
-9. Perform a parameter change through Python and the typed AI command API.
+9. Have AI edit the native build123d source and perform a parameter change through Python.
 10. Inspect provenance and diagnostics for all changes.
 
-This workflow is implemented before broadening feature count.
+This workflow is implemented before broadening graphical operation support.
 
 ## 5. Product-wide non-goals for the first release
 
@@ -108,19 +108,19 @@ An MVP is successful when:
 
 - the reference workflow passes through GUI, headless API, and replay adapters;
 - each desktop slice returns a complete Kearne-session capture correlated with semantic UI state;
-- generated command sequences can edit, save, reload, and replay thousands of valid documents without invariant violations;
+- generated source/command sequences can edit, save, reload, and replay thousands of valid projects without invariant violations;
 - topology references survive the documented MVP edit classes at the required confidence;
 - forced worker and application crashes preserve the durable-revision contract;
 - interactive performance meets the benchmark plan on both supported platforms;
 - a new command adapter does not reimplement engineering behavior.
 
-Feature count, source line count, and AI demo quality are secondary measures.
+Operation count, source line count, and AI demo quality are secondary measures.
 
 ## 8. Open product decisions
 
 - **PROD-OPEN-001:** Licensing and business model. This affects Qt distribution, solver choices, plugin policy, and update infrastructure.
 - **PROD-OPEN-002:** Exact Linux baselines and package formats.
-- **PROD-OPEN-003:** Whether `.kearne` is a single-file container, a directory project, or both. The persistence spike must decide.
+- **PROD-OPEN-003:** Whether `.kearne` is a single-file container, a directory project, or both. The persistence prototype must decide.
 - **PROD-OPEN-004:** Accessibility and localization release targets.
 
 ## 9. Definition of done

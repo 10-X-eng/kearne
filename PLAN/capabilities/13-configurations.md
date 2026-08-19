@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Represent related design variants as typed overrides on one semantic model. Configurations do not copy feature trees or hide process-global active values.
+Represent related design variants as typed overrides on one function/product graph. Configurations do not copy source trees or hide process-global active values.
 
 ## 2. Canonical model
 
@@ -58,7 +58,7 @@ The resolver reports the source of each effective value. Cyclic inheritance, dup
 
 ### CFG-005 — Resolved values are inspectable
 
-Queries, diffs, AI context, and diagnostics can return base value, effective value, controlling input, and override source without executing feature-specific UI code.
+Queries, diffs, AI context, and diagnostics can return base value, effective value, controlling input, and override source without executing function-specific UI code.
 
 ## 4. Suppression and references
 
@@ -66,7 +66,7 @@ Suppression is evaluated per configuration. Downstream references resolve in tha
 
 ### CFG-006 — Context-specific health
 
-A feature can evaluate successfully in one configuration and have a broken/failed dependency in another. Health and last-known-good artifacts are keyed by configuration; success in one does not mask failure in another.
+A function call can evaluate successfully in one configuration and have a broken dependency in another. Health and last-known-good artifacts are keyed by configuration; success in one does not mask failure in another.
 
 ### CFG-007 — Configuration validation set
 
@@ -74,11 +74,11 @@ Documents declare named configurations required for validation/release. Kearne d
 
 ## 5. Caching and scale
 
-Evaluation keys include the canonical digest of only configuration inputs that can reach a node through declared dependencies. Irrelevant configuration changes do not invalidate a feature.
+Evaluation keys include the canonical digest of only configuration inputs that can reach a node through declared dependencies. Irrelevant configuration changes do not invalidate a function call.
 
 ### CFG-008 — Demand evaluation
 
-Configurations evaluate on demand and through explicit validation matrices. Cache quotas prevent an unbounded product of configurations, revisions, and feature artifacts.
+Configurations evaluate on demand and through explicit validation matrices. Cache quotas prevent an unbounded product of configurations, revisions, and function artifacts.
 
 ## 6. Assemblies and external use
 
@@ -94,7 +94,7 @@ Changing an input type or dimension is a schema-affecting edit that validates al
 
 ## 8. Verification strategy
 
-Generate typed configuration definitions, inheritance DAGs, rows, override subsets, and feature dependency graphs. Verify:
+Generate typed configuration definitions, inheritance DAGs, rows, override subsets, and function-call dependency graphs. Verify:
 
 - resolution is deterministic and independent of map order;
 - unrelated inputs do not change evaluation keys;
@@ -104,7 +104,7 @@ Generate typed configuration definitions, inheritance DAGs, rows, override subse
 - validation evaluates the declared matrix and reports each context separately;
 - cache use remains bounded under generated context sequences.
 
-Feature descriptors contribute generated configurable fields to the same suite; no separate hand-written configuration test is required for every feature parameter.
+Function contracts and record schemas contribute configurable inputs to the same suite; no separate hand-written test is required for every parameter.
 
 ## 9. Open decisions
 

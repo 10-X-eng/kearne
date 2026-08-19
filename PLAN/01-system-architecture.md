@@ -7,24 +7,26 @@
 
 ## 1. Architectural objective
 
-Kearne separates durable engineering meaning from computation, presentation, and integration. The semantic core remains usable headlessly and testable without Qt, OCCT, Python, a GPU, or an AI provider.
+Kearne separates durable engineering intent from computation, presentation, and integration. The project core stores native build123d source and typed records without importing or executing Python. It remains usable headlessly and testable without Qt, OCCT, a Python runtime, a GPU, or an AI provider.
 
 ```text
 Adapters: QML | CLI | Python | Codex | Plugins | Replay
                          |
                  Engineering API
                          |
-        Command validation / queries / permissions
+        Commands / queries / source transforms
                          |
-          Immutable semantic document revisions
-                         |
-             Evaluation dependency scheduler
-              /             |              \
-       OCCT geometry   sketch solver   later solvers
-              \             |              /
-                 immutable artifacts
-                         |
-                  render projection
+       Immutable project revisions and content tree
+             /                           \
+ native build123d function graph     typed product records
+             \                           /
+               evaluation dependency graph
+                /          |           \
+       Python + OCCT   mate/sketch   later solvers
+                \          |           /
+                    immutable artifacts
+                            |
+                     render projection
 ```
 
 ## 2. Layer boundaries
@@ -57,13 +59,14 @@ An adapter may depend on its port and third-party technology. A port MUST NOT de
 
 Every record MUST be classified as one of:
 
-- canonical semantic state;
+- canonical source/function state;
+- canonical typed engineering state;
 - immutable external/source artifact;
 - derived index;
 - reproducible evaluation artifact;
 - ephemeral workspace or presentation state.
 
-Only the first two categories are required to reproduce user intent. Derived and cache data MUST be safely discardable under the rules in the persistence plan.
+Only canonical state and irreplaceable source artifacts are required to reproduce user intent. Native Python/build123d source is canonical for part geometry. BREP and meshes are derived. Typed project records own assemblies, configurations, materials, studies, drawings, BOMs, and releases and reference named function outputs; they do not duplicate geometry definitions.
 
 ### ARCH-004 — Published snapshots
 
@@ -71,7 +74,7 @@ Objects crossing threads or processes MUST be immutable values, immutable artifa
 
 ### ARCH-005 — No presentation backdoors
 
-QML and UI controllers MUST NOT call OCCT, mutate document entities, write the project database, or construct normalized mutations. They submit command requests and render projections.
+QML and UI controllers MUST NOT call OCCT, mutate source/contracts/records, write the project database, or construct normalized mutations. They submit command requests and render projections.
 
 ### ARCH-006 — No automation backdoors
 
@@ -92,8 +95,10 @@ CancellationToken      cooperative cancellation signal
 ProgressEvent          monotonic progress report
 ArtifactHandle         immutable bulk-data reference
 CommandEnvelope        versioned intent plus actor/context
-MutationBatch          normalized atomic semantic changes
-DocumentSnapshot       immutable logical state
+MutationBatch          normalized atomic project changes
+ProjectSnapshot        immutable source tree and typed records
+ModelFunctionId        stable declared function identity
+NamedOutputRef         function output plus call context
 EvaluationKey          declared-input and evaluator fingerprint
 TopologyRef            stable semantic subshape reference
 ```
@@ -109,7 +114,7 @@ A persistent action follows one pipeline:
 ```text
 Command request
   -> schema and permission validation
-  -> domain precondition validation against snapshot R
+  -> domain and source precondition validation against snapshot R
   -> normalized MutationBatch
   -> atomic commit creating revision R+1
   -> dependency invalidation
@@ -118,7 +123,7 @@ Command request
   -> render/query projection publication
 ```
 
-Geometry failure does not retroactively corrupt or partially commit semantic state. The feature remains present and failed unless the entire command was invalid before commit.
+Source syntax and geometry failure do not retroactively corrupt or partially commit project state. The source revision remains inspectable and repairable; failed outputs are not published.
 
 ### ARCH-008 — Read consistency
 
@@ -136,7 +141,7 @@ The logical roles are:
 - Render thread/backend: GPU resources and frame submission.
 - Core worker pool: pure lightweight work and orchestration that is safe in-process.
 - Geometry workers: OCCT operations selected for isolation or concurrency control.
-- Python workers: scripts and build123d under explicit capabilities.
+- Python workers: canonical build123d model functions and automation under separate capabilities.
 - Solver workers: sketch, assembly, meshing, and simulation workloads whose isolation or resource policy requires a process.
 
 ### ARCH-010 — UI deadline
@@ -171,11 +176,11 @@ Exceptions may terminate a transaction before commit or a worker process, but MU
 
 ### ARCH-012 — Registry, not inheritance
 
-Feature, command, import/export, solver, and analysis extensions register descriptors and port implementations. The core does not require a new subclass hierarchy per adapter. Native implementations may use static polymorphism or plain functions internally.
+Command, function contract, import/export, solver, and analysis extensions register descriptors and port implementations. The core does not require a new subclass hierarchy per adapter. Native implementations may use static polymorphism or plain functions internally.
 
 ### ARCH-013 — Missing evaluators
 
-Loading a project with an unavailable plugin or evaluator MUST preserve opaque canonical payloads and references. It may show retained artifacts as stale/read-only, but MUST NOT discard or rewrite unknown data.
+Loading a project with an unavailable package, plugin, or evaluator MUST preserve source, opaque payloads, and references. It may show retained artifacts as stale/read-only, but MUST NOT discard or rewrite unknown data.
 
 ### ARCH-014 — Pinned behavior
 
@@ -187,7 +192,7 @@ New technology is selected when supported versions and measurements improve corr
 
 ### ARCH-016 — Separate observation plane
 
-Application lifecycle, semantic UI inspection, input automation, and image capture use an Observation API outside the Engineering API. Observation may report or invoke public UI behavior but cannot mutate document state, call private QML logic, or become an engineering command path.
+Application lifecycle, semantic UI inspection, input automation, and image capture use an Observation API outside the Engineering API. Observation may report or invoke public UI behavior but cannot mutate project state, call private QML logic, or become an engineering command path.
 
 ## 8. Architecture fitness tests
 
@@ -195,9 +200,11 @@ The build MUST continuously enforce:
 
 - forbidden dependency edges and include boundaries;
 - no Qt or OCCT symbols in document/schema libraries;
-- no direct document mutation outside the transaction engine;
+- no direct source-tree or engineering-record mutation outside the transaction engine;
 - serialization round-trip for every registered schema;
-- every command is discoverable through the same registry used by AI/Python/UI metadata;
+- every command is discoverable through the same registry used by AI, Python, and UI metadata;
+- source inspection never imports or executes a project module;
+- no persisted native-feature geometry graph duplicates source-defined geometry;
 - every port implementation passes its shared conformance suite;
 - worker messages contain no raw pointers or process-local handles;
 - no blocking operation annotated as unbounded is callable from UI-thread code.
@@ -208,35 +215,33 @@ These tests operate over dependency metadata, registries, generated schemas, and
 
 ## 9. Repository shape
 
-Initial logical libraries should remain fewer and more cohesive than the service list in `SPEC.md`:
+Production is a modular monolith with isolated workers. Directories reflect dependency and ownership boundaries, not every feature noun:
 
 ```text
-/src/base
-/src/schema
-/src/document
-/src/engine
-/src/geometry
-/src/sketch
-/src/artifacts
-/src/persistence
-/src/render
-/src/observation
-/src/app
-/src/adapters/{occt,qt,cli,codex}
-/python
-/schemas
-/tests/{contract,property,scenario,fuzz,performance}
+/apps/{desktop,cli}
+/modules/{base,document,engineering,evaluation,topology,modeling,agent,adapters}
+/api/{schema,compiler,compatibility}
+/workers/{geometry,meshing,python,simulation}
+/sdk/{python,plugin}
+/testkit
+/tests/system
+/benchmarks
+/tools/observe
+/packaging
+/prototype
 ```
 
-New top-level libraries require a distinct ownership or dependency boundary, not merely a new feature noun.
+Each production module owns its public headers, private source, and focused tests. `testkit` owns shared generators, reference models, virtual schedulers, shrinking, replay, and fault injection. Cross-process workflows live in `tests/system`.
+
+`prototype/` is excluded from the root build and release packages. Production targets MUST NOT include or link it. New top-level production modules require a distinct ownership or dependency boundary.
 
 ## 10. Open decisions
 
-- **ARCH-OPEN-001:** Exact IDL and code-generation toolchain; validate Protobuf plus generated JSON Schema in the boundary spike.
+- **ARCH-OPEN-001:** Exact IDL and code-generation toolchain; validate Protobuf plus generated JSON Schema in the boundary prototype.
 - **ARCH-OPEN-002:** Persistent data-structure library versus immutable snapshots constructed with copy-on-write entity tables.
 - **ARCH-OPEN-003:** Degree of initial geometry worker isolation given OCCT thread-safety and transfer cost.
 - **ARCH-OPEN-004:** Whether the local project coordinator remains in the UI process or becomes a separate long-lived process after MVP.
 
 ## 11. Definition of done
 
-This plan is accepted when dependency direction, snapshot/transaction semantics, cross-process ownership, schema approach, and exception/diagnostic policy are validated by ADRs and technical spikes.
+This plan is accepted when dependency direction, snapshot/transaction semantics, cross-process ownership, schema approach, and exception/diagnostic policy are validated by ADRs and technical prototypes.

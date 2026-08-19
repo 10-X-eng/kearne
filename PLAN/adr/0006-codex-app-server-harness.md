@@ -25,4 +25,4 @@ Kearne gains the Codex interaction lifecycle without embedding it into CAD libra
 
 ## Evidence
 
-The [official app-server documentation](https://learn.chatgpt.com/docs/app-server) defines the required lifecycle, JSONL stdio transport, generated schemas, approvals, and local-image turn input. SPIKE-010 must verify the installed-version contract, packaging, recovery, and Agent Bridge path before implementation acceptance.
+The [official app-server documentation](https://learn.chatgpt.com/docs/app-server) defines the required lifecycle, JSONL stdio transport, generated schemas, approvals, and local-image turn input. TECH-010 must verify the installed-version contract, packaging, recovery, and Agent Bridge path before implementation acceptance.

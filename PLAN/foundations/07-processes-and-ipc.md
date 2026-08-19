@@ -1,6 +1,6 @@
 # Process Ownership and IPC
 
-- **Status:** Proposed; process-boundary spike required
+- **Status:** Proposed; process-boundary prototype required
 - **Requirement prefix:** `IPC`
 - **Depends on:** [System architecture](../01-system-architecture.md), [evaluation](03-evaluation-and-jobs.md), [persistence](06-persistence-and-recovery.md)
 - **Unblocks:** geometry isolation, Python, import/export, simulation, Codex harness
@@ -26,9 +26,9 @@ Processes exchange versioned messages and immutable artifact bytes/handles. A pr
 ## 3. Worker classes
 
 ```text
-Geometry worker  OCCT feature evaluation, healing, exact queries
+Geometry worker  OCCT import, healing, exact queries, native adapters
 Import worker    untrusted/complex format parsing, possibly OCCT-backed
-Python worker    SDK/build123d/user code under capabilities
+Python worker    build123d model functions or automation under distinct capabilities
 Solver worker    future assembly, meshing, and simulation backends
 Utility worker   thumbnails or isolated conversions when justified
 Agent runtime    Codex app-server under a protocol-specific adapter

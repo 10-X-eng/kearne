@@ -18,4 +18,4 @@ Revision identity and DAG storage ship in the first format. History storage need
 
 ## Evidence required
 
-Generated command/revision state machine, persistence crash spike, and measured history/checkpoint behavior must pass before acceptance.
+Generated command/revision state machine, persistence crash prototype, and measured history/checkpoint behavior must pass before acceptance.

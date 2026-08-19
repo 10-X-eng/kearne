@@ -1,0 +1,48 @@
+edition = "2024";
+
+package kearne.schema.v1;
+
+import "google/protobuf/descriptor.proto";
+
+enum DescriptorKind {
+  DESCRIPTOR_KIND_UNSPECIFIED = 0;
+  DESCRIPTOR_KIND_COMMAND = 1;
+  DESCRIPTOR_KIND_QUERY = 2;
+  DESCRIPTOR_KIND_EVENT = 3;
+  DESCRIPTOR_KIND_ENTITY = 4;
+  DESCRIPTOR_KIND_WORKER_JOB = 5;
+  DESCRIPTOR_KIND_WIRE = 6;
+}
+
+message MessagePolicy {
+  string stable_id = 1;
+  uint32 schema_version = 2;
+  DescriptorKind kind = 3;
+  uint32 max_serialized_bytes = 4;
+  string permission = 5;
+  string summary = 6;
+  string documentation_key = 7;
+  bool ai_exposed = 8;
+  string required_oneof = 9;
+}
+
+message FieldPolicy {
+  bool required = 1;
+  uint32 min_length = 2;
+  uint32 max_length = 3;
+  uint32 max_items = 4;
+  string semantic_type = 5;
+  string dimension = 6;
+  string description = 7;
+  double minimum = 8;
+  double maximum = 9;
+  bool sensitive = 10;
+}
+
+extend google.protobuf.MessageOptions {
+  MessagePolicy message_policy = 50001;
+}
+
+extend google.protobuf.FieldOptions {
+  FieldPolicy field_policy = 50002;
+}

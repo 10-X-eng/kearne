@@ -1,6 +1,6 @@
 # ADR-0002: Semantic Document Is Canonical
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0009](0009-native-build123d-function-graph.md)
 - **Date:** 2026-08-19
 - **Related:** `DOC-001`–`DOC-018`, `ARCH-003`
 

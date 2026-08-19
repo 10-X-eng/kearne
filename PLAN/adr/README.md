@@ -16,13 +16,14 @@ An accepted ADR is immutable except for status and links. Reversal creates a new
 | ADR | Status | Decision |
 |---|---|---|
 | [0001](0001-kearne-product-identity.md) | Accepted | Product identity is Kearne |
-| [0002](0002-semantic-document-is-canonical.md) | Accepted | Semantic document is canonical state |
+| [0002](0002-semantic-document-is-canonical.md) | Superseded | Semantic document is canonical state |
 | [0003](0003-immutable-revision-dag.md) | Proposed | Undo/history use an immutable revision DAG |
 | [0004](0004-one-engineering-api.md) | Proposed | All actors use one Engineering API |
 | [0005](0005-worker-artifact-boundary.md) | Proposed | Risky runtimes cross an immutable artifact boundary |
 | [0006](0006-codex-app-server-harness.md) | Superseded | Codex app-server is the AI harness |
 | [0007](0007-agent-observable-desktop.md) | Accepted | Desktop work is agent-observable |
 | [0008](0008-codex-app-server-compatibility.md) | Accepted | Kearne owns app-server compatibility and pins exact builds |
+| [0009](0009-native-build123d-function-graph.md) | Accepted | Native build123d functions are canonical part geometry |
 
 ## Template
 
@@ -47,5 +48,5 @@ Required benefits, costs, constraints, and follow-up.
 Alternatives actually evaluated and why they lost.
 
 ## Evidence
-Spike/results/review links. Required before acceptance for empirical choices.
+Prototype/results/review links. Required before acceptance for empirical choices.
 ```

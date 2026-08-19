@@ -1,42 +1,42 @@
 # Persistence, History, and Recovery
 
-- **Status:** Proposed; storage spike required
+- **Status:** Proposed; storage prototype required
 - **Requirement prefix:** `PST`
 - **Depends on:** [Document model](01-document-model.md), [commands and revisions](02-commands-transactions-revisions.md)
 - **Unblocks:** distributable MVP, versioning, collaboration
 
 ## 1. Purpose
 
-Persist semantic intent, immutable revision history, and irreplaceable source artifacts atomically while keeping reproducible geometry and render products disposable. Saving and crash recovery are defined behavior, not incidental database effects.
+Persist the source tree, function graph, typed engineering records, and immutable revision history atomically while keeping reproducible geometry and render products disposable. Saving and crash recovery are defined behavior, not incidental database effects.
 
 ## 2. Proposed physical model
 
 The baseline to validate is:
 
-- one SQLite-backed `.kearne` project file for metadata, schemas, revision records, mutation batches, current workspace pointers, and chunked irreplaceable source artifacts;
+- one SQLite-backed `.kearne` project file for the content-addressed source tree, function contracts and calls, typed records, schemas, revisions, mutation batches, workspace pointers, and chunked artifacts;
 - a content-addressed per-user cache outside the portable project for reproducible BREP, meshes, thumbnails, and other derived artifacts;
 - optional packaged derived artifacts for fast transfer, each independently validated and discardable;
 - SQLite WAL only while the project is open, checkpointed through supported copy/export operations.
 
-This provides transactional durability and a portable primary file without rewriting a ZIP container on every edit. The storage spike must validate large-project behavior before acceptance.
+This provides transactional durability and a portable primary file without rewriting a ZIP container on every edit. The storage prototype must validate large-project behavior before acceptance.
 
 ## 3. Data classification
 
-### PST-001 — Canonical semantic data
+### PST-001 — Canonical project data
 
-The project MUST retain all entity records, revision parent links, normalized mutations, schema identities, durable workspace/branch heads, actor provenance, and required migrations needed to reconstruct any retained revision.
+The project MUST retain source trees, function contracts and calls, typed records, revision parents, normalized mutations, schema identities, durable workspace/branch heads, actor provenance, and migrations needed to reconstruct any retained revision.
 
 ### PST-002 — Irreplaceable artifacts
 
-Imported source bytes, user-authored scripts, embedded standards/templates, and other inputs unavailable from canonical entities are durable source artifacts. They MUST NOT be labeled caches.
+Imported source bytes, native model source, embedded standards/templates, and other irreplaceable inputs are durable artifacts. Native model source participates directly in the canonical content tree. None may be labeled a cache.
 
 ### PST-003 — Reproducible caches
 
-Native-feature BREP, tessellation, mass properties, search indices, thumbnails, and solver outputs are caches only when their evaluation inputs and compatible evaluator are available. Removing the cache MUST preserve user intent and produce at most recomputation or an unavailable-evaluator diagnostic.
+Function-output BREP, tessellation, mass properties, parsed-source indices, recognition metadata, thumbnails, and solver outputs are caches only when their inputs and compatible evaluator are available. Removing caches MUST preserve user intent and produce at most recomputation or an unavailable-evaluator diagnostic.
 
 ### PST-004 — Retained fallback
 
-Procedural, plugin, imported, and legacy entities MAY retain last-known-good BREP as a fallback artifact. It is marked with evaluator fingerprint and stale/read-only state; it does not become semantic proof that current parameters evaluated.
+Model functions, plugins, imports, and legacy records MAY retain last-known-good BREP as a fallback artifact. It is marked with source revision, evaluator fingerprint, and stale/read-only state; it does not prove that current source evaluated.
 
 ## 4. Transactional durability
 
@@ -58,7 +58,7 @@ An open project has one coordinator holding the writer lease. Additional local o
 
 ## 5. Revision storage and materialization
 
-The system stores immutable mutation batches plus periodic materialized entity-table checkpoints.
+The system stores immutable mutation batches plus periodic materialized content-tree and record-table checkpoints.
 
 ### PST-009 — Bounded open cost
 
@@ -132,9 +132,9 @@ Properties assert atomic heads, reachability, idempotent reopen, preservation of
 
 - Acknowledged small semantic transaction: p95 target below 30 ms on recommended local SSD with the durability profile enabled.
 - Opening the MVP benchmark project from a valid checkpoint: p95 below 500 ms excluding geometry recomputation.
-- Project metadata memory should grow approximately with live entity count plus loaded revision window, not total historical payload.
+- Project metadata memory should grow approximately with live paths, functions, calls, records, and the loaded revision window, not total historical payload.
 
-These are provisional until the storage spike records filesystem-specific results.
+These are provisional until the storage prototype records filesystem-specific results.
 
 ## 11. Open decisions
 
@@ -146,4 +146,4 @@ These are provisional until the storage spike records filesystem-specific result
 
 ## 12. Definition of done
 
-Persistence is implemented when fault injection cannot produce a hybrid acknowledged head, generated histories reopen semantically, migrations preserve unknown payloads, deleting all caches preserves intent, and recovery procedures pass on supported Windows and Linux filesystems.
+Persistence is implemented when fault injection cannot produce a hybrid acknowledged head, generated histories reopen identically, migrations preserve unknown source and payloads, deleting all caches preserves intent, and recovery passes on supported Windows and Linux filesystems.

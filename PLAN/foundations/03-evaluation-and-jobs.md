@@ -7,15 +7,15 @@
 
 ## 1. Purpose
 
-Turn immutable semantic snapshots into geometry and other artifacts through bounded multithreaded and multiprocess execution while keeping the UI responsive and stale work harmless.
+Turn immutable project snapshots into geometry and other artifacts through bounded multithreaded and multiprocess execution while keeping the UI responsive and stale work harmless.
 
 ## 2. Evaluation graph
 
-Dependencies are derived from typed references and evaluator-declared inputs. The graph is scoped by document revision and configuration context.
+Dependencies are derived from model calls, typed bindings, and record references. The graph is scoped by project revision and configuration context.
 
 ### EVAL-001 — Declared inputs only
 
-An evaluator MUST declare every semantic entity, result slot, source artifact, configuration value, external database record, and numerical profile that can affect its output. Hidden reads of global “active” state are prohibited.
+An evaluator MUST declare every source/module digest, function contract, input binding, named upstream output, configuration value, external database record, numerical profile, environment, and granted capability that can affect its output. Hidden reads of global “active” state are prohibited.
 
 ### EVAL-002 — Cycle detection before execution
 
@@ -23,26 +23,27 @@ The engine derives the affected dependency graph and reports typed cycles before
 
 ### EVAL-003 — Dirty is derived
 
-Persistent entities do not own mutable dirty flags. A requested result is clean when a valid artifact exists for its exact `EvaluationKey`; otherwise it is missing/dirty. Operational projections may expose user-friendly states.
+Canonical functions and records do not own mutable dirty flags. A requested output is clean when a valid artifact exists for its exact `EvaluationKey`; otherwise it is missing or dirty. Operational projections may expose user-friendly states.
 
 ## 3. Evaluation key
 
 ```text
 EvaluationKey = digest(
   evaluator fingerprint,
-  feature kind and schema version,
-  canonical parameter payload,
+  model function identity and contract version,
+  transitive project source digests,
+  typed input bindings,
   input result/artifact digests,
-  resolved semantic references,
+  named output and typed record references,
   configuration context,
   units/numerical profile,
-  explicitly declared environment inputs
+  environment lock and capability inputs
 )
 ```
 
 ### EVAL-004 — Content-addressed reuse
 
-Equal evaluation keys may reuse immutable results across undo/redo, branches, workspaces, and process restarts. Cache identity MUST NOT use pointer identity, display name, OCCT's process-local hash, or document revision alone.
+Equal evaluation keys may reuse immutable results across undo/redo, branches, workspaces, and process restarts. Cache identity MUST NOT use pointer identity, display name, source path alone, OCCT's process-local hash, or project revision alone.
 
 ### EVAL-005 — Evaluator fingerprint
 
@@ -54,12 +55,12 @@ The fingerprint includes the native/plugin evaluator version and relevant third-
 EvaluationRequest
   revision_id
   configuration_context
-  target ResultRefs
+  target NamedOutputRefs
   priority
   generation_id
   resource_budget
 
-FeatureEvaluationResult
+ModelFunctionEvaluationResult
   key
   status
   output artifacts by stable output key
@@ -70,7 +71,7 @@ FeatureEvaluationResult
   determinism classification
 ```
 
-Evaluators consume immutable values and artifact handles. They do not mutate the document, publish UI objects, enqueue undeclared work, or inspect the current workspace head.
+Evaluators consume immutable source, values, and artifact handles. They do not mutate the project, publish UI objects, enqueue undeclared work, or inspect the current workspace head.
 
 ### EVAL-006 — Result completeness
 
@@ -78,7 +79,7 @@ An evaluator publishes one complete immutable result or a failure/cancellation r
 
 ### EVAL-007 — Last-known-good separation
 
-The UI may display a clearly marked last-known-good artifact from an ancestor revision while current evaluation is pending or failed. Downstream engineering evaluation MUST NOT treat that artifact as current input unless the feature contract explicitly defines a degraded mode.
+The UI may display a clearly marked last-known-good artifact from an ancestor revision while current evaluation is pending or failed. Downstream evaluation MUST NOT treat that artifact as current input unless the consumer contract explicitly defines a degraded mode.
 
 ## 5. Scheduling
 
@@ -116,11 +117,11 @@ Evaluators check cancellation between safe stages. An uninterruptible third-part
 
 ### EVAL-014 — Cancellation is not failure
 
-Cancellation yields a distinct status and does not attach a persistent feature-error diagnostic. A superseding generation is normal operational behavior.
+Cancellation yields a distinct status and does not attach a persistent source-error diagnostic. A superseding generation is normal operational behavior.
 
 ### EVAL-015 — Worker death containment
 
-Worker death produces `WorkerTerminated` for its in-flight jobs, releases shared artifacts after lease expiry, and may retry according to bounded policy. It cannot modify the document or durable artifact index directly.
+Worker death produces `WorkerTerminated` for its in-flight jobs, releases shared artifacts after lease expiry, and may retry according to bounded policy. It cannot modify the project or durable artifact index directly.
 
 ### EVAL-016 — Retry classification
 
@@ -172,8 +173,8 @@ Exact fixtures and hardware are defined in the performance plan.
 - **EVAL-OPEN-001:** Scheduler implementation: custom dependency scheduler over a standard executor versus a task-graph library.
 - **EVAL-OPEN-002:** Cache storage tiers and eviction policy.
 - **EVAL-OPEN-003:** Which OCCT calls are safe in parallel within one process for the pinned version.
-- **EVAL-OPEN-004:** Whether mass properties are feature result metadata or a separately keyed derived evaluator.
+- **EVAL-OPEN-004:** Whether mass properties are function-result metadata or a separately keyed derived evaluator.
 
 ## 12. Definition of done
 
-The plan is implemented when all executors pass the generated scheduler suite, fault injection demonstrates stale/cancelled result safety, and incremental benchmarks show work proportional to affected graph size rather than total document size.
+The plan is implemented when all executors pass the generated scheduler suite, fault injection demonstrates stale/cancelled result safety, and incremental benchmarks show work proportional to affected graph size rather than total project size.

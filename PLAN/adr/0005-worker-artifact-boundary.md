@@ -10,12 +10,12 @@ OCCT operations, import parsers, Python/OCP, and solvers can block, consume unbo
 
 ## Decision
 
-The project coordinator owns semantic state. Risky runtimes execute in supervised workers and exchange bounded control messages plus immutable artifact handles. Live third-party objects remain worker-local. Correctness cannot depend on worker-local caches or affinity.
+The project coordinator owns source/function and typed engineering state. Risky runtimes execute in supervised workers and exchange bounded control messages plus immutable artifact handles. Live third-party objects remain worker-local. Correctness cannot depend on worker-local caches or affinity.
 
 ## Consequences
 
-Exact geometry needs a pinned artifact interchange. Serialization adds cost, mitigated by affinity and worker-local cache. Workers cannot commit document changes. Shared supervisor, lease, cancellation, and fault semantics apply to all worker roles.
+Exact geometry needs a pinned artifact interchange. Serialization adds cost, mitigated by affinity and worker-local cache. Workers cannot commit project changes. Shared supervisor, lease, cancellation, and fault semantics apply to all worker roles.
 
 ## Evidence required
 
-SPIKE-003 and SPIKE-008 must establish artifact compatibility, process topology, cancellation, performance, and enforceable isolation before acceptance.
+TECH-003 and TECH-008 must establish artifact compatibility, process topology, cancellation, performance, and enforceable isolation before acceptance.

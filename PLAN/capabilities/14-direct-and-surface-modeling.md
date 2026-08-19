@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Extend native feature history with semantic direct edits and sheet/surface bodies while preserving source geometry, topology evidence, and honest failure behavior.
+Add source-defined direct edits and sheet/surface bodies while preserving imported bytes, topology evidence, and honest failure behavior.
 
 ## 2. Body kinds
 
@@ -22,15 +22,15 @@ Compound result as a result type, not an ambiguous solid
 
 ### DSM-001 — Dimensionality is explicit
 
-Feature inputs and output slots declare permitted body kinds. An operation that unexpectedly produces a shell, multiple solids, or a compound cannot publish it under a single-solid contract.
+Function inputs and named output slots declare permitted body kinds. A result that unexpectedly contains a shell, multiple solids, or a compound cannot publish under a single-solid contract.
 
-### DSM-002 — Shared feature infrastructure
+### DSM-002 — Shared function infrastructure
 
-Direct and surface operations use the same descriptors, commands, evaluation keys, workers, topology publication, body scope, diagnostics, preview, persistence, and generated conformance harness as solid features.
+Direct and surface functions use the same source transactions, contracts, evaluation keys, workers, topology publication, diagnostics, preview, persistence, and generated conformance harness as other model functions.
 
 ## 3. Direct editing
 
-Initial direct features:
+Initial direct-operation generators:
 
 - move/rotate face;
 - offset/press-pull face;
@@ -40,13 +40,13 @@ Initial direct features:
 
 Each stores selected topology, transform/distance parameters, explicit propagation/healing policy, and target body.
 
-### DSM-003 — Direct edits remain features
+### DSM-003 — Direct edits remain source
 
-A direct operation appends or inserts a semantic feature. It MUST NOT overwrite an imported/native BREP in place or erase upstream history.
+A direct operation creates or edits a native build123d function over explicit inputs. It MUST NOT overwrite an imported or evaluated BREP in place or erase upstream source.
 
 ### DSM-004 — Recognition is a proposal
 
-Hole, fillet, pocket, cylindrical group, and pattern recognition returns candidates with evidence. Accepting a candidate creates explicit feature/reference commands. Recognition never silently rewrites the model.
+Hole, fillet, pocket, cylindrical-group, and pattern recognition returns candidates with evidence. Accepting a candidate proposes an explicit source transformation and reference changes. Recognition never silently rewrites source.
 
 ### DSM-005 — Imported source remains recoverable
 
@@ -54,7 +54,7 @@ Direct editing an imported body consumes its normalized geometry artifact while 
 
 ## 4. Surface modeling
 
-Planned feature groups:
+Planned source generators and graphical editors:
 
 1. Surface extrude/revolve/sweep/loft, ruled and offset surface.
 2. Trim, extend, split, stitch/unstitch, fill, and thicken.
@@ -63,7 +63,7 @@ Planned feature groups:
 
 ### DSM-006 — Boundary intent
 
-Surface features store ordered boundary/guide references, parameterization/orientation choices, continuity target (`G0`/`G1`/`G2`/supported higher level), and weights/tolerances. The evaluator does not infer an alternate ordering silently when the requested construction fails.
+Surface-function contracts store ordered boundary/guide references, parameterization/orientation choices, continuity target (`G0`/`G1`/`G2`/supported higher level), and weights/tolerances. The evaluator does not infer an alternate ordering silently when the requested construction fails.
 
 ### DSM-007 — Stitching disclosure
 
@@ -75,17 +75,17 @@ A successful kernel operation does not prove requested continuity. Kearne evalua
 
 ## 5. Preview and interaction
 
-Face dragging creates ephemeral direct-feature parameters evaluated through the same worker path. UI manipulators operate in explicit local/world frames and commit one command. Preview may lower evaluation/tessellation quality but acceptance re-evaluates at production policy.
+Face dragging creates ephemeral function inputs or source transformations evaluated through the same worker path. UI manipulators use explicit local/world frames and commit one transaction. Preview may lower evaluation or tessellation quality; acceptance re-evaluates at production policy.
 
 ## 6. Topology and failure
 
-Direct/surface operations publish modified/generated/deleted ancestry and feature-specific names. Their edit-support matrices must cover source-face splitting, stitching, guide reorder, and continuity changes.
+Direct/surface functions publish modified/generated/deleted ancestry and stable labels. Their edit-support matrices cover source-face splitting, stitching, guide reorder, and continuity changes.
 
-When healing or replacement admits multiple results, evaluation returns ambiguity instead of choosing by OCCT enumeration. Last-known-good geometry remains visible but stale.
+When healing or replacement admits multiple results, evaluation returns ambiguity instead of choosing by OCCT enumeration. Last-known-good geometry remains visible and stale.
 
 ## 7. Verification strategy
 
-Descriptor-generated tests cover body-kind contracts, topology matrices, cancellation, transformations, unit scaling, and replay. Surface-specific metamorphic properties include:
+Descriptor-generated tests cover source generation/recognition, body-kind contracts, topology matrices, cancellation, transformations, unit scaling, and replay. Surface-specific metamorphic properties include:
 
 - boundary endpoint interpolation within tolerance;
 - continuity measurements under reparameterization and rigid transform;
@@ -106,4 +106,4 @@ Direct-edit generators create analytic boxes/cylinders and imported-like solids,
 
 ## 9. Definition of done
 
-A direct/surface feature is implemented only when it shares native feature infrastructure, declares body/topology contracts, passes generated geometric relations, reports healing/continuity evidence, and preserves imported source provenance.
+A direct/surface graphical operation is implemented only when it uses the common function infrastructure, declares output/topology contracts, passes generated geometric relations, reports healing/continuity evidence, and preserves source provenance. Equivalent hand-written build123d remains valid without graphical recognition.

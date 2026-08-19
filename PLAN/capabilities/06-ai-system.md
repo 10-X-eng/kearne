@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Make AI a permissioned, observable consumer of Kearne's engineering API. Models propose queries and commands; deterministic domain code validates and applies them. Model output is never canonical merely because it is well-formed.
+Make AI a permissioned, observable author of native build123d source and typed engineering changes. Kearne validates and commits them through the Engineering API; model output is not canonical until committed.
 
 ## 2. Components
 
@@ -40,7 +40,7 @@ An interaction receives the lowest capability level and narrowest command/query 
 
 ### AI-002 — Revalidation
 
-Every tool call is schema-, permission-, revision-, reference-, and domain-validated by the same Engineering API used by other actors. Prompt instructions cannot bypass policy.
+Every tool call is schema-, permission-, revision-, source-digest-, reference-, and domain-validated by the same Engineering API used by other actors. Prompt instructions cannot bypass policy.
 
 ### AI-003 — Revision anchoring
 
@@ -50,8 +50,8 @@ AI context, queries, measurements, plans, and proposed commands name their sourc
 
 AI receives structured, bounded views:
 
-- current selection as semantic references and engineering summaries;
-- feature/dependency graph slices;
+- current selection as typed references and engineering summaries;
+- requested source modules, function contracts, calls, and dependency slices;
 - parameter values and dimensions;
 - diagnostics and model health;
 - mass/bounds/measurements from revision-correct evaluators;
@@ -60,11 +60,11 @@ AI receives structured, bounded views:
 
 ### AI-004 — Query before bulk disclosure
 
-The controller favors typed queries over full document serialization, screenshots, raw BREP, or full meshes. Each query has item/byte/depth limits and sensitivity classification.
+The controller retrieves only source and typed context relevant to the task rather than full-project serialization, raw BREP, or full meshes. Screenshots complement semantic UI state when visual layout matters. Each query has item, byte, and depth limits and a sensitivity class.
 
 ### AI-005 — Untrusted embedded content
 
-Names, comments, imported metadata, plugin text, scripts, and document content are untrusted data, not controller instructions. Provider prompts delimit them and the policy engine ignores model attempts to alter permissions.
+Names, comments, imported metadata, plugin text, source, and project records are untrusted data, not controller instructions. Provider prompts delimit them and the policy engine ignores attempts to alter permissions.
 
 ## 5. Tool registry
 
@@ -82,7 +82,7 @@ result summarization policy
 
 ### AI-006 — No AI-only mutation
 
-An AI mutation tool must correspond to an ordinary typed command or transaction composition. AI cannot write entity payloads, database rows, BREP, or hidden UI state directly.
+An AI mutation tool must correspond to an ordinary source/function or typed-record command. AI may replace native model source through an expected-digest transaction; it cannot write database rows, BREP, or hidden UI state directly.
 
 ### AI-007 — Bounded tool loops
 
@@ -116,7 +116,7 @@ AI output and even successful simulation are not represented as certified or saf
 
 ### AI-013 — Editable output
 
-Native AI-created geometry is ordinary editable features. Procedural output is clearly labeled with source/environment/topology limitations.
+AI-created geometry is ordinary native build123d source with declared inputs and outputs. The UI exposes its source, parameters, environment, and topology capability even when no specialized graphical editor recognizes it.
 
 ### AI-014 — Harness does not define truth
 
@@ -135,7 +135,7 @@ Core AI correctness does not depend on nondeterministic live-model prose tests.
 - A scripted fake model generates valid, invalid, adversarial, duplicated, stale, and infinite tool sequences.
 - A policy state machine verifies no sequence exceeds granted capabilities or bypasses confirmation.
 - All AI mutation tools inherit command conformance suites.
-- Generated document content contains prompt-injection text and secret-like values to test disclosure filters.
+- Generated project source and records contain prompt-injection text and secret-like values to test disclosure filters.
 - Transcript replay verifies provider-independent orchestration and schema evolution.
 - Live-provider evaluations measure task completion, tool selection, context efficiency, and recovery statistically; they are versioned benchmark reports, not the sole merge gate.
 - Red-team suites cover exfiltration, approval spoofing, destructive command chaining, hidden prompt content, oversized queries, and compromised provider responses.
@@ -144,15 +144,14 @@ Core AI correctness does not depend on nondeterministic live-model prose tests.
 
 MVP provides:
 
-- inspect document/selection and bounded measure queries;
-- create sketch primitives/constraints;
-- create extrude, hole, pattern, fillet;
-- set parameter;
-- transaction preview, confirm, reject;
+- inspect selection, relevant native source, function graph, and bounded measurements;
+- create and edit native build123d functions for the reference part;
+- create or bind typed parameters and named outputs;
+- preview, diff, confirm, reject, and repair source/function transactions;
 - explain a structured diagnostic;
 - local `No AI` mode and one pinned Codex app-server adapter.
 
-Autonomous design, branch exploration, simulation optimization, arbitrary Python generation, web access, and manufacturing validation are later gates.
+Autonomous design, branch exploration, simulation optimization, network-enabled code, custom environments, and manufacturing validation are later gates.
 
 ## 11. Open decisions
 
@@ -164,4 +163,4 @@ Autonomous design, branch exploration, simulation optimization, arbitrary Python
 
 ## 12. Definition of done
 
-AI MVP is implemented when adversarial fake-model sequences cannot escape policy, all mutation tools use ordinary commands, stale proposals fail safely, disclosure is auditable, outputs remain editable, and provider-independent benchmark reports meet approved task thresholds.
+AI MVP is implemented when adversarial fake-model sequences cannot escape policy, native source edits use ordinary expected-digest transactions, stale proposals fail safely, disclosure is auditable, outputs remain editable, and provider-independent benchmarks meet approved thresholds.

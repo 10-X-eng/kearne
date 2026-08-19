@@ -24,7 +24,7 @@ BOMOverride
 
 ### ASM-001 — Definition reuse
 
-Instances reference component definitions and immutable source revisions; they do not copy bodies/features. Repeated compatible occurrences share exact and render artifacts.
+Instances reference component definitions and immutable source revisions; they do not copy source or named outputs. Repeated compatible occurrences share exact and render artifacts.
 
 ### ASM-002 — Occurrence addressing
 

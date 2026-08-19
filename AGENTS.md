@@ -6,14 +6,22 @@ Read [`PLAN/README.md`](PLAN/README.md), the owning plan, its dependencies, and 
 
 - Kearne is a new mechanical CAD system, not a FreeCAD rewrite or compatibility clone.
 - Prefer current supported technology when evidence shows a correctness, performance, security, or maintenance benefit. Novelty alone is not evidence.
-- The semantic document and Engineering API are canonical. UI, Codex, Python, plugins, replay, and tests do not create alternate mutation paths.
+- Native build123d functions are canonical part geometry. Typed engineering records own nongeometry product semantics. UI, Codex, Python, plugins, replay, and tests edit the same source/function graph and records through the Engineering API; never create a parallel feature model.
 
 ## Implementation
 
+- Build production code under `apps/`, `modules/`, `api/`, `workers/`, `sdk/`, and `testkit/`. The root build MUST NOT include `prototype/`.
+- Implement the complete desktop interaction system before engineering backends. UI data comes through typed replaceable ports; deterministic in-memory providers may supply development state but cannot duplicate domain rules.
+- Use `prototype/` only when a material feasibility question cannot be answered safely while implementing production code. Product code MUST NOT include, link, package, or copy prototype code without a deliberate production rewrite and review.
 - Deliver the smallest complete vertical slice through accepted boundaries.
 - Name implemented requirement IDs and resolve material `OPEN` decisions through plans or ADRs.
 - Keep engineering work off the UI thread and third-party live objects inside their owner.
 - Generate adapters, schemas, metadata, and conformance enrollment from one descriptor when they express the same domain fact.
+
+## Change gates
+
+- Work locally until a coherent production work package passes its applicable correctness, architecture, test, observation, performance, security, and documentation gate.
+- Do not commit as a checkpoint or after an isolated experiment. Commit only after the work-package gate passes. Push only after the requested repository audit.
 
 ## Verification
 

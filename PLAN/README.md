@@ -46,7 +46,7 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 
 ### Foundations
 
-- [Document model](foundations/01-document-model.md)
+- [Project and function model](foundations/01-document-model.md)
 - [Commands, transactions, and revisions](foundations/02-commands-transactions-revisions.md)
 - [Dependency evaluation and jobs](foundations/03-evaluation-and-jobs.md)
 - [Persistent topology](foundations/04-persistent-topology.md)
@@ -58,7 +58,7 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 ### Product capabilities
 
 - [Rendering and selection](capabilities/01-rendering-and-selection.md)
-- [Sketcher](capabilities/02-sketcher.md)
+- [Sketch](capabilities/02-sketch.md)
 - [Solid modeling](capabilities/03-solid-modeling.md)
 - [Import and export](capabilities/04-import-export.md)
 - [Python and build123d](capabilities/05-python-and-build123d.md)
@@ -79,13 +79,13 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 ### Delivery and assurance
 
 - [Implementation sequence](delivery/01-implementation-sequence.md)
-- [Technical spikes](delivery/02-technical-spikes.md)
+- [Technical prototypes](delivery/02-technology-gates.md)
 - [Scalable test strategy](delivery/03-test-strategy.md)
 - [Performance program](delivery/04-performance.md)
 - [Build, packaging, and release](delivery/05-build-packaging-release.md)
 - [Security and threat model](delivery/06-security-threat-model.md)
 - [Risk register](delivery/07-risk-register.md)
-- [Executable spike evidence](../spikes/README.md)
+- [Executable prototype evidence](../prototype/README.md)
 - [Architecture decisions](adr/README.md)
 
 ## 4. Requirement identifiers
@@ -109,7 +109,7 @@ The terms have these meanings:
 
 | Product goal | Owning plans |
 |---|---|
-| Parametric CAD, direct modeling, surfacing | [Sketcher](capabilities/02-sketcher.md), [solid modeling](capabilities/03-solid-modeling.md), [direct/surface modeling](capabilities/14-direct-and-surface-modeling.md) |
+| Parametric CAD, direct modeling, surfacing | [Sketch](capabilities/02-sketch.md), [solid modeling](capabilities/03-solid-modeling.md), [direct/surface modeling](capabilities/14-direct-and-surface-modeling.md) |
 | Assemblies, motion, interference, BOM | [Assemblies](capabilities/08-assemblies.md) |
 | FEA, modal, thermal, optimization | [Simulation](capabilities/10-simulation.md), [AI](capabilities/06-ai-system.md) |
 | AI inspection, modification, generation, simulation, iteration | [AI](capabilities/06-ai-system.md), [Codex harness](capabilities/17-codex-app-server-harness.md) |
@@ -123,7 +123,7 @@ The terms have these meanings:
 | STEP, STL, DXF, 3MF, and later formats | [Import/export](capabilities/04-import-export.md) |
 | Plugins, Python SDK, headless/API access | [Plugins](capabilities/07-plugins.md), [Engineering API](foundations/08-engineering-api.md) |
 | Large assemblies, instancing, LOD, caching, background loading | [Assemblies](capabilities/08-assemblies.md), [rendering](capabilities/01-rendering-and-selection.md), [performance](delivery/04-performance.md) |
-| One command model for all actors | [Commands/revisions](foundations/02-commands-transactions-revisions.md), [Engineering API](foundations/08-engineering-api.md) |
+| One source/function and command model for all actors | [Project/function model](foundations/01-document-model.md), [Commands/revisions](foundations/02-commands-transactions-revisions.md), [Engineering API](foundations/08-engineering-api.md) |
 
 ## 5. Definition of an implementable plan
 
@@ -150,7 +150,7 @@ Kearne optimizes for **semantic density and one implementation per rule**, not a
 
 ### PLAN-001 — One domain path
 
-GUI, CLI, Python, plugins, AI, replay, and tests MUST invoke the same command/query boundary. Adapters may translate types and presentation, but MUST NOT reimplement engineering rules.
+GUI, CLI, Python, plugins, AI, replay, and tests MUST invoke the same source/function and typed command/query boundary. Adapters may translate types and presentation, but MUST NOT create a second geometry authority or reimplement engineering rules.
 
 ### PLAN-002 — Schema-driven boundaries
 
@@ -172,7 +172,7 @@ Code is not generalized merely to reduce apparent duplication. Similar-looking c
 
 ### PLAN-005 — Composition over service proliferation
 
-Subsystems SHOULD expose cohesive ports and pure domain operations. Avoid a mutable singleton service for every noun, inheritance trees for features, and UI-specific facades that duplicate the engineering API.
+Subsystems SHOULD expose cohesive ports and pure domain operations. Avoid a mutable singleton service for every noun, inheritance trees for graphical operations, and UI-specific facades that duplicate the Engineering API.
 
 ### PLAN-006 — Dependencies are liabilities
 
@@ -199,7 +199,7 @@ An implementation agent MUST:
 1. Read this index, the glossary, the owning plan, its dependency plans, and applicable ADRs.
 2. Identify requirement IDs being implemented.
 3. Stop on an `OPEN` decision that materially changes persisted state or a public boundary.
-4. Change engineering behavior only through the canonical domain path.
+4. Change geometry through the canonical native source/function path and other product state through typed engineering records.
 5. Add or extend reusable test generators and conformance suites before adding isolated examples.
 6. Launch, observe, and capture the complete Kearne session before claiming desktop work is visually complete.
 7. Report verification against requirement IDs and acceptance scenarios.
@@ -222,4 +222,4 @@ Draft -> Proposed -> Accepted -> Implemented
 - **Implemented:** acceptance suite passes on supported platforms.
 - **Superseded:** retained for history and linked to its replacement.
 
-The current documents are a proposed baseline. High-risk decisions identified by the spike plan must be validated before their plans become accepted.
+The current documents are a proposed baseline. High-risk decisions identified by the prototype plan must be validated before their plans become accepted.

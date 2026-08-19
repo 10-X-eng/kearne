@@ -41,9 +41,9 @@ Each profile records CPU topology, RAM, GPU/driver, display resolution/scale, st
 Generators create reproducible workloads from seeds and profiles:
 
 ```text
-DOC-DAG       feature count, fan-in/out, affected-subgraph ratio
+FUNCTION-DAG  module/function count, fan-in/out, affected-subgraph ratio
 SKETCH        entities, constraints, rank/conflict class
-PART          analytic feature families and topology edit sequence
+PART          analytic function families and topology edit sequence
 IMPORT        source size/entity count/format complexity
 HISTORY       revisions, branches, checkpoints, artifact ratio
 VIEW          unique meshes, instances, triangles, topology ranges, styles
@@ -69,12 +69,12 @@ On recommended hardware and release builds:
 | Camera input to visible frame | MVP reference part, 60 Hz | < 16.7 ms p95 |
 | Preselection visible | reference viewport | < 50 ms p95 |
 | Small command commit/invalidation | reference part, no kernel work | < 10 ms p95 engine time |
-| Simple feature evaluation | generated safe-domain primitive | < 100 ms p95 where OCCT class supports it |
+| Simple model-function evaluation | generated safe-domain primitive | < 100 ms p95 where the construction supports it |
 | Superseded preview acknowledgement | outside uninterruptible call | < 50 ms p95 |
 | Project open | MVP metadata/checkpoint, caches excluded | < 500 ms p95 |
 | 10k assembly navigation | defined `VIEW-10K` profile | 60 FPS p95 frame target |
 
-Targets marked dependent on a spike become binding only after the fixture/profile is accepted.
+Targets marked dependent on a prototype become binding only after the fixture/profile is accepted.
 
 ## 6. Resource budgets
 

@@ -3,11 +3,11 @@
 - **Status:** Proposed
 - **Requirement prefix:** `NUM`
 - **Depends on:** [Document model](01-document-model.md)
-- **Unblocks:** sketcher, modeling, import/export, simulation, API schemas
+- **Unblocks:** sketch, modeling, import/export, simulation, API schemas
 
 ## 1. Purpose
 
-Give every subsystem one dimensional value model and one tolerance policy. Numerical behavior is engineering state: ad hoc conversions and per-feature epsilons create irreproducible geometry, invalid simulations, and incompatible APIs.
+Give every subsystem one dimensional value model and one tolerance policy. Numerical behavior is engineering state: ad hoc conversions and per-function epsilons create irreproducible geometry, invalid simulations, and incompatible APIs.
 
 ## 2. Quantity model
 
@@ -62,11 +62,11 @@ declared result type
 
 ### NUM-007 — Parse, bind, type-check, evaluate
 
-Expression processing is split into reusable stages. Features MUST NOT implement their own expression parsers or variable lookup.
+Expression processing is split into reusable stages. Functions and record schemas MUST NOT implement their own expression parsers or variable lookup.
 
 ### NUM-008 — Dependency extraction
 
-Resolved parameter bindings are explicit dependencies used by the document graph. Name changes do not rebind an accepted expression; editing its source triggers binding again.
+Resolved parameter bindings are explicit dependencies in the project graph. Name changes do not rebind an accepted expression; editing its source triggers binding again.
 
 ### NUM-009 — Cycle diagnostics
 
@@ -97,7 +97,7 @@ allowed model extent range
 
 ### NUM-012 — Central comparisons
 
-Foundation utilities implement approximate equality, ordering near tolerance, normalized signature comparison, and geometry scale checks. Feature code MUST NOT introduce unexplained magic epsilons.
+Foundation utilities implement approximate equality, ordering near tolerance, normalized signature comparison, and geometry scale checks. Kearne helpers and evaluators MUST NOT introduce unexplained magic epsilons.
 
 ### NUM-013 — Tolerance purpose separation
 
@@ -110,6 +110,10 @@ The project records its modeling numerical profile ID. Evaluation keys include i
 ### NUM-015 — Geometry range validation
 
 Commands reject semantically detectable out-of-range geometry before kernel evaluation. Kernel-discovered range failures use the same diagnostic category. Diagnostics report the value in user units and the supported range.
+
+### NUM-016 — Unit preference scopes
+
+The user default unit profile seeds new projects. Each project stores an explicit display/input profile. Changing either profile MUST NOT rescale geometry, reinterpret source literals, round canonical values, or modify existing projects.
 
 ## 6. Determinism
 
@@ -136,13 +140,13 @@ Generated dimensional ASTs verify:
 - generated dependency cycles are detected;
 - parser/formatter fuzz inputs never crash or create non-finite canonical values.
 
-Metamorphic geometry tests apply unit-equivalent inputs, rigid transforms, and supported uniform scaling to validate feature relations rather than fixed coordinates.
+Metamorphic geometry tests apply unit-equivalent inputs, rigid transforms, and supported uniform scaling to validate function relations rather than fixed coordinates.
 
 ## 8. Open decisions
 
 - **NUM-OPEN-001:** Quantity library: audited third-party library versus a small Kearne implementation.
 - **NUM-OPEN-002:** Decimal input preservation requirements beyond retained expression source.
-- **NUM-OPEN-003:** Initial supported modeling extent and resolution based on OCCT spike measurements.
+- **NUM-OPEN-003:** Initial supported modeling extent and resolution based on OCCT prototype measurements.
 - **NUM-OPEN-004:** Cross-platform math library requirements for expression determinism.
 
 ## 9. Definition of done

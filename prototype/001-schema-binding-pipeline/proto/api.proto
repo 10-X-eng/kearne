@@ -1,0 +1,228 @@
+edition = "2024";
+
+package kearne.schema.v1;
+
+import "options.proto";
+
+message Diagnostic {
+  option (message_policy) = {
+    stable_id: "diagnostic"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 2048
+  };
+
+  string code = 1 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 96
+    semantic_type: "DiagnosticCode"
+  }];
+  string field_path = 2 [(field_policy) = { max_length: 256 }];
+}
+
+message RenameProjectRequest {
+  option (message_policy) = {
+    stable_id: "project.rename"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_COMMAND
+    max_serialized_bytes: 512
+    permission: "document.write"
+    summary: "Rename a project."
+    documentation_key: "command.project.rename"
+    ai_exposed: true
+  };
+
+  string project_id = 1 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 64
+    semantic_type: "ProjectId"
+    description: "Stable project identity."
+  }];
+  string display_name = 2 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 80
+    semantic_type: "DisplayName"
+    description: "New project display name."
+  }];
+}
+
+message CommandEnvelope {
+  option (message_policy) = {
+    stable_id: "command.envelope"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 2048
+    required_oneof: "payload"
+  };
+
+  string request_id = 1 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 64
+    semantic_type: "RequestId"
+  }];
+  string base_revision_id = 2 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 64
+    semantic_type: "RevisionId"
+  }];
+  oneof payload {
+    RenameProjectRequest rename_project = 10;
+  }
+}
+
+message CommandResult {
+  option (message_policy) = {
+    stable_id: "command.result"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 2048
+  };
+
+  bool committed = 1;
+  string revision_id = 2 [(field_policy) = { max_length: 64 semantic_type: "RevisionId" }];
+  Diagnostic diagnostic = 3;
+}
+
+message GetProjectMetadataQuery {
+  option (message_policy) = {
+    stable_id: "project.get_metadata"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_QUERY
+    max_serialized_bytes: 256
+    permission: "document.read"
+    summary: "Read project metadata at one revision."
+    documentation_key: "query.project.get_metadata"
+    ai_exposed: true
+  };
+
+  string project_id = 1 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 64
+    semantic_type: "ProjectId"
+  }];
+}
+
+message QueryEnvelope {
+  option (message_policy) = {
+    stable_id: "query.envelope"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 1024
+    required_oneof: "payload"
+  };
+
+  string revision_id = 1 [(field_policy) = {
+    required: true
+    min_length: 1
+    max_length: 64
+    semantic_type: "RevisionId"
+  }];
+  uint32 limit = 2 [(field_policy) = { minimum: 1 maximum: 100 }];
+  oneof payload {
+    GetProjectMetadataQuery get_project_metadata = 10;
+  }
+}
+
+message ProjectMetadataResult {
+  option (message_policy) = {
+    stable_id: "project.metadata_result"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 1024
+  };
+
+  string observed_revision_id = 1 [(field_policy) = { max_length: 64 semantic_type: "RevisionId" }];
+  string project_id = 2 [(field_policy) = { max_length: 64 semantic_type: "ProjectId" }];
+  string display_name = 3 [(field_policy) = { max_length: 80 semantic_type: "DisplayName" }];
+  Diagnostic diagnostic = 4;
+}
+
+message RpcRequest {
+  option (message_policy) = {
+    stable_id: "rpc.request"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 4096
+    required_oneof: "payload"
+  };
+
+  oneof payload {
+    CommandEnvelope command = 1;
+    QueryEnvelope query = 2;
+  }
+}
+
+message RpcResponse {
+  option (message_policy) = {
+    stable_id: "rpc.response"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WIRE
+    max_serialized_bytes: 4096
+    required_oneof: "payload"
+  };
+
+  oneof payload {
+    CommandResult command = 1;
+    ProjectMetadataResult query = 2;
+    Diagnostic transport_diagnostic = 3;
+  }
+}
+
+message RevisionCommittedEvent {
+  string revision_id = 1 [(field_policy) = { required: true max_length: 64 semantic_type: "RevisionId" }];
+  string request_id = 2 [(field_policy) = { required: true max_length: 64 semantic_type: "RequestId" }];
+}
+
+message EventEnvelope {
+  option (message_policy) = {
+    stable_id: "event.envelope"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_EVENT
+    max_serialized_bytes: 2048
+    required_oneof: "payload"
+  };
+
+  uint64 sequence = 1 [(field_policy) = { minimum: 1 }];
+  oneof payload {
+    RevisionCommittedEvent revision_committed = 10;
+  }
+}
+
+message EntityRecord {
+  option (message_policy) = {
+    stable_id: "entity.record"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_ENTITY
+    max_serialized_bytes: 131072
+  };
+
+  string kind = 1 [(field_policy) = { required: true min_length: 1 max_length: 128 }];
+  uint32 schema_version = 2 [(field_policy) = { minimum: 1 }];
+  bytes opaque_payload = 3 [(field_policy) = { max_length: 65536 }];
+}
+
+message ValidateCommandJob {
+  bytes command = 1 [(field_policy) = { required: true min_length: 1 max_length: 4096 }];
+}
+
+message WorkerJob {
+  option (message_policy) = {
+    stable_id: "worker.job"
+    schema_version: 1
+    kind: DESCRIPTOR_KIND_WORKER_JOB
+    max_serialized_bytes: 8192
+    required_oneof: "payload"
+  };
+
+  string worker_instance_id = 1 [(field_policy) = { required: true min_length: 1 max_length: 64 }];
+  string job_id = 2 [(field_policy) = { required: true min_length: 1 max_length: 64 }];
+  oneof payload {
+    ValidateCommandJob validate_command = 10;
+  }
+}

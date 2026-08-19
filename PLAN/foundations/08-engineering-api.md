@@ -1,33 +1,34 @@
 # Engineering API and Schemas
 
-- **Status:** Proposed; schema-tooling spike required
+- **Status:** Proposed; schema-tooling prototype required
 - **Requirement prefix:** `API`
 - **Depends on:** [Document model](01-document-model.md), [commands and revisions](02-commands-transactions-revisions.md), [units](05-units-expressions-numerics.md)
 - **Unblocks:** QML, CLI, Python, AI, plugins, workers, tests
 
 ## 1. Purpose
 
-Expose one stable semantic command/query surface through multiple adapters without duplicating engineering rules or hand-maintaining inconsistent schemas, documentation, AI tools, and bindings.
+Expose one source/function and typed engineering surface through multiple adapters without duplicating rules or hand-maintaining inconsistent schemas, documentation, AI tools, and bindings.
 
 ## 2. API families
 
 ```text
 Command API      submit/preview/validate transactions
-Query API        inspect immutable document and derived results
+Source API       inspect/replace modules; request structural transforms
+Query API        inspect immutable project state and derived results
 Operation API    observe/cancel asynchronous work
 Event API        subscribe to revision, projection, job, and diagnostic changes
 Artifact API     bounded read/write leases for immutable bulk data
-Registry API     discover command, feature, unit, schema, and capability descriptors
+Registry API     discover command, function-contract, operation, unit, schema, and capability descriptors
 Admin API        migrations, repair, diagnostics; not exposed to normal automation
 ```
 
 ### API-001 — Revision-explicit reads
 
-Every engineering query accepts a revision or snapshot token and returns the observed revision. “Current document” is adapter convenience resolved before entering the domain API.
+Every engineering query accepts a revision or snapshot token and returns the observed revision. “Current project” is adapter convenience resolved before entering the domain API.
 
 ### API-002 — Command-only writes
 
-There are no general entity setters, mutable document objects, or arbitrary JSON patch endpoints in public APIs. Persistent writes are typed commands and transactions.
+There are no general record setters, mutable project objects, database writes, or arbitrary JSON patch endpoints in public APIs. Persistent writes are source/function or typed record commands inside transactions.
 
 ### API-003 — Bounded results
 
@@ -53,7 +54,7 @@ Schema generation MUST NOT force the semantic core into stringly typed maps. Gen
 
 ### API-006 — No reflection-only business logic
 
-Descriptors support discovery and generic UI/tooling, but domain behavior remains explicit typed code. A general property bag must not become the native feature implementation model merely to reduce LOC.
+Descriptors support discovery, source tooling, and generic UI, but engineering behavior remains explicit typed code or canonical build123d source. A general property bag MUST NOT become a duplicate geometry model merely to reduce LOC.
 
 ## 4. Command descriptor
 
@@ -81,7 +82,7 @@ Adapters see only commands permitted by their actor and runtime capability conte
 
 ### API-008 — Pure snapshot queries
 
-Document queries are free of observable mutation and do not trigger unbounded evaluation implicitly. A query requiring missing derived data returns an operation handle or `NotEvaluated`, according to its contract.
+Project queries are free of observable mutation and do not trigger unbounded evaluation implicitly. A query requiring missing derived data returns an operation handle or `NotEvaluated`, according to its contract.
 
 ### API-009 — Event resynchronization
 
@@ -117,11 +118,11 @@ QML uses immutable/read-only projections plus controller commands. Domain IDs an
 
 ### Python
 
-The SDK provides ergonomic typed wrappers over the same schemas. Python object convenience methods submit commands; they are not alternate document objects.
+The SDK provides ergonomic typed wrappers over the same schemas. It may submit native source, function contracts, bindings, and typed commands; proxy objects are not alternate project objects.
 
 ### AI
 
-AI tools are filtered projections of command/query descriptors with stricter bounds, permissions, descriptions, and confirmation policies. AI never receives the admin API.
+AI tools expose bounded project queries, native source/function transactions, and typed product commands under permissions and confirmation policy. AI never receives the admin or storage API.
 
 ### CLI and replay
 

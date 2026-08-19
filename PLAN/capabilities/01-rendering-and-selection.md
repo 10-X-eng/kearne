@@ -1,6 +1,6 @@
 # Rendering and Selection
 
-- **Status:** Proposed; viewport spike required
+- **Status:** Proposed; viewport prototype required
 - **Requirement prefix:** `RND`
 - **Depends on:** [Evaluation](../foundations/03-evaluation-and-jobs.md), [persistent topology](../foundations/04-persistent-topology.md), [processes](../foundations/07-processes-and-ipc.md)
 - **Unblocks:** interactive MVP, large assemblies, visual analysis
@@ -66,7 +66,7 @@ QML state is owned by the UI thread. GPU resources and submission are owned by t
 
 ### RND-005 — Graphics backend policy
 
-The initial release pins supported Qt graphics backends per platform. If AIS requires an OpenGL-specific integration, the spike must prove window embedding, high-DPI, resize, multi-window, device loss, and QML overlay behavior. The public render port remains backend-neutral.
+The initial release pins supported Qt graphics backends per platform. If AIS requires an OpenGL-specific integration, the prototype must prove window embedding, high-DPI, resize, multi-window, device loss, and QML overlay behavior. The public render port remains backend-neutral.
 
 ### RND-006 — Frame continuity
 
@@ -107,6 +107,10 @@ Persistent/user-pinned selection sets store semantic references. Hover and trans
 
 The selection engine centrally implements filters, occurrence scope, cycling, select-similar predicates, box/lasso policy, and preselection. Individual tools contribute required target predicates rather than custom pick code.
 
+### RND-013 — Engineering grid
+
+`GridProjection` carries a stable plane reference, canonical origin and basis, minor spacing quantity, major interval, snap state, and camera generation. The renderer selects a 1–2–5 spacing progression that keeps lines legible as the camera changes and reports the exact displayed spacing. Sketch uses its attachment plane; model view uses the selected reference plane or component XY plane. Snapping resolves canonical plane coordinates, never screen pixels. A shell fallback may show orientation while the renderer is unavailable; the connected renderer owns the depth-aware grid.
+
 ## 7. Styles and analysis overlays
 
 Style resolution composes document appearance, occurrence override, interaction state, evaluation health, and analysis overlay through a deterministic precedence policy. Feature tools do not mutate base material to display preview colors.
@@ -145,7 +149,7 @@ Image snapshots are limited to a small portable visual-smoke corpus with toleran
 
 ## 11. Open decisions
 
-- **RND-OPEN-001:** AIS-in-Qt-Quick adapter versus early Kearne mesh renderer after the viewport spike.
+- **RND-OPEN-001:** AIS-in-Qt-Quick adapter versus early Kearne mesh renderer after the viewport prototype.
 - **RND-OPEN-002:** Qt graphics backend matrix by platform.
 - **RND-OPEN-003:** GPU versus CPU first-stage picking for MVP.
 - **RND-OPEN-004:** Versioned mesh artifact format and compression.
