@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import selectors
 import shutil
 import subprocess
@@ -56,6 +57,22 @@ def codex_version(binary: str) -> str:
     fields = completed.stdout.strip().split()
     require(len(fields) == 2 and fields[0] == "codex-cli", "unexpected version output")
     return fields[1]
+
+
+def configured_mcp_names(binary: str) -> list[str]:
+    completed = subprocess.run(
+        [binary, "mcp", "list", "--json"], capture_output=True, text=True, check=False
+    )
+    require(completed.returncode == 0, completed.stderr.strip() or "codex mcp list failed")
+    value = json.loads(completed.stdout)
+    require(isinstance(value, list), "codex mcp list did not return an array")
+    names = [item.get("name") for item in value if isinstance(item, dict)]
+    require(all(isinstance(name, str) and name for name in names), "invalid MCP server name")
+    require(
+        all(re.fullmatch(r"[A-Za-z0-9_-]+", name) for name in names),
+        "configured MCP name cannot be disabled safely by this probe",
+    )
+    return names
 
 
 def generate_schema(binary: str, target: Path, experimental: bool) -> dict[str, Any]:
@@ -167,11 +184,41 @@ def read_response(
         notifications.append(method if isinstance(method, str) else "<uncorrelated-response>")
 
 
-def protocol_probe(binary: str, timeout: float) -> dict[str, Any]:
+def protocol_probe(binary: str, timeout: float, repository: Path) -> dict[str, Any]:
+    bridge = repository / "spikes" / "010-codex-app-server" / "mcp_bridge.py"
+    require(bridge.is_file(), "MCP bridge probe is missing")
+    mcp_config = (
+        "mcp_servers.kearne_probe="
+        + "{command="
+        + json.dumps(sys.executable)
+        + ",args=["
+        + json.dumps(os.fspath(bridge))
+        + "],startup_timeout_sec=5,tool_timeout_sec=5}"
+    )
+    command = [
+        binary,
+        "app-server",
+        "--stdio",
+        "--strict-config",
+        "-c",
+        'history.persistence="none"',
+        "-c",
+        mcp_config,
+        "--disable",
+        "apps",
+        "--disable",
+        "remote_plugin",
+        "--disable",
+        "multi_agent",
+    ]
+    for name in configured_mcp_names(binary):
+        if name != "kearne_probe":
+            command.extend(["-c", f"mcp_servers.{name}.enabled=false"])
+
     with tempfile.TemporaryFile() as stderr:
         started = time.perf_counter()
         process = subprocess.Popen(
-            [binary, "app-server", "--stdio", "--strict-config"],
+            command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=stderr,
@@ -207,6 +254,80 @@ def protocol_probe(binary: str, timeout: float) -> dict[str, Any]:
         send(process.stdin, repeat)
         repeated = read_response(process, selector, "repeat", timeout, notifications)
 
+        send(
+            process.stdin,
+            {
+                "method": "thread/start",
+                "id": "thread",
+                "params": {
+                    "cwd": os.fspath(repository),
+                    "ephemeral": True,
+                    "sandbox": "read-only",
+                    "approvalPolicy": "never",
+                },
+            },
+        )
+        thread_response = read_response(process, selector, "thread", timeout, notifications)
+        thread = thread_response.get("result", {}).get("thread", {})
+        thread_id = thread.get("id")
+        require(isinstance(thread_id, str) and thread_id, "ephemeral thread ID is missing")
+        require(thread.get("ephemeral") is True, "probe thread is not ephemeral")
+
+        send(
+            process.stdin,
+            {
+                "method": "mcpServerStatus/list",
+                "id": "mcp-status",
+                "params": {"threadId": thread_id, "detail": "toolsAndAuthOnly"},
+            },
+        )
+        status = read_response(process, selector, "mcp-status", timeout, notifications)
+        servers = status.get("result", {}).get("data", [])
+        require(isinstance(servers, list), "MCP status data is missing")
+        active_servers = [
+            server
+            for server in servers
+            if isinstance(server, dict) and (server.get("serverInfo") or server.get("tools"))
+        ]
+        require(
+            [server.get("name") for server in active_servers] == ["kearne_probe"],
+            "unscoped MCP server entered the probe",
+        )
+        tools = active_servers[0].get("tools", {})
+        require("kearne.describe" in tools, "Kearne MCP tool was not discovered")
+
+        send(
+            process.stdin,
+            {
+                "method": "mcpServer/tool/call",
+                "id": "mcp-call",
+                "params": {
+                    "threadId": thread_id,
+                    "server": "kearne_probe",
+                    "tool": "kearne.describe",
+                    "arguments": {"revision": "probe-revision"},
+                },
+            },
+        )
+        tool_response = read_response(process, selector, "mcp-call", timeout, notifications)
+        tool_result = tool_response.get("result", {})
+        structured = tool_result.get("structuredContent", {})
+        require(tool_result.get("isError") is False, "Kearne MCP tool returned an error")
+        require(structured.get("revision") == "probe-revision", "Kearne MCP output changed")
+        require(structured.get("source") == "spike", "Kearne MCP output source changed")
+        mcp_protocol_version = structured.get("protocolVersion")
+        require(isinstance(mcp_protocol_version, str), "MCP protocol version is missing")
+
+        send(
+            process.stdin,
+            {
+                "method": "thread/unsubscribe",
+                "id": "unsubscribe",
+                "params": {"threadId": thread_id},
+            },
+        )
+        read_response(process, selector, "unsubscribe", timeout, notifications)
+
         process.stdin.close()
         try:
             exit_code = process.wait(timeout=timeout)
@@ -232,6 +353,11 @@ def protocol_probe(binary: str, timeout: float) -> dict[str, Any]:
         "preinitialize_error_code": preinit_error.get("code"),
         "reinitialize_error_code": repeated_error.get("code"),
         "notification_methods": sorted(set(notifications)),
+        "ephemeral_thread": True,
+        "isolated_mcp_server_count": len(active_servers),
+        "mcp_tool_discovered": True,
+        "mcp_tool_called": True,
+        "mcp_protocol_version": mcp_protocol_version,
         "clean_jsonl_stdout": True,
         "clean_stderr": True,
         "graceful_eof_shutdown": True,
@@ -306,7 +432,7 @@ def main() -> int:
             "determinism": determinism,
             "contract": schema,
         },
-        "protocol": protocol_probe(os.fspath(binary), args.timeout),
+        "protocol": protocol_probe(os.fspath(binary), args.timeout, repository),
     }
     print(json.dumps(evidence, indent=2, sort_keys=True))
     return 0

@@ -28,7 +28,7 @@ App-server owns conversational execution state. Kearne owns permissions, project
 
 ### HAR-002 — One engineering path
 
-The Agent Bridge is a Kearne-owned local MCP server configured for app-server. It MUST derive command and query tools from Engineering API descriptors. It may add AI-facing descriptions, budgets, and confirmation metadata, but MUST NOT reimplement validation, normalization, evaluation, or mutation. Experimental client-executed dynamic tools are excluded from the production baseline.
+The Agent Bridge is a Kearne-owned local MCP server configured for app-server. It MUST negotiate a supported MCP version and derive command and query tools from Engineering API descriptors. It may add AI-facing descriptions, budgets, and confirmation metadata, but MUST NOT reimplement validation, normalization, evaluation, or mutation. Experimental client-executed dynamic tools are excluded from the production baseline. Codex 0.146.1 negotiated MCP `2025-06-18` in SPIKE-010.
 
 ### HAR-003 — Replaceable adapter
 
