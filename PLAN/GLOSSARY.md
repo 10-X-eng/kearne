@@ -5,11 +5,14 @@
 
 | Term | Meaning |
 |---|---|
+| Agent Bridge | Kearne-owned local MCP adapter that exposes capability-filtered Engineering and Observation API tools to Codex app-server. It contains no engineering rules. |
+| Application session | One driver-managed Kearne process lifetime and its owned UI surfaces, identified independently of window titles or OS process scans. |
 | Artifact | Immutable bulk output such as BREP, mesh, thumbnail, simulation results, or an imported source file. Addressed by digest and stored outside canonical entity records. |
 | Body | A document entity representing a connected solid, sheet, or compound modeling result owned by a component definition. |
 | Branch | A named mutable pointer to a revision. Branch UI arrives later; revision identity exists from the first persistent format. |
 | Cache | Discardable data that can be reproduced from canonical state plus pinned evaluator dependencies. If it cannot be reproduced, it is an artifact, not a cache. |
 | Command request | Validated user or automation intent submitted to the Engineering API. It is not itself canonical document state. |
+| Codex thread | App-server conversational history and turn context. It is operational AI state, not a Kearne document, branch, revision, or audit authority. |
 | Component definition | Reusable authored definition containing bodies, features, datums, properties, and configuration inputs. |
 | Component instance | Placement of a component definition in an assembly, with transform and instance-level overrides. |
 | Configuration | A named or parameterized set of overrides evaluated against the same component definition. |
@@ -24,9 +27,11 @@
 | Instance path | Ordered sequence of instance IDs locating a definition-owned entity in an assembly occurrence. |
 | Job | Scheduled execution record for expensive or asynchronous work. Job state is operational data; durable engineering intent remains in the document. |
 | Mutation | Normalized atomic change to semantic entities, produced after command validation. |
+| Observation point | Correlated semantic-UI, frame, render, revision, and job generations used to await and capture a known desktop state without sleeping. |
 | Project | Persisted container containing a document revision graph, artifacts, metadata, and local workspace state. |
 | Revision | Immutable node with parent revision IDs and one committed mutation batch. A revision is not necessarily a named version. |
 | Semantic reference | Typed persistent reference to an entity, parameter, datum, or topology name; never a pointer, array index, render ID, or raw OCCT subshape index. |
+| Semantic UI snapshot | Immutable observation of control identities, roles, states, bounds, actions, and application generations; it contains no engineering mutation authority. |
 | Topology name | Persistent, feature-relative identity for a produced face, edge, or vertex plus resolution evidence and confidence. |
 | Transaction | Atomic validation and commit boundary producing zero or one revision. It may contain multiple command requests and one normalized mutation batch. |
 | Version | User-named immutable reference to a revision carrying release or checkpoint intent. |

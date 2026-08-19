@@ -3,7 +3,7 @@
 - **Status:** Proposed; process-boundary spike required
 - **Requirement prefix:** `IPC`
 - **Depends on:** [System architecture](../01-system-architecture.md), [evaluation](03-evaluation-and-jobs.md), [persistence](06-persistence-and-recovery.md)
-- **Unblocks:** geometry isolation, Python, import/export, simulation
+- **Unblocks:** geometry isolation, Python, import/export, simulation, Codex harness
 
 ## 1. Purpose
 
@@ -31,6 +31,7 @@ Import worker    untrusted/complex format parsing, possibly OCCT-backed
 Python worker    SDK/build123d/user code under capabilities
 Solver worker    future assembly, meshing, and simulation backends
 Utility worker   thumbnails or isolated conversions when justified
+Agent runtime    Codex app-server under a protocol-specific adapter
 ```
 
 A worker executable may host multiple compatible roles, but protocol roles and resource policies remain explicit.
@@ -38,6 +39,8 @@ A worker executable may host multiple compatible roles, but protocol roles and r
 ### IPC-004 — Reusable supervisor
 
 All workers use one supervisor implementation for launch, handshake, health, job dispatch, cancellation, progress, logging correlation, quotas, crash classification, restart limits, and shutdown.
+
+The agent runtime reuses process launch, environment, health, logging, quota, restart, and shutdown policy. Its native app-server thread/turn protocol remains inside the Codex adapter and is not translated into fake geometry-worker messages.
 
 ## 4. Control and bulk planes
 
@@ -123,6 +126,10 @@ Worker-instance-scoped leases expire on confirmed process death. The broker clea
 
 The UI thread never waits for worker launch, heartbeat, response, shutdown, or pipe drain. Loss of a worker updates asynchronous operation state.
 
+### IPC-015 — Protocol-native adapters
+
+An external runtime with a maintained versioned protocol retains that protocol behind its adapter. The supervisor shares lifecycle policy, not a lowest-common-denominator wire schema. Canonical Kearne commands and artifact contracts remain unchanged.
+
 ## 8. Security
 
 - Workers are spawned from verified Kearne installations or approved plugin packages.
@@ -131,6 +138,7 @@ The UI thread never waits for worker launch, heartbeat, response, shutdown, or p
 - Python and import workers receive stronger filesystem/network restrictions than trusted native geometry workers.
 - Environment variables, inherited handles, current directory, and search paths are explicitly constructed.
 - Logs and crash reports redact project content unless opted in.
+- Codex receives an explicit working directory, configuration root, tool set, sandbox, approval policy, network policy, and brokered image paths.
 
 ## 9. Verification strategy
 

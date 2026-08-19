@@ -13,7 +13,7 @@ Make AI a permissioned, observable consumer of Kearne's engineering API. Models 
 
 ```text
 AI interaction controller
-  -> provider adapter (local or approved cloud)
+  <-> versioned Codex app-server adapter
   -> context/query budgeter
   -> capability-filtered tool registry
   -> plan/proposal workspace
@@ -21,7 +21,7 @@ AI interaction controller
   -> ordinary Engineering API
 ```
 
-No model SDK or prompt framework is linked into document, command, geometry, or persistence libraries.
+Codex app-server owns threads, turns, streamed items, authentication, and runtime approvals. Kearne owns engineering permissions, tools, revisions, evidence, and policy. No Codex protocol or model SDK type enters document, command, geometry, persistence, or QML libraries. See the [harness plan](17-codex-app-server-harness.md).
 
 ## 3. Capability levels
 
@@ -118,9 +118,13 @@ AI output and even successful simulation are not represented as certified or saf
 
 Native AI-created geometry is ordinary editable features. Procedural output is clearly labeled with source/environment/topology limitations.
 
+### AI-014 — Harness does not define truth
+
+App-server thread state, model prose, reasoning, and tool-selection history are operational records, not engineering state. Persistent effects exist only as ordinary committed Kearne commands; claims require revision-correct Kearne query evidence.
+
 ## 8. Privacy and providers
 
-Modes are `No AI`, `Local Only`, and policy-approved cloud providers. Each provider adapter declares data residency/configuration, retention controls, model identity, supported tool protocol, context limits, and availability.
+Modes are `No AI` and configured Codex app-server operation. Selected Codex authentication/provider configuration declares data residency, retention controls, model identity, context limits, and availability to the extent exposed by the pinned runtime.
 
 Project data is not sent merely to detect whether AI could help. Cloud requests present a disclosure summary and follow project/organization policy. Prompts and responses are not persisted into engineering history by default; tool calls, resulting commands, model/provider identity, and safe provenance are.
 
@@ -146,13 +150,13 @@ MVP provides:
 - set parameter;
 - transaction preview, confirm, reject;
 - explain a structured diagnostic;
-- local `No AI` mode and one provider adapter selected later.
+- local `No AI` mode and one pinned Codex app-server adapter.
 
 Autonomous design, branch exploration, simulation optimization, arbitrary Python generation, web access, and manufacturing validation are later gates.
 
 ## 11. Open decisions
 
-- **AI-OPEN-001:** Initial local/cloud provider support and retention contract.
+- **AI-OPEN-001:** Supported Codex authentication/provider modes and retention contract.
 - **AI-OPEN-002:** On-device context summarization and embedding/search strategy.
 - **AI-OPEN-003:** Default approval matrix by command risk.
 - **AI-OPEN-004:** Whether prompts/transcripts may be optionally project artifacts and their encryption/retention.

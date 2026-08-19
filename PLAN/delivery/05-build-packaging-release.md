@@ -109,6 +109,14 @@ Install/update/uninstall never treats project files, user scripts, plugins, cach
 
 An update does not migrate a project merely during background scanning. Migration begins on explicit open with compatibility/recovery behavior from the persistence plan.
 
+### BLD-010 — Codex compatibility is generated and pinned
+
+Developer, CI, and release builds pin one Codex executable version and generate the app-server JSON Schema used by the adapter. A host-language binding is generated only when consumed. CI fails on unreviewed schema drift. Packaging, external discovery, and independent update policies MUST verify executable identity before launch and preserve `No AI` operation when unavailable.
+
+### BLD-011 — Observation driver ships with testable artifacts
+
+Developer, CI, and release-candidate outputs include the application lifecycle/observation driver and its matching protocol schema. Release packaging may capability-disable agent control by default but MUST retain the same capturable UI implementation tested before release.
+
 ## 9. Diagnostics and symbols
 
 Build identity maps every binary, generated schema set, dependency fingerprint, and symbol package. Crash dumps exclude project memory/content under available platform controls and require consent for upload; retained symbols support offline analysis.
@@ -120,6 +128,7 @@ Build identity maps every binary, generated schema set, dependency fingerprint, 
 - **BLD-OPEN-003:** Windows installer/updater framework and signing identity.
 - **BLD-OPEN-004:** CI and release-builder service.
 - **BLD-OPEN-005:** Crash reporting provider and privacy posture.
+- **BLD-OPEN-006:** Bundle Codex, install it as a managed companion, or validate a separately installed executable.
 
 ## 11. Definition of done
 

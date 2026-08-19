@@ -7,7 +7,7 @@
 
 ## 1. Product statement
 
-Kearne is a local-first mechanical CAD system whose GUI, automation, plugins, and AI operate through one semantic engineering model. Its first product proof is not autonomous engineering optimization. It is reliable parametric editing in which the same operation behaves identically through every control surface.
+Kearne is a new local-first mechanical CAD system whose GUI, automation, plugins, and AI operate through one semantic engineering model. It is not a FreeCAD rewrite, fork, workbench replacement, or compatibility clone. Its first proof is reliable parametric editing in which the same operation behaves identically through every control surface.
 
 ## 2. Initial users
 
@@ -94,11 +94,20 @@ MVP release gates cover current supported Windows 11 x86-64 and two named Linux 
 
 Performance requirements MUST name a minimum and recommended reference machine. Unsupported hardware may run Kearne, but is not used to waive correctness or corrupt data.
 
+### PROD-011 — Independent modern architecture
+
+Kearne MUST select current supported technology from its own requirements and measured evidence. FreeCAD source structure, workbench model, document object model, property system, command paths, and UX conventions are not compatibility constraints. File interchange and learned product lessons do not require architectural imitation.
+
+### PROD-012 — Agent-observable desktop
+
+An authorized agent MUST be able to launch Kearne deterministically, inspect semantic UI state, await visible state without sleeps, operate public controls, and receive a lossless capture containing every visible Kearne-owned surface. Platform restrictions on capturing unrelated applications or OS-owned secure surfaces MUST be reported, not hidden.
+
 ## 7. Success measures
 
 An MVP is successful when:
 
 - the reference workflow passes through GUI, headless API, and replay adapters;
+- each desktop slice returns a complete Kearne-session capture correlated with semantic UI state;
 - generated command sequences can edit, save, reload, and replay thousands of valid documents without invariant violations;
 - topology references survive the documented MVP edit classes at the required confidence;
 - forced worker and application crashes preserve the durable-revision contract;

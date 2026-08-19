@@ -10,11 +10,14 @@
 **Primary application language:** C++23
 **UI:** Qt 6 / Qt Quick / QML
 **Automation and AI geometry:** Python 3 + build123d
+**AI harness:** Codex app-server behind a Kearne-owned adapter and tool policy
 **Architecture principle:** Humans, AI agents, scripts, plugins, and external APIs operate on the same document and command model.
 
 ---
 
 # 1. Product Vision
+
+Kearne is a new product, not a FreeCAD rewrite, fork, workbench replacement, or compatibility clone. Technology and architecture are selected from Kearne's requirements and measured evidence.
 
 The product shall be a high-performance, AI-native mechanical engineering environment combining:
 
@@ -1287,6 +1290,8 @@ Level 6 — Autonomous bounded task
 
 Users and organizations shall control permitted levels.
 
+Codex app-server shall provide the AI thread, turn, streamed-event, approval, and authentication harness. Kearne shall remain the authority for engineering permissions, tools, commands, revisions, and evidence. Conversational state shall not become canonical CAD state.
+
 ---
 
 # 42. AI Context Model
@@ -1944,6 +1949,8 @@ Visual goals:
 * keyboard-first capable;
 * touchpad friendly;
 * modern iconography.
+
+Every desktop workflow shall be agent-observable. An authorized harness must be able to launch the application, await typed UI and frame state without sleeps, inspect semantic controls, operate public input paths, and return a lossless image containing every visible Kearne-owned surface. Capturing unrelated applications or OS-owned secure surfaces remains subject to platform permission.
 
 ---
 
@@ -3008,6 +3015,10 @@ face count
 bounding box
 topology relationships
 ```
+
+Regression assurance shall scale through shared contract suites, schema-aware generators and shrinkers, model-based state machines, metamorphic relations, deterministic replay, fuzzing, and fault injection. Registering a public command, entity, feature, adapter, worker, or format shall enroll it in applicable conformance suites. Manual exploration shall produce reusable seeds, scenarios, models, or properties rather than a growing set of hand-rewritten procedural tests.
+
+UI automation shall combine semantic control state with complete Kearne-session captures. Broad screenshot goldens, widget coordinates, wall-clock sleeps, private implementation calls, and exact BREP bytes shall not be primary correctness oracles.
 
 ---
 

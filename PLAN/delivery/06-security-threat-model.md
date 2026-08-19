@@ -31,6 +31,8 @@ coordinator <-> workers/shared artifacts
 Python/plugin code -> OS/files/network/project API
 AI context/tools <-> model provider
 desktop <-> collaboration/update/crash services
+desktop observation -> screenshots/semantic UI/input actions
+Codex app-server <-> Kearne Agent Bridge/provider/auth
 package/update metadata -> installed binaries
 ```
 
@@ -62,6 +64,9 @@ UI hiding, model instructions, plugin manifests, and client-side checks are not 
 | Dependency/update compromise | locked sources/digests, SBOM, signing, isolated release builders, verified updater/rollback |
 | Resource exhaustion | per-role CPU/memory/time/process/output quotas, bounded queues, circuit breakers |
 | Sensitive logs/crash dumps | structured redaction, no secrets/prompts/source bytes by default, opt-in upload |
+| Screenshot disclosure | Kearne-session scope by default, separate display-capture grant, private temporary artifacts, expiry, provider disclosure check |
+| Agent UI control abuse | visible revocable session capability, semantic action allowlist, normal UI/controller path, audit correlation |
+| Compromised or incompatible Codex runtime | verified path/version, generated-schema handshake, explicit environment/tools/sandbox/network, kill/restart, `No AI` fallback |
 | Confused deputy across projects | project-scoped handles and actor context; no ambient active-project authority |
 | Silent engineering manipulation | command-only writes, revision/provenance, semantic diff, no ambiguous topology guesses |
 
@@ -87,18 +92,26 @@ Kearne provides a mode that opens semantic metadata/read-only retained artifacts
 - Export/network/Python/plugin installation require separate policy and confirmation.
 - Context and results are bounded; provider responses are untrusted schema input.
 - Model/provider identity and tool provenance are retained without secrets.
+- App-server runtime approvals and Kearne engineering/disclosure approvals remain independent.
+- Screenshot paths are brokered and short-lived; adding an image to a turn requires the same disclosure policy as project data.
 
-## 7. Plugin and supply-chain controls
+## 7. Desktop observation controls
+
+Complete Kearne-session capture excludes unrelated applications. Full-display capture is disabled by default and requires a separate capability because it may expose other projects, applications, notifications, or credentials. OS secure desktops and permission surfaces are never bypassed.
+
+The observation driver accepts authenticated local sessions, bounded requests, stable control IDs, and allowed public actions. It cannot call private QML mutation functions. Captures and semantic snapshots do not enter project history, telemetry, or crash reports by default and are cleaned under quota/expiry policy.
+
+## 8. Plugin and supply-chain controls
 
 Packages are signed/content-addressed, declare capabilities, pin dependencies, and execute out of process by default. Permission expansion on update requires review. Revoked/vulnerable plugins may be disabled while opaque project data and source artifacts remain recoverable.
 
 Release signing keys use restricted hardware/service-backed storage, separated roles, auditable access, and recovery/rotation procedures.
 
-## 8. Collaboration controls
+## 9. Collaboration controls
 
 Authentication, tenant/project authorization, branch compare-and-swap, encryption in transit, storage isolation, audit, rate/quota limits, backups, deletion/retention, and regional policy require independent review. The client validates server objects and does not delete local data because a remote project disappeared.
 
-## 9. Security verification
+## 10. Security verification
 
 - Threat-boundary fuzz targets and hostile schema generators.
 - Capability state machines proving denied operations cannot succeed through alternate adapters.
@@ -106,23 +119,26 @@ Authentication, tenant/project authorization, branch compare-and-swap, encryptio
 - Dependency/SBOM/advisory and secret scanning.
 - Update signature, downgrade, rollback, mirror, and tamper tests.
 - Prompt-injection/adversarial tool-loop suites.
+- Capture-scope tests proving application capture excludes unrelated windows and display capture requires its distinct grant.
+- Codex protocol/version corruption, approval-confusion, brokered-image, and hostile-tool-sequence tests.
 - Static analysis and sanitizers on supported toolchains; memory-safe parser components for new untrusted formats unless a reviewed dependency prevents it.
 - Periodic external review before enabling untrusted plugins, cloud AI, or collaboration.
 
 Security regressions receive permanent generator/fuzz/property coverage when possible, not only one fixed exploit file.
 
-## 10. Incident behavior
+## 11. Incident behavior
 
 Kearne can disable a vulnerable network/provider/plugin integration without blocking local safe-open access to projects. Advisories identify affected versions, risk, workaround, update, data exposure, and artifact/plugin compatibility. Audit and crash evidence follow retention/privacy policy.
 
-## 11. Open decisions
+## 12. Open decisions
 
 - **SEC-OPEN-001:** Platform sandbox guarantees and fallback wording.
 - **SEC-OPEN-002:** Local project encryption and OS credential integration.
 - **SEC-OPEN-003:** Code-signing identities, key custody, and update service.
 - **SEC-OPEN-004:** Cloud provider/data residency/retention contracts.
 - **SEC-OPEN-005:** Security response and supported-version policy.
+- **SEC-OPEN-006:** Agent-access enablement, consent indicator, and organization policy.
 
-## 12. Definition of done
+## 13. Definition of done
 
 A high-risk capability ships only after its trust boundary, capabilities, limits, adversarial tests, dependency chain, recovery behavior, product wording, and independent review findings meet its release gate.

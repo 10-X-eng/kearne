@@ -24,6 +24,7 @@ kearne_testkit
   fake artifact store, workers, renderer, provider, filesystem
   port conformance suites
   command/scenario runner
+  application lifecycle and Desktop Observation drivers
   semantic equivalence and geometry invariant matchers
   fault-injection controls
   benchmark model generators
@@ -226,6 +227,18 @@ Reference models implement only semantic rules needed for comparison, using simp
 
 A public extension point is incomplete without its conformance kit. New implementations prove substitutability before product-specific scenarios.
 
+### TST-014 — Manual exploration is not regression infrastructure
+
+Manual testing is reserved for exploration, domain judgment, and visual review. A discovered failure is captured as a replayable seed, minimized scenario, generator class, state transition, contract, or external fixture. Teams MUST NOT maintain hand-rewritten step lists as the primary regression suite when the same behavior can be generated or expressed through a stable public contract.
+
+### TST-015 — Change the model, not every test
+
+When behavior changes intentionally, update the owning schema, descriptor, reference model, generator, or contract once and regenerate its enrolled cases. A change that requires unrelated tests to copy new setup or expected values exposes a missing testkit abstraction and blocks feature expansion until corrected.
+
+### TST-016 — Desktop work produces observable evidence
+
+Every desktop scenario uses the Observation API for launch, semantic actions, event-based readiness, complete Kearne-session capture, and shutdown. It records the matching semantic snapshot and image metadata. Screenshots support visual review but do not replace command, state, accessibility, or geometry assertions.
+
 ## 11. Prohibited patterns
 
 - Sleeping to wait for asynchronous completion; use virtual clocks/events/deadlines.
@@ -237,6 +250,8 @@ A public extension point is incomplete without its conformance kit. New implemen
 - Broad “end-to-end” tests with no observable intermediate contract or fault localization.
 - Copying a contract suite into each adapter.
 - Increasing tolerances until intermittent numerical failures disappear.
+- Rewriting many fixed tests after a schema or workflow change instead of repairing the shared model/generator.
+- Claiming desktop completion from QML/source inspection without a returned full-session capture.
 
 ## 12. Definition of done
 

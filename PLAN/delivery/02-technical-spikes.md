@@ -85,7 +85,23 @@ Produce a license/SBOM prototype, binary-size/build-time data, patch/update proc
 
 **Exit:** no MVP dependency has unresolved redistribution, ABI, maintenance, or security-update risk.
 
-## 11. Spike completion record
+## 11. SPIKE-010 — Codex app-server integration
+
+**Question:** Can a pinned Codex app-server provide Kearne's thread, turn, approval, tool, image-input, cancellation, and recovery lifecycle through a small replaceable adapter?
+
+Generate protocol schemas from the installed executable; implement initialization, one thread/turn, streamed events, an approval, a local MCP Kearne query/command tool, local-image input, cancellation, crash/restart, and unsupported-version failure. Measure startup, event latency, memory, packaging size, schema churn, auth states, transcript storage, and platform behavior. Verify stdio framing remains clean under logs and failure.
+
+**Exit:** accept the version/packaging range, client boundary, Agent Bridge mechanism, credential ownership, sandbox/approval split, and recovery policy, or revise the harness ADR before AI implementation.
+
+## 12. SPIKE-011 — Agent-observable desktop
+
+**Question:** Can Kearne deterministically return every visible Kearne-owned surface and a correlated semantic snapshot on supported Windows and Linux display stacks?
+
+Launch a packaged Qt/QML prototype through the observation driver. Exercise multiple windows/displays, native and QML menus, popups, tooltips, modal dialogs, high-DPI/fractional scale, viewport overlays, animation, occlusion, device loss, and software/GPU backends. Capture without sleeps and attach the result to an app-server local-image turn. Probe full-display restrictions under X11, Wayland portals, and Windows secure surfaces.
+
+**Exit:** select surface enumeration/composition and semantic automation paths; prove full Kearne-session capture on release baselines; document OS-owned pixels that cannot be guaranteed; block desktop feature breadth if capture is incomplete.
+
+## 13. Spike completion record
 
 Each completed spike stores:
 
@@ -101,6 +117,6 @@ prototype retention/removal decision
 new risks and plan edits
 ```
 
-## 12. Definition of done
+## 14. Definition of done
 
-Stage 0 ends only when SPIKE-001 through SPIKE-009 have decisions and no critical result is replaced by an assumption. A failed threshold changes scope or architecture before feature implementation.
+Stage 0 ends only when SPIKE-001 through SPIKE-011 have decisions and no critical result is replaced by an assumption. A failed threshold changes scope or architecture before feature implementation.

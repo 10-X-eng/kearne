@@ -3,7 +3,7 @@
 - **Status:** Proposed
 - **Requirement prefix:** `UI`
 - **Depends on:** [Engineering API](../foundations/08-engineering-api.md), [rendering](01-rendering-and-selection.md), [evaluation](../foundations/03-evaluation-and-jobs.md)
-- **Unblocks:** desktop MVP and professional workflows
+- **Unblocks:** desktop MVP, [agent observation](18-agent-observable-desktop.md), and professional workflows
 
 ## 1. Purpose
 
@@ -98,6 +98,14 @@ User-level settings store theme, shortcuts, layout presets, and device preferenc
 
 Every persisted UI value is classified as user setting, local workspace state, or shared document entity. UI code cannot write an unversioned miscellaneous project-settings blob.
 
+### UI-010 — Observable controls
+
+Every interactive control and transient surface MUST expose stable semantic identity, accessibility role/name/state, bounds, and supported actions through the Observation API. QML object addresses, visual hierarchy indexes, and localized labels are not identity.
+
+### UI-011 — Capturable surface ownership
+
+Kearne-owned windows, dialogs, menus, popups, tooltips, and viewport overlays MUST register with the application session so complete capture can include them. A new windowing mechanism is incomplete until it passes observation conformance.
+
 ## 8. Verification strategy
 
 UI assurance favors semantic and model-level checks:
@@ -109,6 +117,7 @@ UI assurance favors semantic and model-level checks:
 - A bounded end-to-end suite runs critical workflows on real Windows/Linux builds.
 - Pixel snapshots are limited to design-system primitives and a small viewport/shell smoke set; they are not the primary interaction oracle.
 - Responsiveness instrumentation fails tests when forbidden blocking work runs on the UI thread.
+- The observation driver launches the packaged application, awaits typed UI/frame state, captures the complete Kearne session, and correlates the image with its semantic snapshot.
 
 ## 9. Performance budgets
 
@@ -128,4 +137,4 @@ UI assurance favors semantic and model-level checks:
 
 ## 11. Definition of done
 
-The shell is implemented when the reference workflow is keyboard and pointer accessible, descriptor-driven forms use the same commands as other adapters, failure/job states remain inspectable, UI-thread guards pass, and supported-platform end-to-end tests meet responsiveness budgets.
+The shell is implemented when the reference workflow is keyboard and pointer accessible, descriptor-driven forms use the same commands as other adapters, failure/job states remain inspectable, the complete session is capturable and semantically inspectable, UI-thread guards pass, and supported-platform end-to-end tests meet responsiveness budgets.

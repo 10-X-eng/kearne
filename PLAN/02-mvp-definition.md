@@ -72,6 +72,8 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 `MVP-B-003`: Camera interaction remains within its frame budget during an intentionally blocked geometry job.
 
+`MVP-B-004`: The observation driver launches the packaged desktop, completes the sketch/extrude workflow through public controls, awaits state without sleeps, and returns a lossless image containing every visible Kearne surface plus its correlated semantic snapshot.
+
 ## 5. Gate C — Downstream references and useful modeling
 
 ### Required features
@@ -102,6 +104,7 @@ The MVP UI may expose only one active component definition and a limited set of 
 - pinned build123d environment and procedural feature;
 - typed Python SDK for the supported command/query subset;
 - AI read/query tools and the supported modeling commands;
+- pinned Codex app-server harness and generated protocol conformance;
 - preview/confirm for multi-command AI transactions;
 - provenance for human, Python, replay, plugin, and AI actors.
 
@@ -112,6 +115,8 @@ The MVP UI may expose only one active component definition and a limited set of 
 `MVP-D-002`: Terminating a Python or geometry worker cannot terminate the main process or corrupt the project.
 
 `MVP-D-003`: Imported source bytes remain recoverable even when the derived BREP cache is removed.
+
+`MVP-D-004`: A Codex app-server turn receives the current Kearne-session capture, inspects and modifies the reference part only through granted Kearne tools, and verifies the committed revision through typed queries.
 
 ## 7. Explicitly excluded
 
@@ -147,6 +152,10 @@ GUI behavior MUST NOT invoke a synchronous kernel operation when background eval
 ### MVP-005 — Migration from first persisted release
 
 Every persisted schema version after the first distributable alpha includes a tested forward migration or an explicit incompatibility diagnostic. Test-only pre-alpha fixtures may be reset before the format freeze milestone.
+
+### MVP-006 — No blind desktop completion
+
+A desktop capability is incomplete until automated semantic assertions pass and the observation driver returns the complete Kearne-session image from the changed build. A screenshot alone is not a correctness oracle.
 
 ## 9. Definition of done
 

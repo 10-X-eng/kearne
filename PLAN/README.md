@@ -15,6 +15,8 @@ The repository uses four kinds of engineering records:
 
 When they disagree, an accepted ADR overrides an older plan, and an accepted plan overrides an illustrative example in `SPEC.md`. Product scope changes must update `SPEC.md`; implementation discoveries must update the relevant plan or ADR before they silently become architecture.
 
+[`AGENTS.md`](../AGENTS.md) applies these records to coding work; it does not override them.
+
 Plans are not task journals. A plan describes what remains true after the implementation has changed many times.
 
 ## 2. Product naming
@@ -71,6 +73,8 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 - [Direct and surface modeling](capabilities/14-direct-and-surface-modeling.md)
 - [Qt/QML application shell](capabilities/15-qt-qml-application-shell.md)
 - [Visual design system](capabilities/16-visual-design-system.md)
+- [Codex app-server harness](capabilities/17-codex-app-server-harness.md)
+- [Agent-observable desktop](capabilities/18-agent-observable-desktop.md)
 
 ### Delivery and assurance
 
@@ -107,9 +111,10 @@ The terms have these meanings:
 | Parametric CAD, direct modeling, surfacing | [Sketcher](capabilities/02-sketcher.md), [solid modeling](capabilities/03-solid-modeling.md), [direct/surface modeling](capabilities/14-direct-and-surface-modeling.md) |
 | Assemblies, motion, interference, BOM | [Assemblies](capabilities/08-assemblies.md) |
 | FEA, modal, thermal, optimization | [Simulation](capabilities/10-simulation.md), [AI](capabilities/06-ai-system.md) |
-| AI inspection, modification, generation, simulation, iteration | [AI](capabilities/06-ai-system.md) |
+| AI inspection, modification, generation, simulation, iteration | [AI](capabilities/06-ai-system.md), [Codex harness](capabilities/17-codex-app-server-harness.md) |
 | build123d and Python | [Python/build123d](capabilities/05-python-and-build123d.md) |
 | Native Qt/QML desktop UI and viewport | [Application shell](capabilities/15-qt-qml-application-shell.md), [visual design](capabilities/16-visual-design-system.md), [rendering](capabilities/01-rendering-and-selection.md) |
+| Agent-visible desktop and full Kearne-session capture | [Agent-observable desktop](capabilities/18-agent-observable-desktop.md), [Codex harness](capabilities/17-codex-app-server-harness.md) |
 | Asynchronous geometry, meshing, simulation, AI, and imports | [Evaluation/jobs](foundations/03-evaluation-and-jobs.md), [processes/IPC](foundations/07-processes-and-ipc.md) |
 | History, branches, merges, alternatives | [Commands/revisions](foundations/02-commands-transactions-revisions.md), [versioning/merge](capabilities/09-versioning-and-merge.md) |
 | Configurations and variants | [Configurations](capabilities/13-configurations.md) |
@@ -195,8 +200,9 @@ An implementation agent MUST:
 3. Stop on an `OPEN` decision that materially changes persisted state or a public boundary.
 4. Change engineering behavior only through the canonical domain path.
 5. Add or extend reusable test generators and conformance suites before adding isolated examples.
-6. Report verification against requirement IDs and acceptance scenarios.
-7. Avoid introducing a second representation of an existing domain fact.
+6. Launch, observe, and capture the complete Kearne session before claiming desktop work is visually complete.
+7. Report verification against requirement IDs and acceptance scenarios.
+8. Avoid introducing a second representation of an existing domain fact.
 
 An agent MUST NOT mark work complete merely because it compiles or produces visually plausible geometry.
 

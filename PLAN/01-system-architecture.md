@@ -10,7 +10,7 @@
 Kearne separates durable engineering meaning from computation, presentation, and integration. The semantic core remains usable headlessly and testable without Qt, OCCT, Python, a GPU, or an AI provider.
 
 ```text
-Adapters: QML | CLI | Python | AI | Plugins | Replay
+Adapters: QML | CLI | Python | Codex | Plugins | Replay
                          |
                  Engineering API
                          |
@@ -181,6 +181,14 @@ Loading a project with an unavailable plugin or evaluator MUST preserve opaque c
 
 Derived artifacts record the evaluator fingerprint. Plugin version, OCCT version, numerical profile, and relevant external database versions participate in reproducibility and cache validity.
 
+### ARCH-015 — Evidence-selected modernity
+
+New technology is selected when supported versions and measurements improve correctness, performance, security, portability, or maintained code. Novelty, fashion, and compatibility with another CAD application's internals are not selection criteria. Material choices record replacement boundaries and upgrade policy.
+
+### ARCH-016 — Separate observation plane
+
+Application lifecycle, semantic UI inspection, input automation, and image capture use an Observation API outside the Engineering API. Observation may report or invoke public UI behavior but cannot mutate document state, call private QML logic, or become an engineering command path.
+
 ## 8. Architecture fitness tests
 
 The build MUST continuously enforce:
@@ -193,6 +201,8 @@ The build MUST continuously enforce:
 - every port implementation passes its shared conformance suite;
 - worker messages contain no raw pointers or process-local handles;
 - no blocking operation annotated as unbounded is callable from UI-thread code.
+- every interactive QML control has stable semantic identity and observation metadata;
+- Codex protocol types occur only in its adapter and generated compatibility layer.
 
 These tests operate over dependency metadata, registries, generated schemas, and instrumented runtime behavior rather than enumerating individual source files manually.
 
@@ -210,8 +220,9 @@ Initial logical libraries should remain fewer and more cohesive than the service
 /src/artifacts
 /src/persistence
 /src/render
+/src/observation
 /src/app
-/src/adapters/{occt,qt,cli}
+/src/adapters/{occt,qt,cli,codex}
 /python
 /schemas
 /tests/{contract,property,scenario,fuzz,performance}

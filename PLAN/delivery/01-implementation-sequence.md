@@ -31,7 +31,9 @@ Run the spikes in [technical spikes](02-technical-spikes.md). Required decisions
 - Qt Quick viewport backend;
 - sketch solver;
 - numerical/modeling range;
-- persistent topology v1 feasibility.
+- persistent topology v1 feasibility;
+- Codex app-server protocol, packaging, and tool-bridge path;
+- complete Kearne-session capture and semantic observation on target display stacks.
 
 Output: accepted/rejected ADRs, benchmark data, small isolated prototypes, license inventory, and revised plans. Prototype code enters production only if it obeys accepted boundaries and has contract tests.
 
@@ -69,6 +71,7 @@ Exit gate: `MVP-A-002`, persistence fault matrix, protocol fuzz smoke, and migra
 Implement:
 
 - Qt/QML shell over fake then real Engine ports;
+- application lifecycle and Desktop Observation driver before feature screens;
 - visual tokens and the reusable component/state catalog;
 - render projection and selected viewport backend;
 - semantic picking for datum/sketch/body scope;
@@ -76,7 +79,7 @@ Implement:
 - OCCT geometry worker and extrude-new-body;
 - preview generations, last-known-good display, jobs/diagnostics UI.
 
-Exit gate: mounting-plate sketch/extrude workflow passes headless and GUI; solver and renderer conformance suites pass; camera remains responsive during blocked/failed workers.
+Exit gate: mounting-plate sketch/extrude workflow passes headless and GUI; the agent receives a complete lossless Kearne-session image and matching semantic snapshot without sleeps; solver, renderer, and observation conformance suites pass; camera remains responsive during blocked/failed workers.
 
 ## 6. Stage 4 — Downstream topology and feature system
 
@@ -98,7 +101,7 @@ Implement:
 - STEP/STL atomic export;
 - Python worker and typed SDK;
 - pinned build123d procedural feature;
-- AI query/command tools, preview, approval, and provider abstraction;
+- pinned Codex app-server client, Agent Bridge, query/command tools, preview, and approval;
 - provenance views.
 
 Exit gate: Gates D acceptance scenarios, parser/worker fault suites, adapter semantic parity, and AI policy state machine pass.
@@ -154,6 +157,7 @@ Pause feature expansion when:
 - performance becomes proportional to total document size for a local edit;
 - repeated worker input can crash the coordinator;
 - a license blocks intended distribution.
+- a desktop change cannot be launched, semantically inspected, and captured by the agent harness.
 
 Resume after the owning plan/ADR and regression mechanism are corrected.
 
