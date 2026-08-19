@@ -5,3 +5,4 @@ Spike code answers one decision and is not production architecture. Each directo
 | Spike | Status | Evidence |
 |---|---|---|
 | [010 — Codex app-server](010-codex-app-server/README.md) | In progress | Linux protocol/schema probe |
+| [011 — Agent-observable desktop](011-agent-observable-desktop/README.md) | In progress | Qt/X11 capture prototype |
