@@ -1,0 +1,131 @@
+# Qt/QML Application Shell
+
+- **Status:** Proposed
+- **Requirement prefix:** `UI`
+- **Depends on:** [Engineering API](../foundations/08-engineering-api.md), [rendering](01-rendering-and-selection.md), [evaluation](../foundations/03-evaluation-and-jobs.md)
+- **Unblocks:** desktop MVP and professional workflows
+
+## 1. Purpose
+
+Provide a modern native Windows/Linux shell that projects Kearne's engineering state, supports dense keyboard/mouse workflows, and remains responsive while computation fails, blocks, or restarts.
+
+## 2. UI ownership
+
+QML owns presentation and ephemeral interaction state:
+
+- panel layout, focus, hover, menus, dialogs;
+- current view/camera and transient selection;
+- draft field text and validation display;
+- command palette/search presentation;
+- operation/progress notification state.
+
+The Engineering API owns semantic state, command validation, revisions, jobs, and diagnostics.
+
+### UI-001 — Read-only projections
+
+QML receives read-only revision/generation-tagged models. It cannot own mutable entity records, `TopoDS_Shape`, database handles, or normalized mutations.
+
+### UI-002 — Controller boundary
+
+Controllers translate interaction into typed command/query requests and adapt typed results into projections. They contain no feature evaluation or duplicated domain validation.
+
+### UI-003 — Generated generic surfaces
+
+Command descriptors and parameter schemas drive command-palette entries, property editors, units, enum choices, help links, permission visibility, and basic forms. Specialized sketch/viewport interactions reuse the same command payloads.
+
+## 3. Shell layout
+
+[`ScreenShot.png`](../../rendering/ScreenShot.png) is non-binding design inspiration. It defines no requirement, acceptance criterion, layout, style, component, or behavior. Its reusable visual intent and conflicts are documented in the [visual design system plan](16-visual-design-system.md).
+
+The initial shell contains:
+
+- application/project/revision bar;
+- contextual command strip;
+- structure/history panel;
+- viewport;
+- property/parameter panel;
+- command palette and search;
+- jobs/diagnostics/AI area;
+- status and selection feedback.
+
+Dock/layout implementation must support persistence and restoration without serializing arbitrary QML object state into the project.
+
+## 4. Interaction model
+
+### UI-004 — Command identity
+
+Every action has a stable command identifier, availability predicate, display metadata, default shortcut where applicable, and permission requirement. Menus, toolbars, context actions, command palette, and shortcut binding reference that identity.
+
+### UI-005 — Context is explicit
+
+Tool activation captures selection, revision, active component/body/configuration, and view context as typed values. It cannot read changing global context halfway through command construction.
+
+### UI-006 — Preview generations
+
+Dialogs and manipulators issue cancellable preview generations. Only the newest generation displays as current. Apply submits an ordinary command; Cancel removes preview without history mutation.
+
+### UI-007 — No modal computation
+
+Dialogs may block local interaction flow but never wait synchronously for geometry, import, export, Python, AI, meshing, or persistence I/O. They observe operation handles and remain cancellable.
+
+## 5. Structure, history, properties, and diagnostics
+
+- Structure and feature-history views are projections over the same entities/dependencies.
+- Property fields show base/effective values, units, expression source, validation, revision, and editability.
+- Diagnostics link to semantic references and typed repair commands.
+- Jobs expose stage, progress confidence, cancellation, resource contention, and revision.
+- Last-known-good geometry and stale analyses have persistent visual/status markers, not color alone.
+
+### UI-008 — No swallowed failure
+
+Command rejection, evaluation failure, cancellation, worker loss, stale preview, and permission denial have distinct UI states. A failed operation cannot disappear because a toast timed out.
+
+## 6. Input and accessibility
+
+- Keyboard focus order and shortcuts are deterministic and remappable.
+- All commands remain searchable even when not on a toolbar.
+- Selection cycling and filters have keyboard access.
+- Icons have text alternatives/tooltips; status is not encoded by color alone.
+- High-DPI and fractional scaling are tested on both platforms.
+- Screen-reader semantics and contrast targets are set before public beta.
+- Text input and unit parsing respect locale while commands remain canonical.
+
+## 7. UI state persistence
+
+User-level settings store theme, shortcuts, layout presets, and device preferences. Workspace-local state may store open panels, camera, transient selections, and active branch outside canonical engineering revisions. Project-shared presentation entities, such as saved views, require explicit semantic schemas and commands.
+
+### UI-009 — State classification
+
+Every persisted UI value is classified as user setting, local workspace state, or shared document entity. UI code cannot write an unversioned miscellaneous project-settings blob.
+
+## 8. Verification strategy
+
+UI assurance favors semantic and model-level checks:
+
+- Controller conformance tests run command/query scenarios without QML.
+- Generated descriptors instantiate generic property forms and verify field type, units, permission, validation, and round-trip command payload.
+- Model-based UI tests generate command activation, focus, selection, preview, apply/cancel, undo/redo, job completion, and failure events against fake Engine/Renderer ports.
+- Accessibility-tree tests verify roles, names, focus order, and non-color status.
+- A bounded end-to-end suite runs critical workflows on real Windows/Linux builds.
+- Pixel snapshots are limited to design-system primitives and a small viewport/shell smoke set; they are not the primary interaction oracle.
+- Responsiveness instrumentation fails tests when forbidden blocking work runs on the UI thread.
+
+## 9. Performance budgets
+
+- Input dispatch and local state update: p95 below 8 ms.
+- UI-thread frame work: p95 below 8 ms in the reference workspace, leaving render budget.
+- Opening command palette: p95 below 100 ms with the full registered command set.
+- Incremental tree/property updates scale with changed projection nodes, not total document size.
+- No synchronous UI wait above 50 ms on a worker/database/network operation.
+
+## 10. Open decisions
+
+- **UI-OPEN-001:** Qt Quick Controls styling versus a controlled Kearne component layer.
+- **UI-OPEN-002:** Dock/layout library or custom split-panel model.
+- **UI-OPEN-003:** Accessibility baseline and localization milestone.
+- **UI-OPEN-004:** Multi-window/multi-document MVP scope.
+- **UI-OPEN-005:** Search indexing backend and command/document result ranking.
+
+## 11. Definition of done
+
+The shell is implemented when the reference workflow is keyboard and pointer accessible, descriptor-driven forms use the same commands as other adapters, failure/job states remain inspectable, UI-thread guards pass, and supported-platform end-to-end tests meet responsiveness budgets.
