@@ -223,9 +223,19 @@ public:
       fail(QStringLiteral("cannot create output directory"));
       return;
     }
-    QFile::setPermissions(outputDirectory_, QFileDevice::ReadOwner |
-                                                QFileDevice::WriteOwner |
-                                                QFileDevice::ExeOwner);
+    const QFileDevice::Permissions privateDirectory = QFileDevice::ReadOwner |
+                                                      QFileDevice::WriteOwner |
+                                                      QFileDevice::ExeOwner;
+    if (!QFile::setPermissions(outputDirectory_, privateDirectory)) {
+      fail(QStringLiteral("cannot make output directory private"));
+      return;
+    }
+    const QDir output(outputDirectory_);
+    if (output.exists(kImageFile) || output.exists(kSemanticFile) ||
+        output.exists(kCaptureFile)) {
+      fail(QStringLiteral("output directory contains an earlier capture"));
+      return;
+    }
 
     synchronizeSurfaces();
     if (frames_.isEmpty()) {
@@ -233,8 +243,6 @@ public:
       return;
     }
     timeout_.start();
-    for (QQuickWindow *window : frames_.keys())
-      window->update();
   }
 
 private:
@@ -267,6 +275,7 @@ private:
           Qt::QueuedConnection);
       connect(window, &QObject::destroyed, this,
               [this, window] { frames_.remove(window); });
+      window->update();
     }
 
     for (QQuickWindow *window : frames_.keys()) {
