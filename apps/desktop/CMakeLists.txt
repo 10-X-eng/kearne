@@ -74,6 +74,21 @@ qt_add_resources(kearne_sketch_scene_quick kearne_sketch_scene_shaders
     FILES ${KEARNE_SKETCH_SHADER_OUTPUTS}
 )
 
+add_library(kearne_local_sketch_session STATIC
+    src/local_sketch_session.cpp
+    src/local_sketch_session.hpp
+)
+add_library(Kearne::LocalSketchSession ALIAS kearne_local_sketch_session)
+target_include_directories(kearne_local_sketch_session PUBLIC src)
+target_link_libraries(kearne_local_sketch_session
+    PUBLIC Kearne::Render Qt6::Core
+    PRIVATE
+        Kearne::BuildOptions
+        Kearne::SketchCeres
+        Kearne::SketchSourceWorker
+        Kearne::SketchWorkflow
+)
+
 qt_add_executable(kearne
     src/application_context.cpp
     src/application_context.hpp
@@ -169,6 +184,7 @@ target_include_directories(kearne PRIVATE src)
 
 target_link_libraries(kearne PRIVATE
     Kearne::BuildOptions
+    Kearne::LocalSketchSession
     Kearne::SketchSceneQuick
     Qt6::Core
     Qt6::Gui
@@ -194,6 +210,25 @@ install(FILES ${PROJECT_SOURCE_DIR}/tools/observe/observation.schema.json
         DESTINATION ${CMAKE_INSTALL_DATADIR}/kearne/observe)
 
 if(BUILD_TESTING)
+    add_executable(kearne_local_sketch_session_contract_tests
+        tests/local_sketch_session_contract.cpp
+    )
+    target_link_libraries(kearne_local_sketch_session_contract_tests PRIVATE
+        Kearne::LocalSketchSession Kearne::Testkit Kearne::BuildOptions
+        Qt6::Core)
+    get_property(kearne_desktop_generated_python_root GLOBAL PROPERTY
+        KEARNE_API_GENERATED_PYTHON_ROOT)
+    target_compile_definitions(kearne_local_sketch_session_contract_tests
+        PRIVATE
+        "KEARNE_TEST_PYTHON=\"$<TARGET_FILE:Python3::Interpreter>\""
+        "KEARNE_TEST_SDK_ROOT=\"${PROJECT_SOURCE_DIR}/sdk/python/src\""
+        "KEARNE_TEST_GENERATED_PYTHON_ROOT=\"${kearne_desktop_generated_python_root}\"")
+    add_test(NAME local-sketch-session-contracts
+             COMMAND kearne_local_sketch_session_contract_tests)
+    set_tests_properties(local-sketch-session-contracts PROPERTIES
+        LABELS "desktop;sketch;workflow;contract;concurrency"
+        TIMEOUT 60)
+
     add_executable(kearne_navigation_input_contract_tests
         tests/navigation_input_contract.cpp
         src/navigation_input.cpp
