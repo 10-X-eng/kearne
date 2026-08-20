@@ -110,10 +110,9 @@ int main(int argc, char *argv[]) {
       QStringLiteral(
           "Perform a JSON-encoded semantic operation before capture."),
       QStringLiteral("json"));
-  QCommandLineOption localEngineeringOption(
-      QStringLiteral("local-engineering"),
-      QStringLiteral("Use local engineering instead of deterministic capture "
-                     "data."));
+  QCommandLineOption designEngineOption(
+      QStringLiteral("design-engine"),
+      QStringLiteral("Use the design engine instead of capture fixtures."));
   QCommandLineOption widthOption(
       QStringLiteral("width"), QStringLiteral("Window width."),
       QStringLiteral("pixels"), QStringLiteral("1440"));
@@ -122,7 +121,7 @@ int main(int argc, char *argv[]) {
       QStringLiteral("pixels"), QStringLiteral("900"));
   parser.addOptions({captureOption, workspaceOption, surfaceOption, stateOption,
                      inspectorOption, settingsCategoryOption, themeOption,
-                     actionOption, operationOption, localEngineeringOption,
+                     actionOption, operationOption, designEngineOption,
                      widthOption, heightOption});
   parser.process(application);
   if ((parser.isSet(actionOption) || parser.isSet(operationOption)) &&
@@ -159,10 +158,10 @@ int main(int argc, char *argv[]) {
   kearne::ui::SketchCameraController sketchCamera;
   kearne::ui::NavigationTargetRouter navigationRouter(camera);
   kearne::ui::NavigationDevice navigationDevice(navigationRouter);
-  const bool localEngineering =
-      !parser.isSet(captureOption) || parser.isSet(localEngineeringOption);
+  const bool useDesignEngine =
+      !parser.isSet(captureOption) || parser.isSet(designEngineOption);
   std::unique_ptr<kearne::ui::FrontendPort> frontend =
-      localEngineering
+      useDesignEngine
           ? kearne::ui::makeLocalFrontendPort(
                 std::make_unique<kearne::ui::LocalSketchSession>(
                     localSketchSessionConfig()),
@@ -252,7 +251,7 @@ int main(int argc, char *argv[]) {
     window->resize(width, height);
 
     std::unique_ptr<kearne::ui::SketchViewportBridge> sketchViewport;
-    if (localEngineering) {
+    if (useDesignEngine) {
       auto *host = window->findChild<QQuickItem *>(
           QStringLiteral("nativeSketchSceneHost"));
       if (!host) {

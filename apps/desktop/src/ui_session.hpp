@@ -39,6 +39,7 @@ class UiSession : public QObject {
       QString activeWorkspaceId READ activeWorkspaceId NOTIFY projectionChanged)
   Q_PROPERTY(
       QString activeCommandId READ activeCommandId NOTIFY projectionChanged)
+  Q_PROPERTY(bool sketchEditing READ sketchEditing NOTIFY projectionChanged)
   Q_PROPERTY(
       QString commandDraftState READ commandDraftState NOTIFY projectionChanged)
   Q_PROPERTY(QString commandDraftBaseRevision READ commandDraftBaseRevision
@@ -157,6 +158,7 @@ public:
   [[nodiscard]] QString projectRevision() const;
   [[nodiscard]] QString activeWorkspaceId() const;
   [[nodiscard]] QString activeCommandId() const;
+  [[nodiscard]] bool sketchEditing() const;
   [[nodiscard]] QString commandDraftState() const;
   [[nodiscard]] QString commandDraftBaseRevision() const;
   [[nodiscard]] bool commandPreviewSupported() const;

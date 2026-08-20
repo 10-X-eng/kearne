@@ -1108,7 +1108,8 @@ SketchScenePublicationController::retarget(render::SceneTarget target) {
     return std::unexpected(std::move(retained.error()));
   std::optional<SketchPreparationRetirement> retirement;
   if (*retained) {
-    auto retired = executor_->retireArtifact(*subscription_, *retained);
+    auto retired =
+        executor_->retireArtifact(*subscription_, std::move(*retained));
     if (!retired)
       return std::unexpected(std::move(retired.error()));
     retirement = *retired;
@@ -1452,7 +1453,8 @@ Result<void> SketchScenePublicationController::shutdown() {
     if (!retained)
       return std::unexpected(std::move(retained.error()));
     if (*retained) {
-      auto retired = executor_->retireArtifact(*subscription_, *retained);
+      auto retired =
+          executor_->retireArtifact(*subscription_, std::move(*retained));
       if (!retired)
         return std::unexpected(std::move(retired.error()));
 

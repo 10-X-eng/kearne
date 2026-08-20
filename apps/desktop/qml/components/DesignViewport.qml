@@ -17,7 +17,7 @@ Rectangle {
     property bool inspectorAvailable: true
     property real modelGridSpacingMillimeters: App.ui.gridSpacingMillimeters
     readonly property real displayedGridSpacingMillimeters:
-        App.ui.activeWorkspaceId === "sketch"
+        App.ui.sketchEditing
         ? engineeringGrid.displayedSpacingMillimeters
         : modelGridSpacingMillimeters
     signal requestStructure()
@@ -34,7 +34,7 @@ Rectangle {
             return true
         }
         if (action === "pan") {
-            if (App.ui.activeWorkspaceId === "sketch")
+            if (App.ui.sketchEditing)
                 App.sketchCamera.pan(18, 12)
             else
                 App.camera.pan(18, 12)
@@ -43,7 +43,7 @@ Rectangle {
         if (action === "zoom") {
             const amount = value === null || value === undefined ? 1
                                                                   : Number(value)
-            if (App.ui.activeWorkspaceId === "sketch")
+            if (App.ui.sketchEditing)
                 App.sketchCamera.zoomAt(amount, width / 2, height / 2,
                                         width, height)
             else
@@ -51,7 +51,7 @@ Rectangle {
             return true
         }
         if (action === "fit") {
-            if (App.ui.activeWorkspaceId === "sketch")
+            if (App.ui.sketchEditing)
                 App.sketchCamera.reset()
             else
                 App.camera.fit()
@@ -77,10 +77,10 @@ Rectangle {
     Keys.onPressed: event => {
         const key = event.text.toUpperCase()
         if (event.key === Qt.Key_X
-                && App.ui.activeWorkspaceId === "sketch") {
+                && App.ui.sketchEditing) {
             event.accepted = App.ui.toggleSketchConstruction()
         } else if (event.key === Qt.Key_Home) {
-            if (App.ui.activeWorkspaceId === "sketch")
+            if (App.ui.sketchEditing)
                 App.sketchCamera.reset()
             else
                 App.camera.fit()
@@ -102,12 +102,14 @@ Rectangle {
         id: engineeringGrid
         anchors.fill: parent
         visible: App.workspace.gridVisible
-                 && App.ui.activeWorkspaceId === "sketch"
+                 && App.ui.sketchEditing
     }
 
     NavigationCalibrationScene {
         anchors.fill: parent
-        visible: App.ui.activeWorkspaceId === "model"
+        visible: (App.ui.activeWorkspaceId === "model"
+                  || (App.ui.activeWorkspaceId === "sketch"
+                      && !App.ui.sketchEditing))
                  && App.ui.activeCommandId !== "model.sketch.create"
         opacity: App.ui.viewportState === "current" ? 1 : 0.38
         displayMode: App.workspace.displayMode
@@ -118,13 +120,13 @@ Rectangle {
     Item {
         objectName: "nativeSketchSceneHost"
         anchors.fill: parent
-        visible: App.ui.activeWorkspaceId === "sketch"
+        visible: App.ui.sketchEditing
     }
 
     SketchCalibrationScene {
         id: sketchScene
         anchors.fill: parent
-        visible: App.ui.activeWorkspaceId === "sketch"
+        visible: App.ui.sketchEditing
         snapSpacingMillimeters: engineeringGrid.displayedSpacingMillimeters
     }
 
@@ -133,7 +135,7 @@ Rectangle {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         hoverEnabled: true
-        cursorShape: App.ui.activeWorkspaceId === "sketch"
+        cursorShape: App.ui.sketchEditing
                      && App.ui.sketchInputKind !== "none"
                      ? Qt.CrossCursor : Qt.ArrowCursor
         property real previousX: 0
@@ -155,14 +157,14 @@ Rectangle {
             const dy = mouse.y - previousY
             previousX = mouse.x
             previousY = mouse.y
-            if (App.ui.activeWorkspaceId === "sketch")
+            if (App.ui.sketchEditing)
                 sketchScene.updateCursor(mouse.x, mouse.y, true)
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
-                if (App.ui.activeWorkspaceId === "sketch"
+                if (App.ui.sketchEditing
                         && (mouse.buttons & Qt.MiddleButton)) {
                     App.sketchCamera.pan(dx, dy)
                     dragged = true
-                } else if (App.ui.activeWorkspaceId === "sketch"
+                } else if (App.ui.sketchEditing
                            && (mouse.buttons & Qt.LeftButton)
                            && Math.hypot(mouse.x - pressedX,
                                          mouse.y - pressedY) >= 4) {
@@ -171,7 +173,7 @@ Rectangle {
                     const opposite = sketchScene.planePoint(mouse.x, mouse.y)
                     App.ui.previewSketchDrag(first[0], first[1],
                                              opposite[0], opposite[1])
-                } else if (App.ui.activeWorkspaceId !== "sketch"
+                } else if (!App.ui.sketchEditing
                            && App.camera.applyPointerDrag(mouse.buttons,
                                                           mouse.modifiers,
                                                           dx, dy)) {
@@ -182,7 +184,7 @@ Rectangle {
         onReleased: mouse => {
             App.ui.clearSketchDragPreview()
             if (mouse.button === Qt.LeftButton
-                    && App.ui.activeWorkspaceId === "sketch") {
+                    && App.ui.sketchEditing) {
                 if (dragged)
                     sketchScene.handleDrag(pressedX, pressedY,
                                            mouse.x, mouse.y)
@@ -195,7 +197,7 @@ Rectangle {
         onCanceled: App.ui.clearSketchDragPreview()
         onExited: sketchScene.updateCursor(0, 0, false)
         onWheel: wheel => {
-            if (App.ui.activeWorkspaceId === "sketch")
+            if (App.ui.sketchEditing)
                 App.sketchCamera.zoomAt(wheel.angleDelta.y / 120,
                                         wheel.x, wheel.y, width, height)
             else
@@ -267,7 +269,7 @@ Rectangle {
         anchors.margins: Theme.space4
         visible: App.ui.activeWorkspaceId !== "drawing"
                  && App.ui.activeWorkspaceId !== "bom"
-                 && App.ui.activeWorkspaceId !== "sketch"
+                 && !App.ui.sketchEditing
     }
 
     SurfaceState {

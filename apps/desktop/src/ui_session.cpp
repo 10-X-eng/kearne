@@ -1,6 +1,7 @@
 #include "ui_session.hpp"
 
-#include <QLocale>
+#include "display_units.hpp"
+
 #include <QMetaObject>
 #include <QPointer>
 #include <QVariantMap>
@@ -360,35 +361,6 @@ QVariantList sketchPrimitiveRecords(
   });
 }
 
-QString formatLength(double millimeters, const QString &unitId) {
-  if (!std::isfinite(millimeters))
-    return QStringLiteral("—");
-  double value = millimeters;
-  QString symbol = QStringLiteral("mm");
-  int decimals = 3;
-  if (unitId == QStringLiteral("cm")) {
-    value /= 10.0;
-    symbol = QStringLiteral("cm");
-    decimals = 4;
-  } else if (unitId == QStringLiteral("m")) {
-    value /= millimetersPerMeter;
-    symbol = QStringLiteral("m");
-    decimals = 6;
-  } else if (unitId == QStringLiteral("in")) {
-    value /= 25.4;
-    symbol = QStringLiteral("in");
-    decimals = 4;
-  }
-  if (std::abs(value) < std::pow(10.0, -decimals) * 0.5)
-    value = 0.0;
-  QString number = QLocale::c().toString(value, 'f', decimals);
-  while (number.contains(QLatin1Char('.')) && number.endsWith(QLatin1Char('0')))
-    number.chop(1);
-  if (number.endsWith(QLatin1Char('.')))
-    number.chop(1);
-  return number + QLatin1Char(' ') + symbol;
-}
-
 } // namespace
 
 UiSession::UiSession(std::unique_ptr<FrontendPort> port, QObject *parent)
@@ -425,6 +397,7 @@ QString UiSession::activeWorkspaceId() const {
 QString UiSession::activeCommandId() const {
   return snapshot_->activeCommandId;
 }
+bool UiSession::sketchEditing() const { return snapshot_->sketchEditing; }
 QString UiSession::commandDraftState() const {
   return commandDraftStateName(snapshot_->commandDraft.state);
 }
@@ -783,7 +756,8 @@ bool UiSession::previewSketchDrag(qreal firstXMillimeters,
 }
 
 QString UiSession::formatProjectLength(qreal lengthMillimeters) const {
-  return formatLength(lengthMillimeters, snapshot_->projectLengthUnitId);
+  return formatDisplayedLength(lengthMillimeters,
+                               snapshot_->projectLengthUnitId);
 }
 
 void UiSession::clearSketchDragPreview() { gesturePreview_.clear(); }
@@ -804,8 +778,7 @@ bool UiSession::submitSketchEntity(const QString &entityId,
 }
 
 bool UiSession::submitSketchPointerClick(qreal itemX, qreal itemY) {
-  if (!sketchPickHandler_ ||
-      snapshot_->activeWorkspaceId != QStringLiteral("sketch"))
+  if (!sketchPickHandler_ || !snapshot_->sketchEditing)
     return false;
   const SketchSelectionKind targets =
       snapshot_->sketchInteraction.inputKind == SketchInputKind::Entity &&
@@ -828,8 +801,7 @@ bool UiSession::submitSketchPointerClick(qreal itemX, qreal itemY) {
 bool UiSession::submitSketchCurveDrag(qreal itemPressX, qreal itemPressY,
                                       qreal currentXMillimeters,
                                       qreal currentYMillimeters) {
-  if (!sketchPickHandler_ ||
-      snapshot_->activeWorkspaceId != QStringLiteral("sketch") ||
+  if (!sketchPickHandler_ || !snapshot_->sketchEditing ||
       !snapshot_->activeCommandId.isEmpty())
     return false;
   const auto picked = sketchPickHandler_(QPointF{itemPressX, itemPressY}, 8.0,
@@ -847,7 +819,7 @@ bool UiSession::submitSketchCurveDrag(qreal itemPressX, qreal itemPressY,
 }
 
 bool UiSession::toggleSketchConstruction() {
-  if (snapshot_->activeWorkspaceId != QStringLiteral("sketch"))
+  if (!snapshot_->sketchEditing)
     return false;
   if (!snapshot_->activeCommandId.isEmpty()) {
     const auto field = std::ranges::find_if(

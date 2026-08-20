@@ -46,9 +46,19 @@ MVP constraints:
 
 Higher-order curves and constraint types follow after the solver and source-transform contracts pass their gates.
 
-The post-v1 operation matrix covers ellipse/elliptical arc, conics, spline, slot, polygon, projected/intersection geometry, trim, extend, split, offset, mirror, move/rotate/scale, driven/reference dimensions, constraint activation, and repair. Each row declares generated source shape, editable selections, solver/profile effects, topology-label behavior, and refusal conditions before its command appears in a production build.
+### SKH-009 — Complete Sketch tool coverage
 
-Sketch fillet/chamfer, linked sketch copy, sketch merge, whole-sketch mirror, and B-spline degree/knot editing are also post-v1 matrix rows. Sketch text, optical constraints such as Snell's law, virtual-space geometry, and user-facing solver-algorithm controls are excluded unless a later product decision adds them.
+The operation matrix MUST cover:
+
+- center/three-point circles and arcs; ellipse, elliptical/hyperbolic/parabolic arc, spline, periodic spline, polygon, corner/center rectangle, oblong, straight/arc slot, point, polyline, and text;
+- trim, extend, split, join, fillet, chamfer, offset, translate, rotate, scale, symmetry, rectangular array, construction conversion, clipboard operations, and rendering order;
+- projected/intersection geometry, linked sketch copy, sketch merge, whole-sketch mirror, attachment mapping, and reorientation;
+- coincident/point-on-object, horizontal, vertical, parallel, perpendicular, tangent, equal, symmetric, block, group, distance, horizontal/vertical distance, radius, diameter, angle, lock, and Snell constraints;
+- driving/reference and active/suppressed constraint conversion;
+- spline degree, knot multiplicity, knot insertion, pole weight, control polygon, curvature comb, and NURBS conversion;
+- DOF, associated-element, redundant, partially redundant, conflicting, and malformed-constraint inspection; validation, repair, virtual-space review, grid, and snap tools.
+
+Every row declares generated source shape, typed inputs, editable selections, solver/profile effects, topology-label behavior, refusal conditions, and conformance enrollment before the command is enabled. Tool grouping may differ from another CAD system; established pointer, keyboard, continuation, cancel, and selection behavior SHOULD remain familiar unless Kearne has a measured usability reason to differ.
 
 ## 4. Solver port
 

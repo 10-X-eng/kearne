@@ -71,6 +71,13 @@ bool containsCommand(const std::vector<CommandDescriptor> &commands,
       commands, [&id](const auto &command) { return command.id == id; });
 }
 
+bool commandAvailable(const std::vector<CommandDescriptor> &commands,
+                      const QString &id) {
+  const auto command = std::ranges::find_if(
+      commands, [&id](const auto &candidate) { return candidate.id == id; });
+  return command != commands.end() && command->available;
+}
+
 void verifyImmutablePublication(FrontendPort &port) {
   const auto first = port.snapshot();
   const auto duplicate = port.snapshot();
@@ -172,10 +179,23 @@ void verifySnapshot(const FrontendSnapshot &snapshot) {
 }
 
 void verifySketchInteractionContracts(FrontendPort &port) {
+  port.selectEntity(QStringLiteral("contract.entity"));
   port.selectWorkspace(QStringLiteral("sketch"));
+  require(!port.snapshot()->sketchEditing &&
+              commandAvailable(port.snapshot()->commands,
+                               QStringLiteral("model.sketch.create")) &&
+              !commandAvailable(port.snapshot()->commands,
+                                QStringLiteral("sketch.rectangle")),
+          "Sketch entry context exposed editing tools without an open Sketch");
+
+  port.selectWorkspace(QStringLiteral("model"));
+  port.selectEntity(QStringLiteral("function.mounting_profile"));
+  port.selectWorkspace(QStringLiteral("sketch"));
+  require(port.snapshot()->sketchEditing,
+          "preselected Sketch did not enter its edit context");
   require(port.snapshot()->selectedFunction.id ==
               QStringLiteral("function.mounting_profile"),
-          "Sketch workspace did not select its native source function");
+          "Sketch edit context lost its selected source function");
   const auto commands = port.snapshot()->commands;
   for (const CommandDescriptor &command : commands) {
     if (!command.available)
@@ -280,9 +300,10 @@ void verifySketchInteractionContracts(FrontendPort &port) {
             "cancel retained ephemeral sketch input");
   }
   port.selectWorkspace(QStringLiteral("model"));
-  require(port.snapshot()->selectedFunction.id ==
-              QStringLiteral("function.base_plate"),
-          "Model workspace did not restore its native source function");
+  require(!port.snapshot()->sketchEditing &&
+              port.snapshot()->selectedFunction.id ==
+                  QStringLiteral("function.mounting_profile"),
+          "workspace navigation changed the selected design object");
 }
 
 void verifyParameterEditing(FrontendPort &port) {
@@ -364,9 +385,17 @@ void verifyDeclaredTransitions(FrontendPort &port) {
 
   port.selectEntity(QStringLiteral("contract.entity"));
   snapshot = *port.snapshot();
-  require(snapshot.selectionSummary == QStringLiteral("contract.entity"),
-          "entity selection did not reach the projection");
-  require(!snapshot.fields.empty(), "entity selection exposed no fields");
+  require(snapshot.selectionSummary == QStringLiteral("Model geometry"),
+          "unknown entity identity leaked into the human selection summary");
+  require(!snapshot.fields.empty() &&
+              std::ranges::none_of(snapshot.fields,
+                                   [](const auto &field) {
+                                     return field.label ==
+                                                QStringLiteral("Identity") ||
+                                            field.label ==
+                                                QStringLiteral("Revision");
+                                   }),
+          "entity selection exposed machine-facing inspector fields");
 }
 
 void verifyCommandDraftContracts(FrontendPort &port) {

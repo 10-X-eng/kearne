@@ -13,6 +13,10 @@ Rectangle {
             return "checkpoint"
         switch (record.kind) {
         case "sketch": return "sketch"
+        case "sketch-point": return "point"
+        case "sketch-line": return "line"
+        case "sketch-circle": return "circle"
+        case "sketch-arc": return "arc"
         case "plane": return "plane"
         case "model-function": return "code"
         case "group": return "folder"
@@ -163,6 +167,7 @@ Rectangle {
         }
 
         Rectangle {
+            visible: root.activePage === 1
             Layout.fillWidth: true
             Layout.preferredHeight: 42
             color: Theme.surfaceRaised
@@ -172,16 +177,7 @@ Rectangle {
                 anchors.fill: parent
                 anchors.margins: Theme.space2
 
-                Text {
-                    visible: root.activePage === 0
-                    Layout.fillWidth: true
-                    text: "Local workspace"
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSmall
-                }
-
                 Row {
-                    visible: root.activePage === 1
                     spacing: Theme.space1
 
                     Repeater {

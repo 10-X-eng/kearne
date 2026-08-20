@@ -16,6 +16,11 @@ Item {
     required property real snapSpacingMillimeters
     readonly property real pixelsPerMillimeter: App.sketchCamera.pixelsPerMetre
                                                  / 1000
+    readonly property point snappedCursorPosition: {
+        const plane = planePoint(cursorX, cursorY)
+        const screen = screenPoint({"x": plane[0], "y": plane[1]})
+        return Qt.point(screen[0], screen[1])
+    }
 
     activeFocusOnTab: true
     Accessible.name: semanticName
@@ -100,7 +105,6 @@ Item {
         cursorX = x
         cursorY = y
         cursorVisible = visible
-        sketch.requestPaint()
     }
 
     function handleClick(x, y) {
@@ -255,18 +259,6 @@ Item {
                 drawPrimitive(context, primitive)
             drawGesturePreview(context)
 
-            if (root.cursorVisible && App.ui.sketchInputKind === "plane-point") {
-                const point = root.planePoint(root.cursorX, root.cursorY)
-                const snapped = root.screenPoint({"x": point[0], "y": point[1]})
-                context.strokeStyle = Theme.textMuted
-                context.lineWidth = 1
-                context.beginPath()
-                context.moveTo(snapped[0] - 7, snapped[1])
-                context.lineTo(snapped[0] + 7, snapped[1])
-                context.moveTo(snapped[0], snapped[1] - 7)
-                context.lineTo(snapped[0], snapped[1] + 7)
-                context.stroke()
-            }
         }
 
         Connections {
@@ -293,12 +285,38 @@ Item {
         onHeightChanged: requestPaint()
     }
 
+    Item {
+        width: 15
+        height: 15
+        x: root.snappedCursorPosition.x - width / 2
+        y: root.snappedCursorPosition.y - height / 2
+        visible: root.cursorVisible
+                 && App.ui.sketchInputKind === "plane-point"
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width
+            height: Theme.separatorWidth
+            color: Theme.textMuted
+        }
+
+        Rectangle {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.verticalCenter: parent.verticalCenter
+            width: Theme.separatorWidth
+            height: parent.height
+            color: Theme.textMuted
+        }
+    }
+
     StateBadge {
+        visible: root.visible
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.leftMargin: Theme.space4
         anchors.topMargin: 84
-        semanticId: "sketch.solve.state"
+        semanticId: root.visible ? "sketch.solve.state" : ""
         semanticName: "Sketch solve state"
         semanticValue: App.ui.sketchSolveStatus + ":"
                        + App.ui.sketchDegreesOfFreedom

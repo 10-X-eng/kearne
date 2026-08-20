@@ -1,4 +1,5 @@
 #include "development_frontend_port.hpp"
+#include "display_units.hpp"
 #include "local_sketch_session.hpp"
 
 #include <algorithm>
@@ -21,20 +22,21 @@ struct CommandDefinition {
   const char *group;
 };
 
-constexpr std::array<std::string_view, 22> frontendCommandContracts{
-    "model.sketch.create", "model.extrude",        "model.plane.create",
-    "sketch.point",        "sketch.line",          "sketch.polyline",
-    "sketch.rectangle",    "sketch.circle",        "sketch.arc",
-    "sketch.trim",         "sketch.dimension",     "sketch.coincident",
-    "sketch.horizontal",   "sketch.vertical",      "sketch.equal",
-    "sketch.parallel",     "sketch.perpendicular", "sketch.tangent",
-    "sketch.concentric",   "sketch.midpoint",      "sketch.fixed",
-    "sketch.collinear",
+constexpr std::array<std::string_view, 5> frontendCommandContracts{
+    "model.sketch.create", "model.extrude",    "model.plane.create",
+    "sketch.edit",         "sketch.rectangle",
 };
 
 bool hasFrontendCommandContract(std::string_view commandId) {
   return std::ranges::find(frontendCommandContracts, commandId) !=
          frontendCommandContracts.end();
+}
+
+bool hasFrontendCommandContractId(const QString &commandId) {
+  return std::ranges::any_of(frontendCommandContracts, [&](const auto value) {
+    return commandId == QLatin1StringView{value.data(),
+                                          static_cast<qsizetype>(value.size())};
+  });
 }
 
 QString unavailableReason(const QString &commandId) {
@@ -45,7 +47,7 @@ QString unavailableReason(const QString &commandId) {
       commandId.startsWith(QStringLiteral("drawing.")) ||
       commandId.startsWith(QStringLiteral("bom.")))
     return QStringLiteral("Planned after the parametric-part MVP");
-  return QStringLiteral("Interaction contract not defined yet");
+  return QStringLiteral("Not implemented in this build");
 }
 
 std::vector<CommandDescriptor>
@@ -70,8 +72,15 @@ bool containsOption(const std::vector<UiOption> &options, const QString &id) {
                      [&id](const UiOption &option) { return option.id == id; });
 }
 
-constexpr std::array modelCommands{
+constexpr std::array newSketchCommands{
     CommandDefinition{"model.sketch.create", "New Sketch", "sketch", "Create"},
+};
+
+constexpr std::array editSketchCommands{
+    CommandDefinition{"sketch.edit", "Edit Sketch", "edit", "Edit"},
+};
+
+constexpr std::array modelCommands{
     CommandDefinition{"model.extrude", "Extrude", "extrude", "Create"},
     CommandDefinition{"model.revolve", "Revolve", "revolve", "Create"},
     CommandDefinition{"model.sweep", "Sweep", "path", "Create"},
@@ -208,6 +217,8 @@ std::vector<CommandDescriptor> allCommandRecords() {
     result.insert(result.end(), std::make_move_iterator(commands.begin()),
                   std::make_move_iterator(commands.end()));
   };
+  append(commandRecords(newSketchCommands, QStringLiteral("sketch")));
+  append(commandRecords(editSketchCommands, QStringLiteral("sketch")));
   append(commandRecords(modelCommands, QStringLiteral("model")));
   append(commandRecords(sketchCommands, QStringLiteral("sketch")));
   append(commandRecords(assemblyCommands, QStringLiteral("assemble")));
@@ -221,9 +232,25 @@ std::vector<CommandDescriptor> allCommandRecords() {
   return result;
 }
 
-std::vector<CommandDescriptor> commandsFor(const QString &workspaceId) {
-  if (workspaceId == QStringLiteral("sketch"))
-    return commandRecords(sketchCommands, workspaceId);
+std::vector<CommandDescriptor> commandsFor(const QString &workspaceId,
+                                           bool sketchEditing = false,
+                                           bool sketchSelected = false) {
+  const auto append = [](std::vector<CommandDescriptor> &target,
+                         std::vector<CommandDescriptor> source) {
+    target.insert(target.end(), std::make_move_iterator(source.begin()),
+                  std::make_move_iterator(source.end()));
+  };
+  if (workspaceId == QStringLiteral("sketch")) {
+    if (sketchEditing)
+      return commandRecords(sketchCommands, workspaceId);
+    auto result = commandRecords(newSketchCommands, workspaceId);
+    auto edit = commandRecords(editSketchCommands, workspaceId);
+    edit.front().available = sketchSelected;
+    edit.front().unavailableReason =
+        sketchSelected ? QString{} : QStringLiteral("Select a Sketch to edit");
+    append(result, std::move(edit));
+    return result;
+  }
   if (workspaceId == QStringLiteral("assemble"))
     return commandRecords(assemblyCommands, workspaceId);
   if (workspaceId == QStringLiteral("sheet-metal"))
@@ -236,7 +263,9 @@ std::vector<CommandDescriptor> commandsFor(const QString &workspaceId) {
     return commandRecords(bomCommands, workspaceId);
   if (workspaceId == QStringLiteral("cam"))
     return commandRecords(camCommands, workspaceId);
-  return commandRecords(modelCommands, QStringLiteral("model"));
+  auto result = commandRecords(newSketchCommands, QStringLiteral("model"));
+  append(result, commandRecords(modelCommands, QStringLiteral("model")));
+  return result;
 }
 
 QString commandLabel(const std::vector<CommandDescriptor> &commands,
@@ -641,6 +670,44 @@ std::optional<Circumcircle> circumcircle(const PlanePoint &first,
   return Circumcircle{center, radius};
 }
 
+struct SketchPrimitivePresentation {
+  const char *type;
+  const char *nameStem;
+  const char *structureKind;
+};
+
+SketchPrimitivePresentation
+sketchPrimitivePresentation(render::SketchPrimitiveKind kind) {
+  switch (kind) {
+  case render::SketchPrimitiveKind::Point:
+    return {"Point", "Point", "sketch-point"};
+  case render::SketchPrimitiveKind::Line:
+    return {"Line", "Edge", "sketch-line"};
+  case render::SketchPrimitiveKind::Circle:
+    return {"Circle", "Circle", "sketch-circle"};
+  case render::SketchPrimitiveKind::Arc:
+    return {"Arc", "Arc", "sketch-arc"};
+  }
+  return {"Sketch geometry", "Geometry", "sketch-geometry"};
+}
+
+QString sketchPrimitiveName(render::SketchPrimitiveKind kind,
+                            std::size_t index) {
+  return QStringLiteral("%1 %2")
+      .arg(QLatin1StringView{sketchPrimitivePresentation(kind).nameStem})
+      .arg(index);
+}
+
+FieldDescriptor readOnlyTextField(QString id, QString label, QString value) {
+  return {std::move(id),
+          std::move(label),
+          FieldKind::Text,
+          std::move(value),
+          {},
+          {},
+          true};
+}
+
 class DevelopmentFrontendPort final : public FrontendPort {
 public:
   DevelopmentFrontendPort(
@@ -818,7 +885,7 @@ public:
         {QStringLiteral("network"),
          QStringLiteral("agent"),
          QStringLiteral("Provider network access"),
-         QStringLiteral("Separate from local engineering commands"),
+         QStringLiteral("Separate from design commands"),
          PreferenceKind::Toggle,
          false,
          {},
@@ -993,7 +1060,7 @@ public:
          QStringLiteral("6.5 mm"), QStringLiteral("unresolved")},
     };
     snapshot_.jobs = {
-        {QStringLiteral("job.backend"), QStringLiteral("Engineering services"),
+        {QStringLiteral("job.backend"), QStringLiteral("Design engine"),
          QStringLiteral("Unavailable"), -1},
     };
     snapshot_.diagnostics = {
@@ -1036,9 +1103,8 @@ public:
          QStringLiteral("current"), false},
     };
     snapshot_.operations = {
-        {QStringLiteral("operation.services"),
-         QStringLiteral("Engineering services"), QStringLiteral("service"),
-         QStringLiteral("unavailable"),
+        {QStringLiteral("operation.services"), QStringLiteral("Design engine"),
+         QStringLiteral("service"), QStringLiteral("unavailable"),
          QStringLiteral("No backend process has been started."), -1},
         {QStringLiteral("operation.frontend"),
          QStringLiteral("Frontend projection"), QStringLiteral("projection"),
@@ -1091,19 +1157,19 @@ public:
     if (workspaceId == snapshot_.activeWorkspaceId)
       return;
     snapshot_.activeWorkspaceId = workspaceId;
-    selectFunctionForWorkspace(workspaceId);
-    snapshot_.activeCommandId.clear();
-    snapshot_.selectionSummary = QStringLiteral("Nothing selected");
+    snapshot_.sketchEditing =
+        workspaceId == QStringLiteral("sketch") && hasSelectedSketch();
     snapshot_.inspectorTitle = QStringLiteral("%1 workspace").arg(label);
     refreshWorkspace();
   }
 
   void selectEntity(const QString &entityId) override {
+    snapshot_.selectedEntityId = entityId;
     if (entityId == mountingProfileFunction_.id)
       snapshot_.selectedFunction = mountingProfileFunction_;
     else if (entityId == basePlateFunction_.id)
       snapshot_.selectedFunction = basePlateFunction_;
-    snapshot_.selectionSummary = entityId;
+    snapshot_.selectionSummary = humanSelectionName(entityId);
     snapshot_.selectedSketchEntityId.clear();
     if (!snapshot_.activeCommandId.isEmpty()) {
       const auto reference = std::ranges::find_if(
@@ -1128,51 +1194,8 @@ public:
       ++snapshot_.generation;
       return;
     }
-    if (localMode_ && snapshot_.activeWorkspaceId == QStringLiteral("sketch") &&
-        SketchEntityId::parse(entityId.toStdString())) {
-      snapshot_.selectedSketchEntityId = entityId;
-      snapshot_.selectionSummary = QStringLiteral("Sketch edge selected");
-      snapshot_.inspectorTitle = QStringLiteral("Sketch geometry");
-      snapshot_.inspectorStatus =
-          QStringLiteral("Drag to resize · X toggles construction");
-      snapshot_.fields = {
-          {QStringLiteral("selection.identity"),
-           QStringLiteral("Identity"),
-           FieldKind::Text,
-           entityId,
-           {},
-           {},
-           true},
-          {QStringLiteral("selection.revision"),
-           QStringLiteral("Revision"),
-           FieldKind::Text,
-           snapshot_.projectRevision,
-           {},
-           {},
-           true},
-      };
-      ++snapshot_.generation;
-      return;
-    }
-    snapshot_.inspectorTitle = QStringLiteral("Selection");
-    snapshot_.inspectorStatus =
-        QStringLiteral("Read-only development projection");
-    snapshot_.fields = {
-        {QStringLiteral("selection.identity"),
-         QStringLiteral("Identity"),
-         FieldKind::Text,
-         entityId,
-         {},
-         {},
-         true},
-        {QStringLiteral("selection.revision"),
-         QStringLiteral("Revision"),
-         FieldKind::Text,
-         QStringLiteral("Not connected"),
-         {},
-         {},
-         true},
-    };
+    projectHumanSelection(entityId);
+    refreshContextCommands();
     ++snapshot_.generation;
   }
 
@@ -1210,6 +1233,30 @@ public:
       clearSketchInteraction();
       snapshot_.inspectorStatus =
           QStringLiteral("Engineering backend disconnected");
+      ++snapshot_.generation;
+      return;
+    }
+    if (commandId == QStringLiteral("sketch.edit")) {
+      if (!hasSelectedSketch()) {
+        snapshot_.activeCommandId.clear();
+        snapshot_.fields.clear();
+        snapshot_.commandDraft = {};
+        clearSketchInteraction();
+        snapshot_.inspectorTitle = QStringLiteral("Edit Sketch");
+        snapshot_.inspectorStatus = QStringLiteral("Select a Sketch to edit");
+        ++snapshot_.generation;
+        return;
+      }
+      snapshot_.activeWorkspaceId = QStringLiteral("sketch");
+      snapshot_.sketchEditing = true;
+      snapshot_.activeCommandId.clear();
+      snapshot_.fields.clear();
+      snapshot_.commandDraft = {};
+      clearSketchInteraction();
+      refreshContextCommands();
+      snapshot_.inspectorTitle = QStringLiteral("Sketch 1");
+      snapshot_.inspectorStatus = QStringLiteral("Editing Sketch");
+      restoreWorkspaceViewport();
       ++snapshot_.generation;
       return;
     }
@@ -1251,9 +1298,8 @@ public:
     if (!descriptor->workspaceId.isEmpty() &&
         descriptor->workspaceId != snapshot_.activeWorkspaceId) {
       snapshot_.activeWorkspaceId = descriptor->workspaceId;
-      selectFunctionForWorkspace(snapshot_.activeWorkspaceId);
-      snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId);
-      snapshot_.selectionSummary = QStringLiteral("Nothing selected");
+      snapshot_.sketchEditing = false;
+      refreshContextCommands();
       restoreWorkspaceViewport();
     }
     snapshot_.activeCommandId = commandId;
@@ -1269,6 +1315,11 @@ public:
     };
     beginSketchInteraction(*form);
     ++snapshot_.generation;
+    if (localMode_ && commandId == QStringLiteral("model.sketch.create") &&
+        localSketchPlaneFromId(snapshot_.selectedEntityId)) {
+      snapshot_.fields.front().value = snapshot_.selectedEntityId;
+      static_cast<void>(submitLocalSketchCreation());
+    }
   }
 
   void setPreference(const QString &preferenceId,
@@ -1349,7 +1400,7 @@ public:
   }
 
   bool submitSketchInput(const SketchInputRequest &request) override {
-    if (snapshot_.activeWorkspaceId != QStringLiteral("sketch") ||
+    if (!snapshot_.sketchEditing ||
         request.commandId != snapshot_.activeCommandId ||
         request.commandId != snapshot_.sketchInteraction.commandId ||
         request.expectedRevision !=
@@ -1411,8 +1462,7 @@ public:
   }
 
   bool toggleSketchConstruction() override {
-    if (!localMode_ || !localSketchSession_ ||
-        snapshot_.activeWorkspaceId != QStringLiteral("sketch") ||
+    if (!localMode_ || !localSketchSession_ || !snapshot_.sketchEditing ||
         snapshot_.selectedSketchEntityId.isEmpty() ||
         localSketchSession_->pendingOperationCount() != 0U)
       return false;
@@ -1426,15 +1476,14 @@ public:
       setLocalOperationPending();
     snapshot_.inspectorStatus =
         queued ? QStringLiteral("Updating construction geometry")
-               : QStringLiteral("Sketch engineering queue is full");
+               : QStringLiteral("Finish the current operation first");
     ++snapshot_.generation;
     return queued;
   }
 
   bool dragSketchCurve(const QString &entityId, PlanePoint first,
                        PlanePoint current) override {
-    if (!localMode_ || !localSketchSession_ ||
-        snapshot_.activeWorkspaceId != QStringLiteral("sketch") ||
+    if (!localMode_ || !localSketchSession_ || !snapshot_.sketchEditing ||
         !snapshot_.activeCommandId.isEmpty() || entityId.isEmpty() ||
         localSketchSession_->pendingOperationCount() != 0U)
       return false;
@@ -1450,7 +1499,7 @@ public:
       setLocalOperationPending();
     snapshot_.inspectorStatus =
         queued ? QStringLiteral("Resizing Sketch geometry")
-               : QStringLiteral("Sketch engineering queue is full");
+               : QStringLiteral("Finish the current operation first");
     ++snapshot_.generation;
     return queued;
   }
@@ -1636,6 +1685,183 @@ public:
   }
 
 private:
+  [[nodiscard]] bool hasSelectedSketch() const {
+    if (snapshot_.selectedEntityId.isEmpty())
+      return false;
+    return snapshot_.selectedEntityId == localSketchFunction_.id ||
+           snapshot_.selectedEntityId == mountingProfileFunction_.id;
+  }
+
+  [[nodiscard]] const StructureItem *
+  structureItem(const QString &entityId) const {
+    const auto found = std::ranges::find_if(
+        snapshot_.structure,
+        [&entityId](const StructureItem &item) { return item.id == entityId; });
+    return found == snapshot_.structure.end() ? nullptr : &*found;
+  }
+
+  [[nodiscard]] QString humanSelectionName(const QString &entityId) const {
+    if (const StructureItem *item = structureItem(entityId))
+      return item->label;
+    return QStringLiteral("Model geometry");
+  }
+
+  void refreshContextCommands() {
+    const bool sketchSelected = hasSelectedSketch();
+    for (CommandDescriptor &command : snapshot_.commandCatalog) {
+      if (command.id == QStringLiteral("sketch.edit")) {
+        command.available = sketchSelected;
+        command.unavailableReason =
+            sketchSelected ? QString{}
+                           : QStringLiteral("Select a Sketch to edit");
+      } else if (command.id.startsWith(QStringLiteral("sketch."))) {
+        const bool implemented = hasFrontendCommandContractId(command.id);
+        command.available = snapshot_.sketchEditing && implemented;
+        command.unavailableReason =
+            command.available ? QString{}
+            : !snapshot_.sketchEditing
+                ? QStringLiteral("Open a Sketch to use this tool")
+                : unavailableReason(command.id);
+      }
+    }
+    snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId,
+                                     snapshot_.sketchEditing, sketchSelected);
+  }
+
+  void projectHumanSelection(const QString &entityId) {
+    const StructureItem *item = structureItem(entityId);
+    const QString label = humanSelectionName(entityId);
+    snapshot_.selectionSummary = label;
+
+    if (localMode_ && snapshot_.sketchScene) {
+      auto sketchId = SketchEntityId::parse(entityId.toStdString());
+      const render::PackedSketchPrimitive *primitive =
+          sketchId ? snapshot_.sketchScene->findPrimitive(*sketchId) : nullptr;
+      if (primitive) {
+        snapshot_.selectedSketchEntityId = entityId;
+        snapshot_.inspectorTitle = label;
+        snapshot_.inspectorStatus =
+            snapshot_.sketchEditing
+                ? QStringLiteral(
+                      "Drag to resize · Press X to toggle construction")
+                : QStringLiteral("Open the Sketch to edit this geometry");
+        const auto styles = snapshot_.sketchScene->styles();
+        const bool construction = primitive->style < styles.size() &&
+                                  styles[primitive->style].role ==
+                                      render::SketchStyleRole::Construction;
+        snapshot_.fields = {
+            readOnlyTextField(
+                QStringLiteral("selection.type"), QStringLiteral("Type"),
+                QLatin1StringView{
+                    sketchPrimitivePresentation(primitive->kind).type}),
+            readOnlyTextField(
+                QStringLiteral("selection.role"), QStringLiteral("Role"),
+                construction ? QStringLiteral("Construction geometry")
+                             : QStringLiteral("Profile geometry")),
+        };
+        const auto points = snapshot_.sketchScene->points();
+        if (primitive->kind == render::SketchPrimitiveKind::Line &&
+            primitive->firstPoint + 1U < points.size()) {
+          const auto &first = points[primitive->firstPoint];
+          const auto &second = points[primitive->firstPoint + 1U];
+          snapshot_.fields.insert(
+              snapshot_.fields.begin() + 1,
+              readOnlyTextField(
+                  QStringLiteral("selection.length"), QStringLiteral("Length"),
+                  formatDisplayedLength(
+                      millimetersFromMetres(
+                          std::hypot(second.x - first.x, second.y - first.y)),
+                      snapshot_.projectLengthUnitId)));
+        } else if (primitive->kind == render::SketchPrimitiveKind::Circle ||
+                   primitive->kind == render::SketchPrimitiveKind::Arc) {
+          snapshot_.fields.insert(
+              snapshot_.fields.begin() + 1,
+              readOnlyTextField(QStringLiteral("selection.radius"),
+                                QStringLiteral("Radius"),
+                                formatDisplayedLength(
+                                    millimetersFromMetres(primitive->radius),
+                                    snapshot_.projectLengthUnitId)));
+        }
+        return;
+      }
+    }
+
+    snapshot_.inspectorTitle = label;
+    if (hasSelectedSketch()) {
+      const std::size_t geometryCount =
+          snapshot_.sketchScene ? snapshot_.sketchScene->primitives().size()
+                                : 0U;
+      const std::size_t profileCount = std::ranges::count_if(
+          snapshot_.structure, [](const StructureItem &candidate) {
+            return candidate.kind == QStringLiteral("sketch-profile");
+          });
+      snapshot_.inspectorStatus = snapshot_.sketchEditing
+                                      ? QStringLiteral("Editing Sketch")
+                                      : QStringLiteral("Ready to edit");
+      snapshot_.fields = {
+          readOnlyTextField(QStringLiteral("selection.type"),
+                            QStringLiteral("Type"), QStringLiteral("Sketch")),
+          readOnlyTextField(
+              QStringLiteral("selection.attachment"), QStringLiteral("Plane"),
+              snapshot_.gridPlaneLabel + QStringLiteral(" Plane")),
+          readOnlyTextField(
+              QStringLiteral("selection.geometry-count"),
+              QStringLiteral("Geometry"),
+              QStringLiteral("%1 item%2")
+                  .arg(geometryCount)
+                  .arg(geometryCount == 1U ? QString{} : QStringLiteral("s"))),
+          readOnlyTextField(QStringLiteral("selection.profile-count"),
+                            QStringLiteral("Profiles"),
+                            QString::number(profileCount)),
+      };
+      return;
+    }
+
+    const QString kind = item ? item->kind : QStringLiteral("geometry");
+    QString type = QStringLiteral("Model geometry");
+    QString status = QStringLiteral("Selected");
+    if (kind == QStringLiteral("plane")) {
+      type = QStringLiteral("Datum plane");
+      status = QStringLiteral("Ready for Sketch attachment");
+    } else if (kind == QStringLiteral("component")) {
+      type = QStringLiteral("Component");
+    } else if (kind == QStringLiteral("group")) {
+      type = QStringLiteral("Group");
+    } else if (kind == QStringLiteral("project")) {
+      type = QStringLiteral("Project");
+    } else if (kind == QStringLiteral("sketch-profile")) {
+      type = QStringLiteral("Closed profile");
+      status = QStringLiteral("Available for modeling features");
+    }
+    snapshot_.inspectorStatus = status;
+    snapshot_.fields = {readOnlyTextField(QStringLiteral("selection.type"),
+                                          QStringLiteral("Type"), type)};
+  }
+
+  void refreshInspectorContext() {
+    if (!snapshot_.selectedEntityId.isEmpty()) {
+      projectHumanSelection(snapshot_.selectedEntityId);
+      return;
+    }
+    if (snapshot_.activeWorkspaceId == QStringLiteral("sketch")) {
+      snapshot_.inspectorTitle = snapshot_.sketchEditing
+                                     ? QStringLiteral("Sketch 1")
+                                     : QStringLiteral("Sketch workspace");
+      snapshot_.inspectorStatus =
+          snapshot_.sketchEditing
+              ? QStringLiteral("Editing Sketch")
+              : QStringLiteral("Select a plane or create a new Sketch");
+      return;
+    }
+    snapshot_.inspectorStatus =
+        localMode_ ? (localBackendState_ == LocalBackendState::Ready
+                          ? QStringLiteral("Ready")
+                      : localBackendState_ == LocalBackendState::Failed
+                          ? QStringLiteral("Design engine failed")
+                          : QStringLiteral("Starting the design engine"))
+                   : QStringLiteral("Engineering backend disconnected");
+  }
+
   std::vector<SketchPrimitiveProjection> baseSketchPrimitives() const {
     return localMode_ ? std::vector<SketchPrimitiveProjection>{}
                       : mountingProfileProjection();
@@ -1651,10 +1877,9 @@ private:
                                 QStringLiteral("Create a Sketch first"));
     snapshot_.viewportState = QStringLiteral("loading");
     snapshot_.viewportHeadline = QStringLiteral("Model workspace");
-    snapshot_.viewportDetail =
-        QStringLiteral("Starting local engineering services");
-    snapshot_.modelHealth = QStringLiteral("Starting local engineering");
-    snapshot_.inspectorStatus = QStringLiteral("Starting local engineering");
+    snapshot_.viewportDetail = QStringLiteral("Starting the design engine");
+    snapshot_.modelHealth = QStringLiteral("Starting");
+    snapshot_.inspectorStatus = QStringLiteral("Starting the design engine");
     snapshot_.modelSource.clear();
     snapshot_.selectedFunction = {};
     snapshot_.sketchProjection = {
@@ -1684,8 +1909,7 @@ private:
     snapshot_.revisions.clear();
     snapshot_.parameters.clear();
     snapshot_.jobs = {
-        {QStringLiteral("job.engineering"),
-         QStringLiteral("Local engineering services"),
+        {QStringLiteral("job.engineering"), QStringLiteral("Design engine"),
          QStringLiteral("Starting"), -1},
     };
     snapshot_.diagnostics.clear();
@@ -1702,7 +1926,7 @@ private:
     };
     snapshot_.operations = {
         {QStringLiteral("operation.engineering"),
-         QStringLiteral("Local engineering"), QStringLiteral("service"),
+         QStringLiteral("Design engine"), QStringLiteral("service"),
          QStringLiteral("pending"),
          QStringLiteral("Preparing the canonical source editor."), -1},
     };
@@ -1716,29 +1940,27 @@ private:
           result ? LocalBackendState::Ready : LocalBackendState::Failed;
       snapshot_.backendConnected = result.has_value();
       if (result) {
-        snapshot_.inspectorStatus = QStringLiteral("Local engineering ready");
         snapshot_.jobs = {
-            {QStringLiteral("job.engineering"),
-             QStringLiteral("Local engineering services"),
+            {QStringLiteral("job.engineering"), QStringLiteral("Design engine"),
              QStringLiteral("Ready"), 100},
         };
         snapshot_.operations = {
             {QStringLiteral("operation.engineering"),
-             QStringLiteral("Local engineering"), QStringLiteral("service"),
+             QStringLiteral("Design engine"), QStringLiteral("service"),
              QStringLiteral("current"),
              QStringLiteral("Ready to accept canonical commands."), 100},
         };
+        refreshInspectorContext();
       } else {
         const QString summary = QString::fromStdString(result.error().summary);
         snapshot_.inspectorStatus = summary;
         snapshot_.jobs = {
-            {QStringLiteral("job.engineering"),
-             QStringLiteral("Local engineering services"),
+            {QStringLiteral("job.engineering"), QStringLiteral("Design engine"),
              QStringLiteral("Failed"), -1},
         };
         snapshot_.operations = {
             {QStringLiteral("operation.engineering"),
-             QStringLiteral("Local engineering"), QStringLiteral("service"),
+             QStringLiteral("Design engine"), QStringLiteral("service"),
              QStringLiteral("failed"), summary, -1},
         };
         snapshot_.diagnostics.insert(
@@ -1786,7 +2008,7 @@ private:
       setLocalOperationPending();
     snapshot_.inspectorStatus =
         queued ? QStringLiteral("Creating canonical Sketch source")
-               : QStringLiteral("Sketch engineering queue is full");
+               : QStringLiteral("Finish the current operation first");
     ++snapshot_.generation;
     return queued;
   }
@@ -1813,7 +2035,7 @@ private:
       setLocalOperationPending();
     snapshot_.inspectorStatus =
         queued ? QStringLiteral("Applying rectangle to canonical source")
-               : QStringLiteral("Sketch engineering queue is full");
+               : QStringLiteral("Finish the current operation first");
     ++snapshot_.generation;
     return queued;
   }
@@ -1831,7 +2053,7 @@ private:
       setLocalOperationPending();
     snapshot_.inspectorStatus =
         queued ? QStringLiteral("Validating and evaluating canonical source")
-               : QStringLiteral("Sketch engineering queue is full");
+               : QStringLiteral("Finish the current operation first");
     ++snapshot_.generation;
     return queued;
   }
@@ -1850,7 +2072,7 @@ private:
                              : localSketchSession_->undo(std::move(completion));
     if (!queued) {
       snapshot_.inspectorStatus =
-          QStringLiteral("Sketch engineering queue is full");
+          QStringLiteral("Finish the current operation first");
       ++snapshot_.generation;
       return false;
     }
@@ -1900,7 +2122,7 @@ private:
   void applyLocalProjection(const LocalSketchProjection &projection,
                             const QString &commandId) {
     snapshot_.projectRevision = projection.projectRevision;
-    snapshot_.revisionLabel = projection.projectRevision.left(18);
+    snapshot_.revisionLabel = QStringLiteral("Unsaved changes");
     snapshot_.modelSource = projection.source;
     snapshot_.sourceEditingAvailable = true;
     historyCanUndo_ = projection.canUndo;
@@ -1944,8 +2166,27 @@ private:
         {QStringLiteral("reference.plane.yz"), QStringLiteral("YZ Plane"), 3,
          QStringLiteral("plane")},
         {localSketchFunction_.id, QStringLiteral("Sketch 1"), 2,
-         QStringLiteral("model-function")},
+         QStringLiteral("sketch")},
+        {QStringLiteral("group.sketch.geometry"),
+         QStringLiteral("Geometry (%1)")
+             .arg(projection.scene ? projection.scene->primitives().size()
+                                   : 0U),
+         3, QStringLiteral("group")},
     };
+    std::array<std::size_t, 4> geometryCounts{};
+    if (projection.scene) {
+      for (const render::PackedSketchPrimitive &primitive :
+           projection.scene->primitives()) {
+        const std::size_t kindIndex =
+            static_cast<std::size_t>(primitive.kind) - 1U;
+        const std::size_t index = ++geometryCounts.at(kindIndex);
+        const auto presentation = sketchPrimitivePresentation(primitive.kind);
+        snapshot_.structure.push_back(
+            {QString::fromStdString(primitive.entity.toString()),
+             sketchPrimitiveName(primitive.kind, index), 4,
+             QLatin1StringView{presentation.structureKind}});
+      }
+    }
     for (std::size_t index = 0; index < projection.profileCount; ++index)
       snapshot_.structure.push_back(
           {QStringLiteral("output.sketch.profile.%1").arg(index + 1U),
@@ -1976,6 +2217,8 @@ private:
     snapshot_.viewportDetail =
         QStringLiteral("Canonical source and evaluated geometry");
     snapshot_.selectionSummary = QStringLiteral("Nothing selected");
+    snapshot_.selectedEntityId.clear();
+    snapshot_.selectedSketchEntityId.clear();
     switch (projection.plane) {
     case LocalSketchPlane::XY:
       snapshot_.gridPlaneLabel = QStringLiteral("XY");
@@ -2024,7 +2267,9 @@ private:
     applyLocalProjection(*result, commandId);
     if (commandId == QStringLiteral("model.sketch.create")) {
       snapshot_.activeWorkspaceId = QStringLiteral("sketch");
-      snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId);
+      snapshot_.sketchEditing = true;
+      snapshot_.selectedEntityId = localSketchFunction_.id;
+      refreshContextCommands();
       snapshot_.activeCommandId.clear();
       snapshot_.fields.clear();
       snapshot_.commandDraft = {};
@@ -2048,13 +2293,8 @@ private:
       snapshot_.fields.clear();
       snapshot_.commandDraft = {};
       clearSketchInteraction();
-      snapshot_.selectedSketchEntityId = localEditEntity_;
-      snapshot_.selectionSummary = QStringLiteral("Sketch edge selected");
-      snapshot_.inspectorTitle = QStringLiteral("Sketch geometry");
-      snapshot_.inspectorStatus =
-          commandId == QStringLiteral("sketch.curve.drag")
-              ? QStringLiteral("Geometry resized · Select active")
-              : QStringLiteral("Construction state changed · Select active");
+      snapshot_.selectedEntityId = localEditEntity_;
+      projectHumanSelection(localEditEntity_);
     } else if (commandId == QStringLiteral("source.replace")) {
       snapshot_.activeCommandId.clear();
       snapshot_.fields.clear();
@@ -2345,22 +2585,35 @@ private:
         snapshot_.viewportHeadline = QStringLiteral("Model workspace");
         snapshot_.viewportDetail =
             localBackendState_ == LocalBackendState::Ready
-                ? QStringLiteral("Local engineering services are ready")
+                ? QStringLiteral("Ready")
             : localBackendState_ == LocalBackendState::Failed
-                ? QStringLiteral("Local engineering services failed")
-                : QStringLiteral("Starting local engineering services");
+                ? QStringLiteral("Design engine failed")
+                : QStringLiteral("Starting the design engine");
         snapshot_.modelHealth =
             localBackendState_ == LocalBackendState::Ready
-                ? QStringLiteral("Local engineering ready")
+                ? QStringLiteral("Ready")
             : localBackendState_ == LocalBackendState::Failed
-                ? QStringLiteral("Local engineering failed")
-                : QStringLiteral("Starting local engineering");
+                ? QStringLiteral("Design engine failed")
+                : QStringLiteral("Starting");
       }
       return;
     }
     snapshot_.viewportState = QStringLiteral("unavailable");
     if (snapshot_.activeWorkspaceId == QStringLiteral("sketch")) {
       snapshot_.viewportState = QStringLiteral("current");
+      if (!snapshot_.sketchEditing) {
+        snapshot_.viewportHeadline = QStringLiteral("Sketch workspace");
+        snapshot_.viewportDetail =
+            hasSelectedSketch()
+                ? QStringLiteral("Edit the selected Sketch or create another")
+            : localSketchPlaneFromId(snapshot_.selectedEntityId)
+                ? QStringLiteral("Create a Sketch on the selected plane")
+                : QStringLiteral("Select a plane or create a new Sketch");
+        snapshot_.modelHealth =
+            localMode_ ? QStringLiteral("Ready")
+                       : QStringLiteral("Sketch frontend contract current");
+        return;
+      }
       snapshot_.viewportHeadline = QStringLiteral("Sketch input calibration");
       snapshot_.viewportDetail = QStringLiteral(
           "Deterministic fixture; solver and evaluator unavailable");
@@ -2386,31 +2639,13 @@ private:
     snapshot_.modelHealth = QStringLiteral("Engineering backend unavailable");
   }
 
-  void selectFunctionForWorkspace(const QString &workspaceId) {
-    if (localMode_) {
-      snapshot_.selectedFunction = workspaceId == QStringLiteral("sketch")
-                                       ? localSketchFunction_
-                                       : FunctionSummary{};
-      return;
-    }
-    snapshot_.selectedFunction = workspaceId == QStringLiteral("sketch")
-                                     ? mountingProfileFunction_
-                                     : basePlateFunction_;
-  }
-
   void refreshWorkspace() {
-    snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId);
+    refreshContextCommands();
     snapshot_.activeCommandId.clear();
     snapshot_.fields.clear();
     snapshot_.commandDraft = {};
     clearSketchInteraction();
-    snapshot_.inspectorStatus =
-        localMode_ ? (localBackendState_ == LocalBackendState::Ready
-                          ? QStringLiteral("Local engineering ready")
-                      : localBackendState_ == LocalBackendState::Failed
-                          ? QStringLiteral("Local engineering failed")
-                          : QStringLiteral("Starting local engineering"))
-                   : QStringLiteral("Engineering backend disconnected");
+    refreshInspectorContext();
     restoreWorkspaceViewport();
     ++snapshot_.generation;
   }

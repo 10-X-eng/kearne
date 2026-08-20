@@ -9,6 +9,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -209,7 +210,7 @@ void verifyEndToEnd() {
   QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
   loop.exec();
   require(createdCompletion && createdCompletion->has_value(),
-          "empty Sketch did not cross the local engineering lane");
+          "empty Sketch did not cross the design-engine boundary");
   const ui::LocalSketchProjection created = **createdCompletion;
   require(created.scene && created.scene->primitives().empty() &&
               created.source.contains(QStringLiteral("SketchDefinition")) &&
@@ -378,7 +379,27 @@ void verifyProductionFrontendProjection() {
   static_cast<void>(awaitSnapshot(
       *port,
       [](const ui::FrontendSnapshot &value) { return value.backendConnected; },
-      "local engineering preparation did not complete"));
+      "design-engine preparation did not complete"));
+
+  port->selectWorkspace(QStringLiteral("sketch"));
+  require(!port->snapshot()->sketchEditing &&
+              port->snapshot()->inspectorStatus ==
+                  QStringLiteral("Select a plane or create a new Sketch") &&
+              std::ranges::any_of(port->snapshot()->commands,
+                                  [](const auto &command) {
+                                    return command.id ==
+                                               QStringLiteral(
+                                                   "model.sketch.create") &&
+                                           command.available;
+                                  }) &&
+              std::ranges::none_of(
+                  port->snapshot()->commands,
+                  [](const auto &command) {
+                    return command.id == QStringLiteral("sketch.rectangle") &&
+                           command.available;
+                  }),
+          "Sketch entry context exposed tools before a Sketch was open");
+  port->selectWorkspace(QStringLiteral("model"));
 
   port->requestCommand(QStringLiteral("model.sketch.create"));
   require(port->snapshot()->activeCommandId ==
@@ -388,8 +409,8 @@ void verifyProductionFrontendProjection() {
   require(port->snapshot()->projectRevision == QStringLiteral("not-created") &&
               !port->snapshot()->sketchScene,
           "cancelling New Sketch changed accepted state");
-  port->requestCommand(QStringLiteral("model.sketch.create"));
   port->selectEntity(QStringLiteral("reference.plane.xz"));
+  port->requestCommand(QStringLiteral("model.sketch.create"));
   const auto selectedPlaneDraft = port->snapshot();
   require(selectedPlaneDraft->commandDraft.state ==
               ui::CommandDraftState::Pending,
@@ -405,6 +426,7 @@ void verifyProductionFrontendProjection() {
       created->backendConnected && created->sketchScene &&
           created->sketchScene->primitives().empty() &&
           created->activeWorkspaceId == QStringLiteral("sketch") &&
+          created->sketchEditing &&
           created->sketchProjection.planeId ==
               QStringLiteral("reference.plane.xz") &&
           created->gridPlaneLabel == QStringLiteral("XZ") &&
@@ -471,6 +493,7 @@ void verifyProductionFrontendProjection() {
       rectangle->sketchScene &&
           rectangle->sketchScene->primitives().size() == 4U &&
           rectangle->projectRevision != base &&
+          rectangle->revisionLabel == QStringLiteral("Unsaved changes") &&
           rectangle->modelSource.contains(QStringLiteral("coincident(")) &&
           rectangle->activeCommandId.isEmpty() &&
           rectangle->commandDraft.state == ui::CommandDraftState::None &&
@@ -481,6 +504,43 @@ void verifyProductionFrontendProjection() {
                 return item.id == QStringLiteral("output.sketch.profile.1");
               }),
       "rectangle source, solve, scene, structure, and Select state diverged");
+
+  std::vector<const ui::StructureItem *> edges;
+  for (const auto &item : rectangle->structure) {
+    if (item.kind == QStringLiteral("sketch-line"))
+      edges.push_back(&item);
+  }
+  require(
+      edges.size() == 4U &&
+          std::ranges::equal(
+              edges,
+              std::array{QStringLiteral("Edge 1"), QStringLiteral("Edge 2"),
+                         QStringLiteral("Edge 3"), QStringLiteral("Edge 4")},
+              {}, [](const ui::StructureItem *item) { return item->label; },
+              [](const QString &label) { return label; }),
+      "Sketch geometry was not projected with stable human names");
+  port->selectEntity(edges.front()->id);
+  require(port->snapshot()->selectionSummary == QStringLiteral("Edge 1") &&
+              std::ranges::any_of(port->snapshot()->fields,
+                                  [](const auto &field) {
+                                    return field.label ==
+                                               QStringLiteral("Length") &&
+                                           std::get<QString>(field.value)
+                                               .endsWith(QStringLiteral(" mm"));
+                                  }) &&
+              std::ranges::none_of(port->snapshot()->fields,
+                                   [](const auto &field) {
+                                     return field.label ==
+                                                QStringLiteral("Identity") ||
+                                            field.label ==
+                                                QStringLiteral("Revision");
+                                   }),
+          "Sketch selection did not expose concise human properties");
+  port->selectWorkspace(QStringLiteral("model"));
+  port->selectEntity(QStringLiteral("function.sketch"));
+  port->selectWorkspace(QStringLiteral("sketch"));
+  require(port->snapshot()->sketchEditing,
+          "preselected production Sketch did not reopen for editing");
 
   QString editedSource = rectangle->modelSource;
   require(editedSource.contains(QStringLiteral("m(0.04)")),

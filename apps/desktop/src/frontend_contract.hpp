@@ -305,6 +305,7 @@ struct FrontendSnapshot {
   QString viewportDetail;
   QString modelHealth;
   QString selectionSummary;
+  QString selectedEntityId;
   QString selectedSketchEntityId;
   QString agentStatus;
   QString modelSource;
@@ -316,6 +317,7 @@ struct FrontendSnapshot {
   QString gridPlaneLabel;
   QString gridSpacingLabel;
   double gridSpacingMillimeters = 10.0;
+  bool sketchEditing = false;
   bool backendConnected = false;
   bool projectPersistenceAvailable = false;
   bool sourceEditingAvailable = false;
