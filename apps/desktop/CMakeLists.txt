@@ -89,14 +89,25 @@ target_link_libraries(kearne_local_sketch_session
         Kearne::SketchWorkflow
 )
 
+add_library(kearne_desktop_frontend STATIC
+    src/development_frontend_port.cpp
+    src/development_frontend_port.hpp
+    src/frontend_contract.hpp
+    src/sketch_gesture_preview.cpp
+    src/sketch_gesture_preview.hpp
+)
+add_library(Kearne::DesktopFrontend ALIAS kearne_desktop_frontend)
+target_include_directories(kearne_desktop_frontend PUBLIC src)
+target_link_libraries(kearne_desktop_frontend
+    PUBLIC Kearne::LocalSketchSession Qt6::Core
+    PRIVATE Kearne::BuildOptions
+)
+
 qt_add_executable(kearne
     src/application_context.cpp
     src/application_context.hpp
-    src/development_frontend_port.cpp
-    src/development_frontend_port.hpp
     src/engineering_grid_item.cpp
     src/engineering_grid_item.hpp
-    src/frontend_contract.hpp
     src/local_json_store.cpp
     src/local_json_store.hpp
     src/main.cpp
@@ -108,6 +119,8 @@ qt_add_executable(kearne
     src/observation_controller.hpp
     src/sketch_camera_controller.cpp
     src/sketch_camera_controller.hpp
+    src/sketch_viewport_bridge.cpp
+    src/sketch_viewport_bridge.hpp
     src/theme_manager.cpp
     src/theme_manager.hpp
     src/ui_session.cpp
@@ -158,9 +171,11 @@ qt_add_qml_module(kearne
         qml/components/WorkspaceBar.qml
         qml/components/CommandStrip.qml
         qml/components/StructurePanel.qml
+        qml/components/EngineeringGridScale.qml
         qml/components/EngineeringGrid.qml
         qml/components/BoxEdges3D.qml
         qml/components/NavigationCalibrationScene.qml
+        qml/components/DatumPlaneSelector.qml
         qml/components/SketchCalibrationScene.qml
         qml/components/OrientationCube.qml
         qml/components/DesignViewport.qml
@@ -175,15 +190,21 @@ qt_add_qml_module(kearne
         qml/components/CommandPalette.qml
 )
 
+get_property(kearne_desktop_generated_python_root GLOBAL PROPERTY
+    KEARNE_API_GENERATED_PYTHON_ROOT)
 target_compile_definitions(kearne PRIVATE
     KEARNE_VERSION="${PROJECT_VERSION}"
     KEARNE_BUILD_TYPE="$<CONFIG>"
+    "KEARNE_LOCAL_PYTHON=\"$<TARGET_FILE:Python3::Interpreter>\""
+    "KEARNE_LOCAL_SDK_ROOT=\"${PROJECT_SOURCE_DIR}/sdk/python/src\""
+    "KEARNE_LOCAL_GENERATED_PYTHON_ROOT=\"${kearne_desktop_generated_python_root}\""
 )
 
 target_include_directories(kearne PRIVATE src)
 
 target_link_libraries(kearne PRIVATE
     Kearne::BuildOptions
+    Kearne::DesktopFrontend
     Kearne::LocalSketchSession
     Kearne::SketchSceneQuick
     Qt6::Core
@@ -210,24 +231,39 @@ install(FILES ${PROJECT_SOURCE_DIR}/tools/observe/observation.schema.json
         DESTINATION ${CMAKE_INSTALL_DATADIR}/kearne/observe)
 
 if(BUILD_TESTING)
+    get_property(kearne_desktop_generated_python_root GLOBAL PROPERTY
+        KEARNE_API_GENERATED_PYTHON_ROOT)
+    function(kearne_configure_local_sketch_test target)
+        target_link_libraries(${target} PRIVATE
+            Kearne::DesktopFrontend Kearne::LocalSketchSession Kearne::Testkit
+            Kearne::BuildOptions Qt6::Core)
+        target_compile_definitions(${target} PRIVATE
+            "KEARNE_TEST_BUILD_TYPE=\"$<CONFIG>\""
+            "KEARNE_TEST_PYTHON=\"$<TARGET_FILE:Python3::Interpreter>\""
+            "KEARNE_TEST_SDK_ROOT=\"${PROJECT_SOURCE_DIR}/sdk/python/src\""
+            "KEARNE_TEST_GENERATED_PYTHON_ROOT=\"${kearne_desktop_generated_python_root}\"")
+    endfunction()
+
     add_executable(kearne_local_sketch_session_contract_tests
         tests/local_sketch_session_contract.cpp
     )
-    target_link_libraries(kearne_local_sketch_session_contract_tests PRIVATE
-        Kearne::LocalSketchSession Kearne::Testkit Kearne::BuildOptions
-        Qt6::Core)
-    get_property(kearne_desktop_generated_python_root GLOBAL PROPERTY
-        KEARNE_API_GENERATED_PYTHON_ROOT)
-    target_compile_definitions(kearne_local_sketch_session_contract_tests
-        PRIVATE
-        "KEARNE_TEST_PYTHON=\"$<TARGET_FILE:Python3::Interpreter>\""
-        "KEARNE_TEST_SDK_ROOT=\"${PROJECT_SOURCE_DIR}/sdk/python/src\""
-        "KEARNE_TEST_GENERATED_PYTHON_ROOT=\"${kearne_desktop_generated_python_root}\"")
+    kearne_configure_local_sketch_test(
+        kearne_local_sketch_session_contract_tests)
     add_test(NAME local-sketch-session-contracts
              COMMAND kearne_local_sketch_session_contract_tests)
     set_tests_properties(local-sketch-session-contracts PROPERTIES
         LABELS "desktop;sketch;workflow;contract;concurrency"
         TIMEOUT 60)
+
+    add_executable(kearne_local_sketch_session_benchmark
+        tests/local_sketch_session_benchmark.cpp)
+    kearne_configure_local_sketch_test(
+        kearne_local_sketch_session_benchmark)
+    add_test(NAME local-sketch-session-performance
+             COMMAND kearne_local_sketch_session_benchmark)
+    set_tests_properties(local-sketch-session-performance PROPERTIES
+        LABELS "desktop;sketch;workflow;performance"
+        TIMEOUT 30)
 
     add_executable(kearne_navigation_input_contract_tests
         tests/navigation_input_contract.cpp
@@ -479,12 +515,9 @@ if(BUILD_TESTING)
 
     qt_add_executable(kearne_frontend_port_contract_tests
         tests/frontend_port_contract.cpp
-        src/development_frontend_port.cpp
-        src/development_frontend_port.hpp
-        src/frontend_contract.hpp
     )
-    target_include_directories(kearne_frontend_port_contract_tests PRIVATE src)
-    target_link_libraries(kearne_frontend_port_contract_tests PRIVATE Qt6::Core)
+    target_link_libraries(kearne_frontend_port_contract_tests PRIVATE
+        Kearne::DesktopFrontend Qt6::Core)
     target_link_libraries(kearne_frontend_port_contract_tests PRIVATE
         Kearne::BuildOptions)
     add_test(NAME frontend-port-contracts

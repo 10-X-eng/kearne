@@ -1,4 +1,5 @@
 #include "development_frontend_port.hpp"
+#include "local_sketch_session.hpp"
 
 #include <algorithm>
 #include <array>
@@ -185,6 +186,8 @@ constexpr std::array camCommands{
 };
 
 constexpr std::array versionCommands{
+    CommandDefinition{"version.undo", "Undo", "undo", "History"},
+    CommandDefinition{"version.redo", "Redo", "redo", "History"},
     CommandDefinition{"version.checkpoint", "Checkpoint", "checkpoint",
                       "History"},
     CommandDefinition{"version.branch", "Branch", "branch", "History"},
@@ -640,12 +643,13 @@ std::optional<Circumcircle> circumcircle(const PlanePoint &first,
 
 class DevelopmentFrontendPort final : public FrontendPort {
 public:
-  DevelopmentFrontendPort(std::vector<UiOption> themeOptions,
-                          const QString &themeId,
-                          const QString &defaultLengthUnitId,
-                          const QString &interfaceDensityId,
-                          const QString &navigationProfileId,
-                          const QString &zoomDirectionId) {
+  DevelopmentFrontendPort(
+      std::vector<UiOption> themeOptions, const QString &themeId,
+      const QString &defaultLengthUnitId, const QString &interfaceDensityId,
+      const QString &navigationProfileId, const QString &zoomDirectionId,
+      std::unique_ptr<LocalSketchSession> sketchSession = {})
+      : localMode_(sketchSession != nullptr),
+        localSketchSession_(std::move(sketchSession)) {
     snapshot_.generation = 1;
     snapshot_.projectName = QStringLiteral("Motor Bracket");
     snapshot_.branchLabel = QStringLiteral("main");
@@ -1063,13 +1067,21 @@ public:
         {QStringLiteral("permission-denied"),
          QStringLiteral("Permission denied"), QStringLiteral("shield")},
     };
+    if (localMode_)
+      initializeLocalProjection();
     refreshWorkspace();
+    if (localMode_)
+      beginLocalPreparation();
   }
 
   [[nodiscard]] FrontendSnapshotPtr snapshot() const override {
     if (!published_ || published_->generation != snapshot_.generation)
       published_ = std::make_shared<const FrontendSnapshot>(snapshot_);
     return published_;
+  }
+
+  void setChangeHandler(ChangeHandler handler) override {
+    changeHandler_ = std::move(handler);
   }
 
   void selectWorkspace(const QString &workspaceId) override {
@@ -1164,7 +1176,7 @@ public:
       ++snapshot_.generation;
       return;
     }
-    const std::optional<CommandForm> form =
+    std::optional<CommandForm> form =
         commandFormFor(commandId, snapshot_.gridSpacingLabel);
     const auto descriptor = std::ranges::find_if(
         snapshot_.commandCatalog, [&commandId](const CommandDescriptor &item) {
@@ -1193,6 +1205,11 @@ public:
       snapshot_.inspectorStatus = QStringLiteral("Action is not registered");
       ++snapshot_.generation;
       return;
+    }
+    if (localMode_ && commandId == QStringLiteral("sketch.rectangle")) {
+      form->fields.front().value = QStringLiteral("corner");
+      form->fields.front().options = {
+          {QStringLiteral("corner"), QStringLiteral("Corner")}};
     }
     if (!descriptor->workspaceId.isEmpty() &&
         descriptor->workspaceId != snapshot_.activeWorkspaceId) {
@@ -1348,6 +1365,11 @@ public:
     rebuildSketchProjection();
     updateSketchReadiness();
     ++snapshot_.generation;
+    if (localMode_ && request.commandId == QStringLiteral("sketch.rectangle") &&
+        snapshot_.sketchInteraction.maximumInputCount > 0 &&
+        snapshot_.sketchInteraction.inputCount ==
+            snapshot_.sketchInteraction.maximumInputCount)
+      return submitLocalRectangle();
     return true;
   }
 
@@ -1379,6 +1401,12 @@ public:
         return false;
       }
     }
+    if (localMode_ && mode == CommandDraftMode::Apply &&
+        request.commandId == QStringLiteral("model.sketch.create"))
+      return submitLocalSketchCreation();
+    if (localMode_ && mode == CommandDraftMode::Apply &&
+        request.commandId == QStringLiteral("sketch.rectangle"))
+      return submitLocalRectangle();
     const bool supported = mode == CommandDraftMode::Preview
                                ? snapshot_.commandDraft.previewSupported
                                : snapshot_.commandDraft.applySupported;
@@ -1474,6 +1502,15 @@ public:
       ++snapshot_.generation;
       return false;
     }
+    if (localMode_) {
+      if (mode == SourceEditMode::Preview) {
+        snapshot_.inspectorStatus = QStringLiteral(
+            "Source diff ready; Apply validates and evaluates it");
+        ++snapshot_.generation;
+        return true;
+      }
+      return submitLocalSourceReplacement(request);
+    }
     if (mode == SourceEditMode::Preview) {
       snapshot_.inspectorStatus = QStringLiteral(
           "Source revision ready for review; evaluator unavailable");
@@ -1498,7 +1535,454 @@ public:
     return true;
   }
 
+  bool undo() override {
+    if (localMode_)
+      return submitLocalHistory(false);
+    snapshot_.inspectorStatus =
+        QStringLiteral("Undo unavailable; engineering backend disconnected");
+    ++snapshot_.generation;
+    return false;
+  }
+
+  bool redo() override {
+    if (localMode_)
+      return submitLocalHistory(true);
+    snapshot_.inspectorStatus =
+        QStringLiteral("Redo unavailable; engineering backend disconnected");
+    ++snapshot_.generation;
+    return false;
+  }
+
 private:
+  std::vector<SketchPrimitiveProjection> baseSketchPrimitives() const {
+    return localMode_ ? std::vector<SketchPrimitiveProjection>{}
+                      : mountingProfileProjection();
+  }
+
+  void initializeLocalProjection() {
+    snapshot_.projectName = QStringLiteral("Untitled");
+    snapshot_.revisionLabel = QStringLiteral("Not created");
+    snapshot_.projectRevision = QStringLiteral("not-created");
+    snapshot_.backendConnected = false;
+    snapshot_.sourceEditingAvailable = false;
+    setLocalHistoryAvailability(false, false,
+                                QStringLiteral("Create a Sketch first"));
+    snapshot_.viewportState = QStringLiteral("loading");
+    snapshot_.viewportHeadline = QStringLiteral("Model workspace");
+    snapshot_.viewportDetail =
+        QStringLiteral("Starting local engineering services");
+    snapshot_.modelHealth = QStringLiteral("Starting local engineering");
+    snapshot_.inspectorStatus = QStringLiteral("Starting local engineering");
+    snapshot_.modelSource.clear();
+    snapshot_.selectedFunction = {};
+    snapshot_.sketchProjection = {
+        {},
+        {},
+        QStringLiteral("reference.plane.xy"),
+        snapshot_.projectLengthUnitId,
+        QStringLiteral("not-created"),
+        -1,
+        {},
+    };
+    snapshot_.sketchScene.reset();
+    snapshot_.structure = {
+        {QStringLiteral("project.root"), QStringLiteral("Untitled"), 0,
+         QStringLiteral("project")},
+        {QStringLiteral("component.part"), QStringLiteral("Part"), 1,
+         QStringLiteral("component")},
+        {QStringLiteral("reference.origin"), QStringLiteral("Origin"), 2,
+         QStringLiteral("group")},
+        {QStringLiteral("reference.plane.xy"), QStringLiteral("XY Plane"), 3,
+         QStringLiteral("plane")},
+        {QStringLiteral("reference.plane.xz"), QStringLiteral("XZ Plane"), 3,
+         QStringLiteral("plane")},
+        {QStringLiteral("reference.plane.yz"), QStringLiteral("YZ Plane"), 3,
+         QStringLiteral("plane")},
+    };
+    snapshot_.revisions.clear();
+    snapshot_.parameters.clear();
+    snapshot_.jobs = {
+        {QStringLiteral("job.engineering"),
+         QStringLiteral("Local engineering services"),
+         QStringLiteral("Starting"), -1},
+    };
+    snapshot_.diagnostics.clear();
+    snapshot_.proposals = {
+        {QStringLiteral("proposal.codex"),
+         QStringLiteral("Connect Codex to inspect or propose model changes."),
+         QStringLiteral("Unavailable")},
+    };
+    snapshot_.recentProjects.clear();
+    snapshot_.recoveryItems = {
+        {QStringLiteral("recovery.none"), QStringLiteral("No recovery needed"),
+         QStringLiteral("No local project has been created."),
+         QStringLiteral("current"), false},
+    };
+    snapshot_.operations = {
+        {QStringLiteral("operation.engineering"),
+         QStringLiteral("Local engineering"), QStringLiteral("service"),
+         QStringLiteral("pending"),
+         QStringLiteral("Preparing the canonical source editor."), -1},
+    };
+    basePlateFunction_ = {};
+    mountingProfileFunction_ = {};
+  }
+
+  void beginLocalPreparation() {
+    localSketchSession_->whenReady([this](Result<void> result) {
+      localBackendState_ =
+          result ? LocalBackendState::Ready : LocalBackendState::Failed;
+      snapshot_.backendConnected = result.has_value();
+      if (result) {
+        snapshot_.inspectorStatus = QStringLiteral("Local engineering ready");
+        snapshot_.jobs = {
+            {QStringLiteral("job.engineering"),
+             QStringLiteral("Local engineering services"),
+             QStringLiteral("Ready"), 100},
+        };
+        snapshot_.operations = {
+            {QStringLiteral("operation.engineering"),
+             QStringLiteral("Local engineering"), QStringLiteral("service"),
+             QStringLiteral("current"),
+             QStringLiteral("Ready to accept canonical commands."), 100},
+        };
+      } else {
+        const QString summary = QString::fromStdString(result.error().summary);
+        snapshot_.inspectorStatus = summary;
+        snapshot_.jobs = {
+            {QStringLiteral("job.engineering"),
+             QStringLiteral("Local engineering services"),
+             QStringLiteral("Failed"), -1},
+        };
+        snapshot_.operations = {
+            {QStringLiteral("operation.engineering"),
+             QStringLiteral("Local engineering"), QStringLiteral("service"),
+             QStringLiteral("failed"), summary, -1},
+        };
+        snapshot_.diagnostics.insert(
+            snapshot_.diagnostics.begin(),
+            {QString::fromStdString(result.error().code),
+             result.error().severity == Severity::Fatal
+                 ? QStringLiteral("fatal")
+                 : QStringLiteral("error"),
+             summary});
+      }
+      restoreWorkspaceViewport();
+      ++snapshot_.generation;
+      notifyChanged();
+    });
+  }
+
+  bool submitLocalSketchCreation() {
+    if (!localSketchSession_ ||
+        snapshot_.commandDraft.state == CommandDraftState::Pending)
+      return false;
+    const auto attachment = std::ranges::find_if(
+        snapshot_.fields, [](const FieldDescriptor &field) {
+          return field.id ==
+                 QStringLiteral("model.sketch.create.attachment");
+        });
+    const auto plane =
+        attachment == snapshot_.fields.end() ||
+                !std::holds_alternative<QString>(attachment->value)
+            ? std::optional<LocalSketchPlane>{}
+            : localSketchPlaneFromId(std::get<QString>(attachment->value));
+    if (!plane) {
+      snapshot_.commandDraft.state = CommandDraftState::Rejected;
+      snapshot_.inspectorStatus =
+          QStringLiteral("Select an XY, XZ, or YZ datum plane");
+      ++snapshot_.generation;
+      return false;
+    }
+    const bool queued = localSketchSession_->create(
+        {*plane},
+        [this](Result<LocalSketchProjection> result) {
+          completeLocalOperation(QStringLiteral("model.sketch.create"),
+                                 std::move(result));
+        });
+    snapshot_.commandDraft.state =
+        queued ? CommandDraftState::Pending : CommandDraftState::Rejected;
+    if (queued)
+      setLocalOperationPending();
+    snapshot_.inspectorStatus =
+        queued ? QStringLiteral("Creating canonical Sketch source")
+               : QStringLiteral("Sketch engineering queue is full");
+    ++snapshot_.generation;
+    return queued;
+  }
+
+  bool submitLocalRectangle() {
+    if (!localSketchSession_ || sketchInputs_.size() != 2U ||
+        snapshot_.commandDraft.state == CommandDraftState::Pending)
+      return false;
+    const LocalRectangleGesture gesture{
+        sketchInputs_[0].planePoint.xMetres,
+        sketchInputs_[0].planePoint.yMetres,
+        sketchInputs_[1].planePoint.xMetres,
+        sketchInputs_[1].planePoint.yMetres,
+        activeSketchConstruction(),
+    };
+    const bool queued = localSketchSession_->applyRectangle(
+        gesture, [this](Result<LocalSketchProjection> result) {
+          completeLocalOperation(QStringLiteral("sketch.rectangle"),
+                                 std::move(result));
+        });
+    snapshot_.commandDraft.state =
+        queued ? CommandDraftState::Pending : CommandDraftState::Rejected;
+    if (queued)
+      setLocalOperationPending();
+    snapshot_.inspectorStatus =
+        queued ? QStringLiteral("Applying rectangle to canonical source")
+               : QStringLiteral("Sketch engineering queue is full");
+    ++snapshot_.generation;
+    return queued;
+  }
+
+  bool submitLocalSourceReplacement(const SourceEditRequest &request) {
+    if (!localSketchSession_ || !snapshot_.sourceEditingAvailable)
+      return false;
+    const bool queued = localSketchSession_->replaceSource(
+        {request.expectedRevision, request.source},
+        [this](Result<LocalSketchProjection> result) {
+          completeLocalOperation(QStringLiteral("source.replace"),
+                                 std::move(result));
+        });
+    if (queued)
+      setLocalOperationPending();
+    snapshot_.inspectorStatus =
+        queued ? QStringLiteral("Validating and evaluating canonical source")
+               : QStringLiteral("Sketch engineering queue is full");
+    ++snapshot_.generation;
+    return queued;
+  }
+
+  bool submitLocalHistory(bool redo) {
+    if (!localSketchSession_ ||
+        localSketchSession_->pendingOperationCount() != 0U ||
+        (redo ? !snapshot_.canRedo : !snapshot_.canUndo))
+      return false;
+    const QString commandId =
+        redo ? QStringLiteral("version.redo") : QStringLiteral("version.undo");
+    auto completion = [this, commandId](Result<LocalSketchProjection> result) {
+      completeLocalOperation(commandId, std::move(result));
+    };
+    const bool queued = redo ? localSketchSession_->redo(std::move(completion))
+                             : localSketchSession_->undo(std::move(completion));
+    if (!queued) {
+      snapshot_.inspectorStatus =
+          QStringLiteral("Sketch engineering queue is full");
+      ++snapshot_.generation;
+      return false;
+    }
+    setLocalOperationPending();
+    snapshot_.inspectorStatus =
+        redo ? QStringLiteral("Restoring next canonical Sketch revision")
+             : QStringLiteral("Restoring previous canonical Sketch revision");
+    ++snapshot_.generation;
+    return true;
+  }
+
+  void setLocalOperationPending() {
+    snapshot_.sourceEditingAvailable = false;
+    setLocalHistoryAvailability(
+        false, false, QStringLiteral("Engineering operation pending"));
+  }
+
+  void setLocalHistoryAvailability(bool canUndo, bool canRedo,
+                                   const QString &pendingReason = {}) {
+    snapshot_.canUndo = canUndo;
+    snapshot_.canRedo = canRedo;
+    const auto update = [&](std::vector<CommandDescriptor> &commands) {
+      for (CommandDescriptor &command : commands) {
+        if (command.id == QStringLiteral("version.undo")) {
+          command.available = canUndo;
+          command.shortcut = QStringLiteral("Ctrl+Z");
+          command.unavailableReason =
+              canUndo ? QString{}
+                      : (pendingReason.isEmpty()
+                             ? QStringLiteral("No earlier Sketch revision")
+                             : pendingReason);
+        } else if (command.id == QStringLiteral("version.redo")) {
+          command.available = canRedo;
+          command.shortcut = QStringLiteral("Ctrl+Shift+Z");
+          command.unavailableReason =
+              canRedo ? QString{}
+                      : (pendingReason.isEmpty()
+                             ? QStringLiteral("No later Sketch revision")
+                             : pendingReason);
+        }
+      }
+    };
+    update(snapshot_.historyCommands);
+    update(snapshot_.commandCatalog);
+  }
+
+  void applyLocalProjection(const LocalSketchProjection &projection,
+                            const QString &commandId) {
+    snapshot_.projectRevision = projection.projectRevision;
+    snapshot_.revisionLabel = projection.projectRevision.left(18);
+    snapshot_.modelSource = projection.source;
+    snapshot_.sourceEditingAvailable = true;
+    historyCanUndo_ = projection.canUndo;
+    historyCanRedo_ = projection.canRedo;
+    setLocalHistoryAvailability(historyCanUndo_, historyCanRedo_);
+    snapshot_.sketchScene = projection.scene;
+    localSketchFunction_ = {
+        QStringLiteral("function.sketch"),
+        projection.functionName,
+        QStringLiteral("sketch() → profile: Sketch"),
+        projection.sourcePath,
+        QStringLiteral("Python / build123d"),
+        QStringLiteral("canonical"),
+        projection.sourceRevision,
+        {},
+        {{QStringLiteral("output.profile"), QStringLiteral("profile"),
+          QStringLiteral("Sketch"), QStringLiteral("Evaluated"),
+          QStringLiteral("current")}},
+    };
+    snapshot_.selectedFunction = localSketchFunction_;
+    snapshot_.sketchProjection = {
+        projection.sourceRevision,
+        localSketchFunction_.id,
+        localSketchPlaneId(projection.plane),
+        snapshot_.projectLengthUnitId,
+        projection.solveStatus,
+        projection.degreesOfFreedom,
+        {},
+    };
+    snapshot_.structure = {
+        {QStringLiteral("project.root"), QStringLiteral("Untitled"), 0,
+         QStringLiteral("project")},
+        {QStringLiteral("component.part"), QStringLiteral("Part"), 1,
+         QStringLiteral("component")},
+        {QStringLiteral("reference.origin"), QStringLiteral("Origin"), 2,
+         QStringLiteral("group")},
+        {QStringLiteral("reference.plane.xy"), QStringLiteral("XY Plane"), 3,
+         QStringLiteral("plane")},
+        {QStringLiteral("reference.plane.xz"), QStringLiteral("XZ Plane"), 3,
+         QStringLiteral("plane")},
+        {QStringLiteral("reference.plane.yz"), QStringLiteral("YZ Plane"), 3,
+         QStringLiteral("plane")},
+        {localSketchFunction_.id, QStringLiteral("sketch()"), 2,
+         QStringLiteral("model-function")},
+        {QStringLiteral("output.sketch.profile"), QStringLiteral("profile"), 3,
+         QStringLiteral("sketch")},
+    };
+    if (!commandId.startsWith(QStringLiteral("version."))) {
+      snapshot_.revisions.insert(
+          snapshot_.revisions.begin(),
+          {projection.projectRevision,
+           commandId == QStringLiteral("model.sketch.create")
+               ? QStringLiteral("Create Sketch")
+           : commandId == QStringLiteral("sketch.rectangle")
+               ? QStringLiteral("Rectangle")
+               : QStringLiteral("Source edit"),
+           QStringLiteral("%1 · %2 DOF")
+               .arg(projection.solveStatus)
+               .arg(projection.degreesOfFreedom)});
+    }
+    snapshot_.modelHealth = QStringLiteral("%1 · %2 DOF")
+                                .arg(projection.solveStatus)
+                                .arg(projection.degreesOfFreedom);
+    snapshot_.viewportState = QStringLiteral("current");
+    snapshot_.viewportHeadline = QStringLiteral("Sketch plane");
+    snapshot_.viewportDetail =
+        QStringLiteral("Canonical source and evaluated geometry");
+    snapshot_.selectionSummary = QStringLiteral("Nothing selected");
+    switch (projection.plane) {
+    case LocalSketchPlane::XY:
+      snapshot_.gridPlaneLabel = QStringLiteral("XY");
+      break;
+    case LocalSketchPlane::XZ:
+      snapshot_.gridPlaneLabel = QStringLiteral("XZ");
+      break;
+    case LocalSketchPlane::YZ:
+      snapshot_.gridPlaneLabel = QStringLiteral("YZ");
+      break;
+    }
+    snapshot_.diagnostics.clear();
+  }
+
+  void completeLocalOperation(const QString &commandId,
+                              Result<LocalSketchProjection> result) {
+    if (!result) {
+      if (commandId == QStringLiteral("sketch.rectangle")) {
+        sketchInputs_.clear();
+        snapshot_.sketchProjection.primitives.clear();
+        snapshot_.sketchInteraction.expectedRevision =
+            snapshot_.projectRevision;
+        snapshot_.sketchInteraction.inputCount = 0;
+        snapshot_.commandDraft.baseRevision = snapshot_.projectRevision;
+        snapshot_.commandDraft.state = CommandDraftState::Editing;
+        snapshot_.commandDraft.previewSupported = false;
+        snapshot_.commandDraft.applySupported = false;
+      } else {
+        snapshot_.commandDraft.state = CommandDraftState::Rejected;
+      }
+      snapshot_.inspectorStatus =
+          QString::fromStdString(result.error().summary);
+      snapshot_.diagnostics.insert(
+          snapshot_.diagnostics.begin(),
+          {QString::fromStdString(result.error().code),
+           result.error().severity == Severity::Fatal ? QStringLiteral("fatal")
+                                                      : QStringLiteral("error"),
+           QString::fromStdString(result.error().summary)});
+      snapshot_.sourceEditingAvailable = !localSketchFunction_.id.isEmpty();
+      setLocalHistoryAvailability(historyCanUndo_, historyCanRedo_);
+      ++snapshot_.generation;
+      notifyChanged();
+      return;
+    }
+
+    applyLocalProjection(*result, commandId);
+    if (commandId == QStringLiteral("model.sketch.create")) {
+      snapshot_.activeWorkspaceId = QStringLiteral("sketch");
+      snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId);
+      snapshot_.activeCommandId.clear();
+      snapshot_.fields.clear();
+      snapshot_.commandDraft = {};
+      clearSketchInteraction();
+      snapshot_.inspectorTitle = QStringLiteral("Sketch");
+      snapshot_.inspectorStatus =
+          QStringLiteral("Sketch created · choose a geometry tool");
+    } else if (commandId == QStringLiteral("sketch.rectangle")) {
+      sketchInputs_.clear();
+      snapshot_.sketchProjection.primitives.clear();
+      snapshot_.sketchInteraction.expectedRevision = snapshot_.projectRevision;
+      snapshot_.sketchInteraction.inputCount = 0;
+      snapshot_.commandDraft.baseRevision = snapshot_.projectRevision;
+      snapshot_.commandDraft.state = CommandDraftState::Editing;
+      snapshot_.commandDraft.previewSupported = false;
+      snapshot_.commandDraft.applySupported = false;
+      snapshot_.inspectorStatus =
+          QStringLiteral("Rectangle created · choose the next first corner");
+    } else if (commandId == QStringLiteral("source.replace")) {
+      snapshot_.activeCommandId.clear();
+      snapshot_.fields.clear();
+      snapshot_.commandDraft = {};
+      clearSketchInteraction();
+      snapshot_.inspectorTitle = QStringLiteral("Sketch");
+      snapshot_.inspectorStatus =
+          QStringLiteral("Canonical source committed and evaluated");
+    } else {
+      snapshot_.activeCommandId.clear();
+      snapshot_.fields.clear();
+      snapshot_.commandDraft = {};
+      clearSketchInteraction();
+      snapshot_.inspectorTitle = QStringLiteral("Sketch");
+      snapshot_.inspectorStatus = commandId == QStringLiteral("version.redo")
+                                      ? QStringLiteral("Redo complete")
+                                      : QStringLiteral("Undo complete");
+    }
+    ++snapshot_.generation;
+    notifyChanged();
+  }
+
+  void notifyChanged() {
+    if (changeHandler_)
+      changeHandler_();
+  }
+
   bool activeSketchConstruction() const {
     const auto field = std::ranges::find_if(
         snapshot_.fields, [](const FieldDescriptor &candidate) {
@@ -1540,7 +2024,7 @@ private:
   void clearSketchInteraction() {
     sketchInputs_.clear();
     snapshot_.sketchInteraction = {};
-    snapshot_.sketchProjection.primitives = mountingProfileProjection();
+    snapshot_.sketchProjection.primitives = baseSketchPrimitives();
     if (snapshot_.activeWorkspaceId == QStringLiteral("sketch"))
       snapshot_.selectionSummary = QStringLiteral("Nothing selected");
   }
@@ -1603,7 +2087,7 @@ private:
   }
 
   void rebuildSketchProjection() {
-    snapshot_.sketchProjection.primitives = mountingProfileProjection();
+    snapshot_.sketchProjection.primitives = baseSketchPrimitives();
     if (snapshot_.sketchInteraction.inputKind == SketchInputKind::Entity) {
       for (SketchPrimitiveProjection &primitive :
            snapshot_.sketchProjection.primitives) {
@@ -1752,6 +2236,27 @@ private:
       snapshot_.viewportDetail = QStringLiteral(
           "Deterministic fixture; not evaluated project geometry");
       snapshot_.modelHealth = QStringLiteral("Frontend contract current");
+      if (localMode_) {
+        snapshot_.viewportState =
+            localBackendState_ == LocalBackendState::Ready
+                ? QStringLiteral("current")
+            : localBackendState_ == LocalBackendState::Failed
+                ? QStringLiteral("unavailable")
+                : QStringLiteral("loading");
+        snapshot_.viewportHeadline = QStringLiteral("Model workspace");
+        snapshot_.viewportDetail =
+            localBackendState_ == LocalBackendState::Ready
+                ? QStringLiteral("Local engineering services are ready")
+            : localBackendState_ == LocalBackendState::Failed
+                ? QStringLiteral("Local engineering services failed")
+                : QStringLiteral("Starting local engineering services");
+        snapshot_.modelHealth =
+            localBackendState_ == LocalBackendState::Ready
+                ? QStringLiteral("Local engineering ready")
+            : localBackendState_ == LocalBackendState::Failed
+                ? QStringLiteral("Local engineering failed")
+                : QStringLiteral("Starting local engineering");
+      }
       return;
     }
     snapshot_.viewportState = QStringLiteral("unavailable");
@@ -1762,6 +2267,15 @@ private:
           "Deterministic fixture; solver and evaluator unavailable");
       snapshot_.modelHealth =
           QStringLiteral("Sketch frontend contract current");
+      if (localMode_) {
+        snapshot_.viewportHeadline = QStringLiteral("Sketch plane");
+        snapshot_.viewportDetail = snapshot_.sketchScene
+                                       ? QStringLiteral("Canonical source and "
+                                                        "evaluated geometry")
+                                       : QStringLiteral("Create or edit Sketch "
+                                                        "geometry");
+        snapshot_.modelHealth = snapshot_.sketchProjection.solveStatus;
+      }
       return;
     } else {
       const QString label =
@@ -1774,6 +2288,12 @@ private:
   }
 
   void selectFunctionForWorkspace(const QString &workspaceId) {
+    if (localMode_) {
+      snapshot_.selectedFunction = workspaceId == QStringLiteral("sketch")
+                                       ? localSketchFunction_
+                                       : FunctionSummary{};
+      return;
+    }
     snapshot_.selectedFunction = workspaceId == QStringLiteral("sketch")
                                      ? mountingProfileFunction_
                                      : basePlateFunction_;
@@ -1786,7 +2306,12 @@ private:
     snapshot_.commandDraft = {};
     clearSketchInteraction();
     snapshot_.inspectorStatus =
-        QStringLiteral("Engineering backend disconnected");
+        localMode_ ? (localBackendState_ == LocalBackendState::Ready
+                          ? QStringLiteral("Local engineering ready")
+                      : localBackendState_ == LocalBackendState::Failed
+                          ? QStringLiteral("Local engineering failed")
+                          : QStringLiteral("Starting local engineering"))
+                   : QStringLiteral("Engineering backend disconnected");
     restoreWorkspaceViewport();
     ++snapshot_.generation;
   }
@@ -1796,6 +2321,14 @@ private:
   std::vector<SketchInputRequest> sketchInputs_;
   FunctionSummary basePlateFunction_;
   FunctionSummary mountingProfileFunction_;
+  FunctionSummary localSketchFunction_;
+  enum class LocalBackendState { Starting, Ready, Failed };
+  bool localMode_ = false;
+  LocalBackendState localBackendState_ = LocalBackendState::Starting;
+  bool historyCanUndo_ = false;
+  bool historyCanRedo_ = false;
+  std::unique_ptr<LocalSketchSession> localSketchSession_;
+  ChangeHandler changeHandler_;
 };
 
 } // namespace
@@ -1807,6 +2340,16 @@ std::unique_ptr<FrontendPort> makeDevelopmentFrontendPort(
   return std::make_unique<DevelopmentFrontendPort>(
       std::move(themeOptions), themeId, defaultLengthUnitId, interfaceDensityId,
       navigationProfileId, zoomDirectionId);
+}
+
+std::unique_ptr<FrontendPort> makeLocalFrontendPort(
+    std::unique_ptr<LocalSketchSession> sketchSession,
+    std::vector<UiOption> themeOptions, const QString &themeId,
+    const QString &defaultLengthUnitId, const QString &interfaceDensityId,
+    const QString &navigationProfileId, const QString &zoomDirectionId) {
+  return std::make_unique<DevelopmentFrontendPort>(
+      std::move(themeOptions), themeId, defaultLengthUnitId, interfaceDensityId,
+      navigationProfileId, zoomDirectionId, std::move(sketchSession));
 }
 
 } // namespace kearne::ui

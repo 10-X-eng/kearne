@@ -48,6 +48,18 @@ ApplicationWindow {
         onActivated: App.ui.navigateTo("settings")
     }
 
+    Shortcut {
+        sequences: [StandardKey.Undo]
+        enabled: App.ui.canUndo
+        onActivated: App.ui.undo()
+    }
+
+    Shortcut {
+        sequences: [StandardKey.Redo]
+        enabled: App.ui.canRedo
+        onActivated: App.ui.redo()
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0

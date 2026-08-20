@@ -229,6 +229,20 @@ void verifyFitAndGuards() {
   }
 }
 
+void verifyInitialNativePublication() {
+  SketchCameraController camera;
+  SketchScenePresenter presenter;
+  const auto published = presenter.publishCamera(camera.camera());
+  require(published && *published == SketchCameraDecision::Accepted,
+          "initial Sketch camera did not supersede the native fallback");
+  const QSizeF viewport{834.0, 712.0};
+  auto transform = SketchViewTransform::create(camera.camera(), viewport);
+  require(transform &&
+              close(transform->toItem({0.05, -0.05}).x(), 517.0) &&
+              close(transform->toItem({0.05, -0.05}).y(), 456.0),
+          "initial native transform disagrees with the QML Sketch scale");
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -238,6 +252,7 @@ int main(int argc, char *argv[]) {
     verifyGeneratedCamera(profile);
     verifyGeneratedPrecisionBoundary(profile);
     verifyFitAndGuards();
+    verifyInitialNativePublication();
     return 0;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

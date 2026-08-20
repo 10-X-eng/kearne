@@ -184,18 +184,35 @@ SketchSourceWorker::transform(JobId job,
         diagnostic("worker.source.digest-mismatch",
                    "source worker result does not match its content digest",
                    Severity::Fatal));
-  return SketchSourceTransformOutput{std::move(bytes), *actualDigest};
+  auto definition = readSketchDefinition(transform.success().definition());
+  if (!definition || definition->sourceDigest != *actualDigest)
+    return std::unexpected(
+        definition
+            ? diagnostic("worker.source.definition-digest",
+                         "source worker definition does not match its source",
+                         Severity::Fatal)
+            : std::move(definition.error()));
+  return SketchSourceTransformOutput{{std::move(bytes), *actualDigest},
+                                     std::move(*definition)};
 }
 
-Result<SketchSourceTransformOutput>
+Result<sketch_workflow::SourceRevision>
 SketchSourceWorker::create(JobId job, std::string_view functionName,
                            std::stop_token cancellation) {
   wire::SketchSourceTransformJob request;
   request.mutable_create()->set_function_name(functionName);
-  return transform(job, request, cancellation);
+  auto transformed = transform(job, request, cancellation);
+  if (!transformed)
+    return std::unexpected(std::move(transformed.error()));
+  if (!transformed->definition.entities.empty() ||
+      !transformed->definition.constraints.empty())
+    return std::unexpected(diagnostic("worker.source.create-definition",
+                                      "source worker created a nonempty Sketch",
+                                      Severity::Fatal));
+  return std::move(transformed->source);
 }
 
-Result<SketchSourceTransformOutput>
+Result<sketch_workflow::SourceRevision>
 SketchSourceWorker::apply(JobId job, std::span<const std::uint8_t> source,
                           std::string_view functionName,
                           const sketch::AppliedEdits &edits,
@@ -228,6 +245,36 @@ SketchSourceWorker::apply(JobId job, std::span<const std::uint8_t> source,
         },
         edit.target);
   }
+  auto transformed = transform(job, request, cancellation);
+  if (!transformed)
+    return std::unexpected(std::move(transformed.error()));
+  sketch::Definition expected = edits.target;
+  expected.sourceDigest = transformed->source.digest;
+  if (transformed->definition != expected)
+    return std::unexpected(
+        diagnostic("worker.source.definition-mismatch",
+                   "source worker definition does not match the requested edit",
+                   Severity::Fatal));
+  return std::move(transformed->source);
+}
+
+Result<SketchSourceTransformOutput>
+SketchSourceWorker::replace(JobId job, std::span<const std::uint8_t> source,
+                            std::string_view functionName,
+                            const ContentDigest &expectedPrior,
+                            std::stop_token cancellation) {
+  auto actual = document::contentDigest(source);
+  if (!actual)
+    return std::unexpected(std::move(actual.error()));
+  if (*actual == expectedPrior)
+    return std::unexpected(diagnostic("worker.source.unchanged",
+                                      "replacement source is unchanged"));
+  wire::SketchSourceTransformJob request;
+  wire::ReplaceSketchSource *replacement = request.mutable_replace();
+  replacement->set_source_utf8(std::string{
+      reinterpret_cast<const char *>(source.data()), source.size()});
+  replacement->set_function_name(functionName);
+  api::writeDigest(expectedPrior, replacement->mutable_expected_prior());
   return transform(job, request, cancellation);
 }
 

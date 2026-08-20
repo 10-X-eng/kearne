@@ -93,6 +93,29 @@ message EditSketchSource {
   }];
 }
 
+message ReplaceSketchSource {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.replace"
+    schema_version: 1
+    surface: SURFACE_KIND_WORKER_JOB
+    max_serialized_bytes: 66048
+  };
+  bytes source_utf8 = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 65536
+  }];
+  string function_name = 2 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 255
+  }];
+  Digest expected_prior = 3 [(field_rules) = {
+    required: true
+    semantic_type: "ContentDigest"
+  }];
+}
+
 message SketchSourceTransformJob {
   option (message_rules) = {
     stable_name: "worker.sketch.source.transform"
@@ -104,6 +127,7 @@ message SketchSourceTransformJob {
   oneof operation {
     CreateSketchSource create = 20;
     EditSketchSource edit = 21;
+    ReplaceSketchSource replace = 22;
   }
 }
 
@@ -112,7 +136,7 @@ message SketchSourceTransformSuccess {
     stable_name: "worker.sketch.source.success"
     schema_version: 1
     surface: SURFACE_KIND_WIRE
-    max_serialized_bytes: 65792
+    max_serialized_bytes: 131328
   };
   bytes source_utf8 = 1 [(field_rules) = {
     required: true
@@ -123,6 +147,7 @@ message SketchSourceTransformSuccess {
     required: true
     semantic_type: "ContentDigest"
   }];
+  SketchDefinition definition = 3 [(field_rules) = { required: true }];
 }
 
 message SketchSourceTransformFailure {

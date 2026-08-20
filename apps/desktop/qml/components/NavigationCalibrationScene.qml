@@ -11,6 +11,9 @@ Item {
                             === "component.navigation-fixture"
     property string displayMode: "shaded-edges"
     property bool gridVisible: true
+    property real gridSpacingMillimeters: 10
+    readonly property real gridSpanScale: gridSpacingMillimeters * 0.6
+    readonly property real gridLineScale: 0.004 * App.camera.distance / 220
 
     View3D {
         anchors.fill: parent
@@ -117,8 +120,12 @@ Item {
 
                         visible: index !== 30
                         source: "#Cube"
-                        position: Qt.vector3d(0, -0.7, (index - 30) * 10)
-                        scale: Qt.vector3d(6, 0.003, 0.004)
+                        position: Qt.vector3d(
+                                      0, -0.7,
+                                      (index - 30) * root.gridSpacingMillimeters)
+                        scale: Qt.vector3d(root.gridSpanScale,
+                                           root.gridLineScale * 0.75,
+                                           root.gridLineScale)
                         materials: index % 5 === 0 ? gridMajorMaterial
                                                    : gridMinorMaterial
                     }
@@ -132,8 +139,12 @@ Item {
 
                         visible: index !== 30
                         source: "#Cube"
-                        position: Qt.vector3d((index - 30) * 10, -0.7, 0)
-                        scale: Qt.vector3d(0.004, 0.003, 6)
+                        position: Qt.vector3d(
+                                      (index - 30) * root.gridSpacingMillimeters,
+                                      -0.7, 0)
+                        scale: Qt.vector3d(root.gridLineScale,
+                                           root.gridLineScale * 0.75,
+                                           root.gridSpanScale)
                         materials: index % 5 === 0 ? gridMajorMaterial
                                                    : gridMinorMaterial
                     }
@@ -142,21 +153,29 @@ Item {
                 Model {
                     source: "#Cube"
                     position: Qt.vector3d(0, -0.45, 0)
-                    scale: Qt.vector3d(6, 0.006, 0.008)
+                    scale: Qt.vector3d(root.gridSpanScale,
+                                       root.gridLineScale * 1.5,
+                                       root.gridLineScale * 2)
                     materials: axisXMaterial
                 }
 
                 Model {
                     source: "#Cube"
                     position: Qt.vector3d(0, -0.45, 0)
-                    scale: Qt.vector3d(0.008, 0.006, 6)
+                    scale: Qt.vector3d(root.gridLineScale * 2,
+                                       root.gridLineScale * 1.5,
+                                       root.gridSpanScale)
                     materials: axisYMaterial
                 }
 
                 Model {
                     source: "#Cube"
-                    position: Qt.vector3d(0, 65, 0)
-                    scale: Qt.vector3d(0.008, 1.3, 0.008)
+                    position: Qt.vector3d(0,
+                                          root.gridSpacingMillimeters * 6.5,
+                                          0)
+                    scale: Qt.vector3d(root.gridLineScale * 2,
+                                       root.gridSpacingMillimeters * 0.13,
+                                       root.gridLineScale * 2)
                     materials: axisZMaterial
                 }
             }

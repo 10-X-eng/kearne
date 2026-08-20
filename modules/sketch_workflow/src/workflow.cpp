@@ -167,4 +167,27 @@ Result<SketchState> Workflow::applyTool(const SketchState &current,
                   std::move(*revision), evaluation, cancellation);
 }
 
+Result<SketchState> Workflow::replaceSource(
+    const SketchState &current, const OperationContext &operation,
+    SourceRevision source, sketch::Definition definition,
+    const EvaluationIdentity &evaluation, std::stop_token cancellation) {
+  if (cancellation.stop_requested())
+    return std::unexpected(cancelledBeforeCommit());
+  if (current.revision != operation.baseRevision ||
+      current.revision != engineering_.headSnapshot()->revisionId())
+    return std::unexpected(
+        diagnostic("sketch.workflow.stale-base",
+                   "Sketch edit is based on another project revision"));
+  if (source.digest != definition.sourceDigest)
+    return std::unexpected(
+        diagnostic("sketch.workflow.source-definition",
+                   "recognized Sketch definition is based on another source"));
+  auto revision =
+      commitSource(current.address, source, operation, current.source.digest);
+  if (!revision)
+    return std::unexpected(std::move(revision.error()));
+  return evaluate(current.address, std::move(source), std::move(definition),
+                  std::move(*revision), evaluation, cancellation);
+}
+
 } // namespace kearne::sketch_workflow

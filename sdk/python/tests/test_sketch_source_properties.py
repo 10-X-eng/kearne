@@ -22,7 +22,9 @@ from kearne.sketch_source import (
     append_value,
     delete_value,
     emit_call,
+    parse_call,
     replace_value,
+    values_from_source,
 )
 from kearne.source import (
     AppendCall,
@@ -185,6 +187,7 @@ class SketchSourceProperties(unittest.TestCase):
                 namespace,
             )
             self.assertEqual(reconstructed, value)
+            self.assertEqual(parse_call(call), value)
         self.assertIn("construction=True", emit_call(entities[1]))
         self.assertIn(
             "mode='internal'",
@@ -215,6 +218,11 @@ class SketchSourceProperties(unittest.TestCase):
             tuple(value.kind for value in constraints),
         )
         self.assertIn('sentinel = "preserve this byte-for-byte"', current)
+        _, decoded_entities, decoded_constraints = values_from_source(
+            current, "profile"
+        )
+        self.assertEqual(decoded_entities, entities)
+        self.assertEqual(decoded_constraints, constraints)
 
         replacement = LineEntity(
             entities[1].id,

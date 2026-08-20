@@ -1,9 +1,11 @@
 #include "application_context.hpp"
 #include "development_frontend_port.hpp"
+#include "local_sketch_session.hpp"
 #include "navigation_device.hpp"
 #include "observation_controller.hpp"
 #include "sketch_camera_controller.hpp"
 #include "sketch_scene_item.hpp"
+#include "sketch_viewport_bridge.hpp"
 #include "theme_manager.hpp"
 #include "ui_session.hpp"
 #include "user_preferences.hpp"
@@ -12,8 +14,11 @@
 
 #include <QAccessible>
 #include <QCommandLineParser>
+#include <QDir>
 #include <QGuiApplication>
+#include <QProcessEnvironment>
 #include <QQmlApplicationEngine>
+#include <QQuickItem>
 #include <QQuickWindow>
 
 #include <cstdlib>
@@ -32,6 +37,25 @@ themeOptions(const kearne::ui::ThemeManager &themes) {
   for (const kearne::ui::ThemeSummary &theme : summaries)
     result.emplace_back(theme.id, theme.name);
   return result;
+}
+
+kearne::ui::LocalSketchSessionConfig localSketchSessionConfig() {
+  QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+  QStringList pythonPaths{
+      QStringLiteral(KEARNE_LOCAL_SDK_ROOT),
+      QStringLiteral(KEARNE_LOCAL_GENERATED_PYTHON_ROOT),
+  };
+  const QString inherited = environment.value(QStringLiteral("PYTHONPATH"));
+  if (!inherited.isEmpty())
+    pythonPaths.push_back(inherited);
+  environment.insert(QStringLiteral("PYTHONPATH"),
+                     pythonPaths.join(QDir::listSeparator()));
+  return {
+      QStringLiteral(KEARNE_LOCAL_PYTHON),
+      {QStringLiteral("-m"), QStringLiteral("kearne._worker")},
+      std::move(environment),
+      4U,
+  };
 }
 
 } // namespace
@@ -86,6 +110,10 @@ int main(int argc, char *argv[]) {
       QStringLiteral(
           "Perform a JSON-encoded semantic operation before capture."),
       QStringLiteral("json"));
+  QCommandLineOption localEngineeringOption(
+      QStringLiteral("local-engineering"),
+      QStringLiteral("Use local engineering instead of deterministic capture "
+                     "data."));
   QCommandLineOption widthOption(
       QStringLiteral("width"), QStringLiteral("Window width."),
       QStringLiteral("pixels"), QStringLiteral("1440"));
@@ -94,7 +122,8 @@ int main(int argc, char *argv[]) {
       QStringLiteral("pixels"), QStringLiteral("900"));
   parser.addOptions({captureOption, workspaceOption, surfaceOption, stateOption,
                      inspectorOption, settingsCategoryOption, themeOption,
-                     actionOption, operationOption, widthOption, heightOption});
+                     actionOption, operationOption, localEngineeringOption,
+                     widthOption, heightOption});
   parser.process(application);
   if ((parser.isSet(actionOption) || parser.isSet(operationOption)) &&
       !parser.isSet(captureOption)) {
@@ -130,11 +159,27 @@ int main(int argc, char *argv[]) {
   kearne::ui::SketchCameraController sketchCamera;
   kearne::ui::NavigationTargetRouter navigationRouter(camera);
   kearne::ui::NavigationDevice navigationDevice(navigationRouter);
-  kearne::ui::UiSession session(kearne::ui::makeDevelopmentFrontendPort(
-      themeOptions(themes), themes.selectionId(),
-      preferences.value(QStringLiteral("default-length-unit")).toString(),
-      preferences.value(QStringLiteral("interface-density")).toString(),
-      navigationProfile, zoomDirection));
+  const bool localEngineering =
+      !parser.isSet(captureOption) || parser.isSet(localEngineeringOption);
+  std::unique_ptr<kearne::ui::FrontendPort> frontend =
+      localEngineering
+          ? kearne::ui::makeLocalFrontendPort(
+                std::make_unique<kearne::ui::LocalSketchSession>(
+                    localSketchSessionConfig()),
+                themeOptions(themes), themes.selectionId(),
+                preferences.value(QStringLiteral("default-length-unit"))
+                    .toString(),
+                preferences.value(QStringLiteral("interface-density"))
+                    .toString(),
+                navigationProfile, zoomDirection)
+          : kearne::ui::makeDevelopmentFrontendPort(
+                themeOptions(themes), themes.selectionId(),
+                preferences.value(QStringLiteral("default-length-unit"))
+                    .toString(),
+                preferences.value(QStringLiteral("interface-density"))
+                    .toString(),
+                navigationProfile, zoomDirection);
+  kearne::ui::UiSession session(std::move(frontend));
   kearne::ui::WorkspaceState workspaceState;
   QObject::connect(
       &session, &kearne::ui::UiSession::preferenceChanged, &themes,
@@ -206,6 +251,23 @@ int main(int argc, char *argv[]) {
     }
     window->resize(width, height);
 
+    std::unique_ptr<kearne::ui::SketchViewportBridge> sketchViewport;
+    if (localEngineering) {
+      auto *host = window->findChild<QQuickItem *>(
+          QStringLiteral("nativeSketchSceneHost"));
+      if (!host) {
+        std::cerr << "native Sketch viewport host is missing\n";
+        return EXIT_FAILURE;
+      }
+      auto created = kearne::ui::SketchViewportBridge::create(*host, session,
+                                                              sketchCamera);
+      if (!created) {
+        std::cerr << created.error().summary << '\n';
+        return EXIT_FAILURE;
+      }
+      sketchViewport = std::move(*created);
+    }
+
     std::unique_ptr<kearne::ui::ObservationController> observation;
     if (parser.isSet(captureOption)) {
       try {
@@ -213,6 +275,9 @@ int main(int argc, char *argv[]) {
             *window, session, themes, parser.value(captureOption),
             kearne::ui::parseSemanticOperations(parser.values(actionOption),
                                                 parser.values(operationOption)),
+            [&sketchViewport] {
+              return !sketchViewport || sketchViewport->presentationCurrent();
+            },
             &application);
       } catch (const std::exception &error) {
         std::cerr << error.what() << '\n';
@@ -220,6 +285,13 @@ int main(int argc, char *argv[]) {
       }
     }
     exitCode = application.exec();
+    if (sketchViewport) {
+      auto stopped = sketchViewport->shutdown();
+      if (!stopped) {
+        std::cerr << stopped.error().summary << '\n';
+        exitCode = EXIT_FAILURE;
+      }
+    }
   }
   if (!kearne::ui::shutdownSketchSceneResources()) {
     std::cerr << "sketch render resources did not drain before shutdown\n";

@@ -11,7 +11,10 @@
 
 namespace kearne::adapters {
 
-using SketchSourceTransformOutput = sketch_workflow::SourceRevision;
+struct SketchSourceTransformOutput {
+  sketch_workflow::SourceRevision source;
+  sketch::Definition definition;
+};
 
 class SketchSourceWorker final : public sketch_workflow::SourceEditor {
 public:
@@ -21,13 +24,17 @@ public:
   [[nodiscard]] Result<SketchSourceTransformOutput>
   transform(JobId job, const api::v1::SketchSourceTransformJob &request,
             std::stop_token cancellation = {});
-  [[nodiscard]] Result<SketchSourceTransformOutput>
+  [[nodiscard]] Result<sketch_workflow::SourceRevision>
   create(JobId job, std::string_view functionName,
          std::stop_token cancellation = {}) override;
-  [[nodiscard]] Result<SketchSourceTransformOutput>
+  [[nodiscard]] Result<sketch_workflow::SourceRevision>
   apply(JobId job, std::span<const std::uint8_t> source,
         std::string_view functionName, const sketch::AppliedEdits &edits,
         std::stop_token cancellation = {}) override;
+  [[nodiscard]] Result<SketchSourceTransformOutput>
+  replace(JobId job, std::span<const std::uint8_t> source,
+          std::string_view functionName, const ContentDigest &expectedPrior,
+          std::stop_token cancellation = {});
   void stop();
   [[nodiscard]] std::uint64_t processGeneration() const {
     return process_.processGeneration();

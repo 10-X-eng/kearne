@@ -1,4 +1,5 @@
 #include "development_frontend_port.hpp"
+#include "sketch_gesture_preview.hpp"
 
 #include <QCoreApplication>
 #include <QRandomGenerator>
@@ -523,6 +524,32 @@ void verifySourceEditing(FrontendPort &port) {
           "stale source rejection changed canonical source");
 }
 
+void verifyGesturePreview() {
+  kearne::ui::SketchGesturePreview preview;
+  int changes = 0;
+  QObject::connect(&preview, &kearne::ui::SketchGesturePreview::previewChanged,
+                   [&changes] { ++changes; });
+  require(!preview.updateDrag(QStringLiteral("sketch.circle"), 0.0, 0.0, 40.0,
+                              25.0, false) &&
+              !preview.visible() && changes == 0,
+          "unsupported drag preview changed transient state");
+  require(preview.updateDrag(QStringLiteral("sketch.rectangle"), -40.0, -25.0,
+                             40.0, 25.0, true) &&
+              preview.visible() && preview.construction() &&
+              preview.first() == QPointF(-40.0, -25.0) &&
+              preview.second() == QPointF(40.0, -25.0) &&
+              preview.third() == QPointF(40.0, 25.0) &&
+              preview.fourth() == QPointF(-40.0, 25.0) && changes == 1,
+          "rectangle drag preview did not project its four corners");
+  require(preview.updateDrag(QStringLiteral("sketch.rectangle"), -40.0, -25.0,
+                             40.0, 25.0, true) &&
+              changes == 1,
+          "unchanged drag preview emitted redundant work");
+  preview.clear();
+  require(!preview.visible() && changes == 2,
+          "drag preview did not clear exactly once");
+}
+
 } // namespace
 
 int main(int argc, char *argv[]) {
@@ -545,6 +572,7 @@ int main(int argc, char *argv[]) {
     verifySettings(*port);
     verifyParameterEditing(*port);
     verifySourceEditing(*port);
+    verifyGesturePreview();
     return 0;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

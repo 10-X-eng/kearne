@@ -106,14 +106,14 @@ Rectangle {
 
         KButton {
             semanticId: "project.save"
-            semanticName: App.ui.backendConnected
+            semanticName: App.ui.projectPersistenceAvailable
                           ? "Save project"
-                          : "Save project — engineering backend unavailable"
+                          : "Save project — persistence unavailable"
             iconName: "save"
             text: root.width >= 920 ? "Save" : ""
             primary: true
             visible: App.ui.activeSurfaceId === "editor"
-            enabled: App.ui.backendConnected
+            enabled: App.ui.projectPersistenceAvailable
             onClicked: App.ui.requestCommand("project.save")
         }
     }

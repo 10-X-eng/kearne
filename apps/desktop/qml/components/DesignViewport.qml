@@ -14,6 +14,7 @@ Rectangle {
     property string semanticValue: App.camera.state + ":" + App.ui.selectionSummary
     property bool structureAvailable: true
     property bool inspectorAvailable: true
+    property real modelGridSpacingMillimeters: App.ui.gridSpacingMillimeters
     signal requestStructure()
     signal requestInspector()
 
@@ -79,10 +80,10 @@ Rectangle {
             event.accepted = true
         } else if (event.key === Qt.Key_Left || event.key === Qt.Key_Right
                    || event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
-            App.camera.orbit(event.key === Qt.Key_Left ? -15
-                             : (event.key === Qt.Key_Right ? 15 : 0),
-                             event.key === Qt.Key_Up ? -15
-                             : (event.key === Qt.Key_Down ? 15 : 0))
+            App.camera.turn(event.key === Qt.Key_Left ? -15
+                            : (event.key === Qt.Key_Right ? 15 : 0),
+                            event.key === Qt.Key_Up ? 15
+                            : (event.key === Qt.Key_Down ? -15 : 0))
             event.accepted = true
         }
     }
@@ -96,9 +97,17 @@ Rectangle {
     NavigationCalibrationScene {
         anchors.fill: parent
         visible: App.ui.activeWorkspaceId === "model"
+                 && App.ui.activeCommandId !== "model.sketch.create"
         opacity: App.ui.viewportState === "current" ? 1 : 0.38
         displayMode: App.workspace.displayMode
         gridVisible: App.workspace.gridVisible
+        gridSpacingMillimeters: root.modelGridSpacingMillimeters
+    }
+
+    Item {
+        objectName: "nativeSketchSceneHost"
+        anchors.fill: parent
+        visible: App.ui.activeWorkspaceId === "sketch"
     }
 
     SketchCalibrationScene {
@@ -117,11 +126,15 @@ Rectangle {
                      ? Qt.CrossCursor : Qt.ArrowCursor
         property real previousX: 0
         property real previousY: 0
+        property real pressedX: 0
+        property real pressedY: 0
         property bool dragged: false
 
         onPressed: mouse => {
             previousX = mouse.x
             previousY = mouse.y
+            pressedX = mouse.x
+            pressedY = mouse.y
             dragged = false
             root.forceActiveFocus()
         }
@@ -137,6 +150,15 @@ Rectangle {
                         && (mouse.buttons & Qt.MiddleButton)) {
                     App.sketchCamera.pan(dx, dy)
                     dragged = true
+                } else if (App.ui.activeWorkspaceId === "sketch"
+                           && (mouse.buttons & Qt.LeftButton)
+                           && Math.hypot(mouse.x - pressedX,
+                                         mouse.y - pressedY) >= 4) {
+                    dragged = true
+                    const first = sketchScene.planePoint(pressedX, pressedY)
+                    const opposite = sketchScene.planePoint(mouse.x, mouse.y)
+                    App.ui.previewSketchDrag(first[0], first[1],
+                                             opposite[0], opposite[1])
                 } else if (App.ui.activeWorkspaceId !== "sketch"
                            && App.camera.applyPointerDrag(mouse.buttons,
                                                           mouse.modifiers,
@@ -146,13 +168,19 @@ Rectangle {
             }
         }
         onReleased: mouse => {
-            if (!dragged && mouse.button === Qt.LeftButton) {
-                if (App.ui.activeWorkspaceId === "sketch")
-                    sketchScene.handleClick(mouse.x, mouse.y)
+            App.ui.clearSketchDragPreview()
+            if (mouse.button === Qt.LeftButton
+                    && App.ui.activeWorkspaceId === "sketch") {
+                if (dragged)
+                    sketchScene.handleDrag(pressedX, pressedY,
+                                           mouse.x, mouse.y)
                 else
-                    App.ui.selectEntity("component.navigation-fixture")
+                    sketchScene.handleClick(mouse.x, mouse.y)
+            } else if (!dragged && mouse.button === Qt.LeftButton) {
+                App.ui.selectEntity("component.navigation-fixture")
             }
         }
+        onCanceled: App.ui.clearSketchDragPreview()
         onExited: sketchScene.updateCursor(0, 0, false)
         onWheel: wheel => {
             if (App.ui.activeWorkspaceId === "sketch")
@@ -162,6 +190,11 @@ Rectangle {
                 App.camera.applyWheel(wheel.angleDelta.y)
             wheel.accepted = true
         }
+    }
+
+    DatumPlaneSelector {
+        anchors.fill: parent
+        visible: App.ui.activeCommandId === "model.sketch.create"
     }
 
     Rectangle {
@@ -183,53 +216,45 @@ Rectangle {
         }
     }
 
-    Column {
+    Row {
+        id: panelToggles
+
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.topMargin: Theme.space4
+        anchors.rightMargin: viewCube.visible
+                             ? Theme.space4 + viewCube.width + Theme.space2
+                             : Theme.space4
+        spacing: Theme.space2
+
+        KButton {
+            semanticId: "viewport.structure.toggle"
+            semanticName: "Show structure panel"
+            iconName: "structure"
+            visible: !root.structureAvailable
+            text: "Structure"
+            onClicked: root.requestStructure()
+        }
+
+        KButton {
+            semanticId: "viewport.inspector.toggle"
+            semanticName: "Show inspector panel"
+            iconName: "inspect"
+            visible: !root.inspectorAvailable
+            text: "Inspector"
+            onClicked: root.requestInspector()
+        }
+    }
+
+    OrientationCube {
+        id: viewCube
+
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: Theme.space4
-        spacing: Theme.space2
-
-        Row {
-            spacing: Theme.space2
-
-            KButton {
-                semanticId: "viewport.structure.toggle"
-                semanticName: "Show structure panel"
-                iconName: "structure"
-                visible: !root.structureAvailable
-                text: "Structure"
-                onClicked: root.requestStructure()
-            }
-
-            KButton {
-                semanticId: "viewport.inspector.toggle"
-                semanticName: "Show inspector panel"
-                iconName: "inspect"
-                visible: !root.inspectorAvailable
-                text: "Inspector"
-                onClicked: root.requestInspector()
-            }
-
-            KChoice {
-                semanticId: "viewport.display_mode"
-                semanticName: "Viewport display mode"
-                semanticOptions: ["shaded-edges", "shaded", "wireframe"]
-                model: ["Shaded with edges", "Shaded", "Wireframe"]
-                currentIndex: root.displayModeIndex()
-                iconName: "view"
-                width: 190
-                visible: App.ui.activeWorkspaceId === "model"
-                onActivated: index => App.workspace.displayMode =
-                             semanticOptions[index]
-            }
-        }
-
-        OrientationCube {
-            anchors.right: parent.right
-            visible: App.ui.activeWorkspaceId !== "drawing"
-                     && App.ui.activeWorkspaceId !== "bom"
-                     && App.ui.activeWorkspaceId !== "sketch"
-        }
+        visible: App.ui.activeWorkspaceId !== "drawing"
+                 && App.ui.activeWorkspaceId !== "bom"
+                 && App.ui.activeWorkspaceId !== "sketch"
     }
 
     SurfaceState {
@@ -283,6 +308,19 @@ Rectangle {
             id: gridControls
             anchors.centerIn: parent
             spacing: 0
+
+            KChoice {
+                semanticId: "viewport.display_mode"
+                semanticName: "Viewport display mode"
+                semanticOptions: ["shaded-edges", "shaded", "wireframe"]
+                model: ["Shaded with edges", "Shaded", "Wireframe"]
+                currentIndex: root.displayModeIndex()
+                iconName: "view"
+                width: 176
+                visible: App.ui.activeWorkspaceId === "model"
+                onActivated: index => App.workspace.displayMode =
+                             semanticOptions[index]
+            }
 
             KButton {
                 semanticId: "viewport.grid.toggle"

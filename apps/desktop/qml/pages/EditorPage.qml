@@ -12,6 +12,13 @@ Item {
     property string semanticRole: "main"
     property var semanticActions: []
 
+    EngineeringGridScale {
+        id: modelGridScale
+
+        referenceSpacing: App.ui.gridSpacingMillimeters
+        pixelsPerUnit: 2.6 * 220 / App.camera.distance
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0
@@ -54,6 +61,7 @@ Item {
                 Layout.fillHeight: true
                 structureAvailable: structure.active
                 inspectorAvailable: inspector.active
+                modelGridSpacingMillimeters: modelGridScale.spacing
                 onRequestStructure: {
                     if (root.width >= 1040)
                         App.workspace.structureVisible = true
@@ -95,7 +103,12 @@ Item {
             }
         }
 
-        StatusBar { Layout.fillWidth: true }
+        StatusBar {
+            Layout.fillWidth: true
+            gridSpacingLabel: App.ui.activeWorkspaceId === "model"
+                              ? App.ui.formatProjectLength(modelGridScale.spacing)
+                              : App.ui.gridSpacingLabel
+        }
     }
 
     Drawer {

@@ -4,6 +4,7 @@
 #include <Qt>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <string_view>
 #include <type_traits>
@@ -14,6 +15,65 @@ namespace {
 constexpr qreal minimumDistance = 36.0;
 constexpr qreal maximumDistance = 1600.0;
 constexpr qreal maximumPan = 1'000'000.0;
+struct ViewPreset {
+  std::string_view id;
+  int x;
+  int y;
+  int z;
+};
+
+constexpr std::array viewPresets{
+    ViewPreset{"front", 0, 0, 1},
+    ViewPreset{"back", 0, 0, -1},
+    ViewPreset{"left", -1, 0, 0},
+    ViewPreset{"right", 1, 0, 0},
+    ViewPreset{"top", 0, 1, 0},
+    ViewPreset{"bottom", 0, -1, 0},
+    ViewPreset{"isometric", -1, 1, 1},
+    ViewPreset{"front-top", 0, 1, 1},
+    ViewPreset{"front-bottom", 0, -1, 1},
+    ViewPreset{"front-left", -1, 0, 1},
+    ViewPreset{"front-right", 1, 0, 1},
+    ViewPreset{"back-top", 0, 1, -1},
+    ViewPreset{"back-bottom", 0, -1, -1},
+    ViewPreset{"back-left", -1, 0, -1},
+    ViewPreset{"back-right", 1, 0, -1},
+    ViewPreset{"top-left", -1, 1, 0},
+    ViewPreset{"top-right", 1, 1, 0},
+    ViewPreset{"bottom-left", -1, -1, 0},
+    ViewPreset{"bottom-right", 1, -1, 0},
+    ViewPreset{"front-top-left", -1, 1, 1},
+    ViewPreset{"front-top-right", 1, 1, 1},
+    ViewPreset{"front-bottom-left", -1, -1, 1},
+    ViewPreset{"front-bottom-right", 1, -1, 1},
+    ViewPreset{"back-top-left", -1, 1, -1},
+    ViewPreset{"back-top-right", 1, 1, -1},
+    ViewPreset{"back-bottom-left", -1, -1, -1},
+    ViewPreset{"back-bottom-right", 1, -1, -1},
+};
+
+struct CameraAngles {
+  qreal yaw;
+  qreal pitch;
+};
+
+CameraAngles cameraAngles(const ViewPreset &view) {
+  constexpr qreal pi = 3.141592653589793238462643383279502884;
+  constexpr qreal halfPi = pi / 2.0;
+  constexpr qreal degreesPerRadian = 180.0 / pi;
+  qreal xRotation = std::atan2(static_cast<qreal>(view.y),
+                               static_cast<qreal>(view.z));
+  if (xRotation > halfPi)
+    xRotation -= pi;
+  else if (xRotation < -halfPi)
+    xRotation += pi;
+  const qreal depthAfterX =
+      static_cast<qreal>(view.y) * std::sin(xRotation) +
+      static_cast<qreal>(view.z) * std::cos(xRotation);
+  return {std::atan2(-static_cast<qreal>(view.x), depthAfterX) *
+              degreesPerRadian,
+          -xRotation * degreesPerRadian};
+}
 
 qreal wrappedDegrees(qreal degrees) {
   degrees = std::fmod(degrees, 360.0);
@@ -154,7 +214,12 @@ void ViewportCamera::applySpaceMotion(qreal tx, qreal ty, qreal tz, qreal rx,
 }
 
 void ViewportCamera::orbit(qreal dx, qreal dy) {
-  changeCamera(yaw_ + dx * 0.35, pitch_ + dy * 0.30, roll_, panX_, panY_,
+  changeCamera(yaw_ + dx * 0.35, pitch_ - dy * 0.30, roll_, panX_, panY_,
+               distance_, QStringLiteral("custom"));
+}
+
+void ViewportCamera::turn(qreal yawDegrees, qreal pitchDegrees) {
+  changeCamera(yaw_ + yawDegrees, pitch_ + pitchDegrees, roll_, panX_, panY_,
                distance_, QStringLiteral("custom"));
 }
 
@@ -175,26 +240,16 @@ void ViewportCamera::fit() {
 }
 
 bool ViewportCamera::setView(const QString &view) {
-  qreal yaw = 0.0;
-  qreal pitch = 0.0;
-  if (view == QStringLiteral("front")) {
-  } else if (view == QStringLiteral("back")) {
-    yaw = 180.0;
-  } else if (view == QStringLiteral("left")) {
-    yaw = 90.0;
-  } else if (view == QStringLiteral("right")) {
-    yaw = -90.0;
-  } else if (view == QStringLiteral("top")) {
-    pitch = -90.0;
-  } else if (view == QStringLiteral("bottom")) {
-    pitch = 90.0;
-  } else if (view == QStringLiteral("isometric")) {
-    yaw = 45.0;
-    pitch = -30.0;
-  } else {
+  const QByteArray bytes = view.toLatin1();
+  const std::string_view id{bytes.constData(),
+                            static_cast<std::size_t>(bytes.size())};
+  const auto preset = std::find_if(
+      viewPresets.begin(), viewPresets.end(),
+      [id](const ViewPreset &candidate) { return candidate.id == id; });
+  if (preset == viewPresets.end())
     return false;
-  }
-  changeCamera(yaw, pitch, 0.0, 0.0, 0.0, distance_, view);
+  const CameraAngles angles = cameraAngles(*preset);
+  changeCamera(angles.yaw, angles.pitch, 0.0, 0.0, 0.0, distance_, view);
   return true;
 }
 
@@ -233,7 +288,7 @@ void ViewportCamera::changeCamera(qreal yaw, qreal pitch, qreal roll,
   if (!finiteCamera(yaw, pitch, roll, panX, panY, distance))
     return;
   yaw = wrappedDegrees(yaw);
-  pitch = std::clamp(pitch, -90.0, 90.0);
+  pitch = wrappedDegrees(pitch);
   roll = wrappedDegrees(roll);
   panX = std::clamp(panX, -maximumPan, maximumPan);
   panY = std::clamp(panY, -maximumPan, maximumPan);

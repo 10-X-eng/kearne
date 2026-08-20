@@ -191,6 +191,27 @@ int main(int argc, char **argv) {
       worker.apply(id<JobId>(90'100U), created->bytes, "profile", stale);
   require(!rejected && rejected.error().code == "worker.source.stale-input",
           "stale source precondition was not returned structurally");
+
+  const sketch::AppliedEdits graphical =
+      rectangle(created->digest, 91'000U, 0.04, 0.03);
+  auto graphicalSource =
+      worker.apply(id<JobId>(91'100U), created->bytes, "profile", graphical);
+  require(graphicalSource.has_value(), "source replacement setup failed");
+  std::string replacement(graphicalSource->bytes.begin(),
+                          graphicalSource->bytes.end());
+  const std::size_t coordinate = replacement.find("m(0.04)");
+  require(coordinate != std::string::npos,
+          "generated source has no editable coordinate");
+  replacement.replace(coordinate, std::string_view{"m(0.04)"}.size(),
+                      "m(0.05)");
+  document::Bytes replacementBytes(replacement.begin(), replacement.end());
+  auto replaced = worker.replace(id<JobId>(91'200U), replacementBytes,
+                                 "profile", graphicalSource->digest);
+  require(replaced &&
+              replaced->definition.sourceDigest == replaced->source.digest &&
+              replaced->definition.entities.size() == 4U &&
+              replaced->definition != graphical.target,
+          "direct native source edit did not return its recognized definition");
   verifyCanonicalWorkflow(worker);
   require(worker.processGeneration() == 1U,
           "canonical workflow did not reuse the warm source worker");

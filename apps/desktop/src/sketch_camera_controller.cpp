@@ -65,6 +65,10 @@ double wrappedRadians(double radians) {
 
 SketchCameraController::SketchCameraController(QObject *parent)
     : QObject(parent) {
+  // Generation one belongs to the native presenter's valid fallback camera.
+  // The controller is authoritative and must supersede that fallback on its
+  // first publication.
+  camera_.generation = 2U;
   camera_.metresPerLogicalPixel = 0.0005;
 }
 

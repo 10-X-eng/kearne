@@ -90,6 +90,39 @@ def profile_for(output: Path, scenario: dict[str, object]) -> Path:
 
 
 def scenarios(mode: str) -> list[dict[str, object]]:
+    if mode == "proof":
+        create = [
+            {"action": "invoke", "semantic_id": "command.model.sketch.create"},
+            {"action": "invoke", "semantic_id": "inspector.apply"},
+        ]
+        return [
+            {"name": "proof-sketch-empty", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "local_engineering": True,
+             "operations": create,
+             "required": ["sketch.solve.state"],
+             "expected_values": {"sketch.solve.state": "solved:0",
+                                 "viewport.state": "current"},
+             "width": 1440, "height": 900},
+            {"name": "proof-sketch-rectangle", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "local_engineering": True,
+             "operations": [
+                 *create,
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerDrag", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "from": [0.42, 0.43],
+                            "to": [0.58, 0.57]}},
+             ],
+             "required": ["sketch.solve.state", "command.draft.state"],
+             "expected_values": {
+                 "sketch.solve.state": "underconstrained:4",
+                 "command.draft.state": "editing",
+                 "viewport.state": "current",
+             },
+             "width": 1440, "height": 900},
+        ]
     result = [
         {"name": f"route-{surface}", "initial_surface": initial, "surface": surface,
          "actions": [action], "width": 1440, "height": 900}
@@ -410,6 +443,14 @@ def scenarios(mode: str) -> list[dict[str, object]]:
          "required": ["viewport.view_cube", "viewport.camera.fit"],
          "expected_contains": {"viewport.primary": "solidworks:custom"},
          "width": 1440, "height": 900},
+        {"name": "viewport-adaptive-grid-zoom", "surface": "editor",
+         "operations": [
+             {"action": "zoom", "semantic_id": "viewport.primary",
+              "value": 4},
+         ],
+         "required": ["region.status_bar"],
+         "expected_contains": {"region.status_bar": ":5 mm"},
+         "width": 1440, "height": 900},
         {"name": "viewport-view-cube-front", "surface": "editor",
          "operations": [
              {"action": "choose", "semantic_id": "viewport.view_cube",
@@ -642,6 +683,8 @@ def launch(executable: Path, scenario: dict[str, object], output: Path,
     ]
     if "state" in scenario:
         command.extend(("--ui-state", str(scenario["state"])))
+    if scenario.get("local_engineering"):
+        command.append("--local-engineering")
     if scenario.get("theme", "light") is not None:
         command.extend(("--theme", str(scenario.get("theme", "light"))))
     for operation in operations_for(scenario):
@@ -662,7 +705,10 @@ def launch(executable: Path, scenario: dict[str, object], output: Path,
         environment["DISPLAY"] = display
     elif sys.platform.startswith("linux") and "DISPLAY" not in environment:
         environment["QT_QPA_PLATFORM"] = "offscreen"
-    completed = subprocess.run(command, capture_output=True, text=True, env=environment, timeout=20)
+    completed = subprocess.run(
+        command, capture_output=True, text=True, env=environment,
+        timeout=45 if scenario.get("local_engineering") else 20,
+    )
     if completed.returncode:
         raise RuntimeError(
             f"application exited {completed.returncode}\nstdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
@@ -1024,7 +1070,8 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--executable", required=True, type=Path)
-    parser.add_argument("--mode", choices=("smoke", "full"), default="smoke")
+    parser.add_argument(
+        "--mode", choices=("smoke", "full", "proof"), default="smoke")
     parser.add_argument("--output", type=Path)
     parser.add_argument(
         "--scenario", action="append", metavar="GLOB",
@@ -1093,6 +1140,12 @@ def main() -> int:
             all_failures.append("theme metamorphic check: light and dark renders match")
         if png_difference(selected_dark, restarted_dark) > 0.01:
             all_failures.append("theme metamorphic check: persisted dark render changed after restart")
+    empty_sketch = root / "proof-sketch-empty" / "application-session.png"
+    rectangle_sketch = root / "proof-sketch-rectangle" / "application-session.png"
+    if empty_sketch.is_file() and rectangle_sketch.is_file():
+        if png_difference(empty_sketch, rectangle_sketch) < 0.0001:
+            all_failures.append(
+                "sketch proof metamorphic check: evaluated rectangle did not change the render")
     if all_failures:
         print("\n".join(all_failures), file=sys.stderr)
         if temporary:

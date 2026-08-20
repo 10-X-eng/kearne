@@ -402,14 +402,18 @@ parseSemanticOperations(const QStringList &actions,
 
 ObservationController::ObservationController(
     QQuickWindow &window, UiSession &session, ThemeManager &themes,
-    QString outputDirectory, QList<QJsonObject> operations, QObject *parent)
+    QString outputDirectory, QList<QJsonObject> operations,
+    std::function<bool()> presentationCurrent, QObject *parent)
     : QObject(parent), window_(window), session_(session), themes_(themes),
       outputDirectory_(std::move(outputDirectory)),
       pendingOperations_(std::move(operations)),
-      sessionId_(QUuid::createUuid().toString(QUuid::WithoutBraces)) {
+      sessionId_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+      presentationCurrent_(std::move(presentationCurrent)) {
   connect(&window_, &QQuickWindow::frameSwapped, this, [this] {
     ++presentedFrames_;
-    if (hasActiveSemanticTransition(window_)) {
+    if (hasActiveSemanticTransition(window_) ||
+        session_.commandDraftState() == QStringLiteral("pending") ||
+        (presentationCurrent_ && !presentationCurrent_())) {
       settledFrames_ = 0;
       window_.update();
       return;
@@ -437,7 +441,7 @@ ObservationController::ObservationController(
       QTimer::singleShot(0, this, [this] { capture(); });
     }
   });
-  QTimer::singleShot(10'000, this, [this] {
+  QTimer::singleShot(30'000, this, [this] {
     if (!captureScheduled_) {
       std::cerr << "capture deadline expired before two presented frames\n";
       QCoreApplication::exit(3);

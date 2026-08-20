@@ -9,7 +9,8 @@ Rectangle {
     property string semanticName: "Application status"
     property string semanticRole: "statusbar"
     property var semanticActions: []
-    property string semanticValue: App.ui.modelHealth
+    property string gridSpacingLabel: App.ui.gridSpacingLabel
+    property string semanticValue: App.ui.modelHealth + ":" + gridSpacingLabel
 
     color: Theme.surface
     implicitHeight: Theme.statusBarHeight
@@ -67,7 +68,7 @@ Rectangle {
         }
 
         Text {
-            text: "Grid " + App.ui.gridSpacingLabel + "  ·  Snap: "
+            text: "Grid " + root.gridSpacingLabel + "  ·  Snap: "
                   + (App.workspace.gridSnapEnabled ? "grid, " : "") + "point, edge"
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall

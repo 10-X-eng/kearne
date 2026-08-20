@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from importlib import import_module
 from math import isfinite
 from types import ModuleType
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 from kearne._sketch_schema import (
@@ -32,7 +32,7 @@ from kearne._wire import (
 from kearne._wire import (
     set_scalar as _set_scalar,
 )
-from kearne.sketch import (
+from kearne.sketch_values import (
     ArcEntity,
     CircleEntity,
     Constraint,
@@ -40,11 +40,13 @@ from kearne.sketch import (
     LineEntity,
     PointEntity,
     PointRef,
-    SketchDefinition,
     SketchDefinitionError,
-    SketchPlane,
+    validate_definition_values,
 )
 from kearne.units import Angle, Length
+
+if TYPE_CHECKING:
+    from kearne.sketch import SketchDefinition, SketchPlane
 
 MAXIMUM_SERIALIZED_BYTES = 16_777_216
 MAXIMUM_ENTITIES = 65_536
@@ -63,6 +65,13 @@ class SketchWireError(ValueError):
 class DecodedSketchDefinition:
     source_digest: str
     definition: SketchDefinition
+
+
+@dataclass(frozen=True, slots=True)
+class DecodedSketchValues:
+    source_digest: str
+    entities: tuple[Entity, ...]
+    constraints: tuple[Constraint, ...]
 
 
 def _wire_module() -> ModuleType:
@@ -456,30 +465,34 @@ def _read_constraint(message: _WireMessage) -> Constraint:
     )
 
 
-def definition_to_wire(
-    definition: SketchDefinition, source_digest: str
+def definition_values_to_wire(
+    entities: tuple[Entity, ...],
+    constraints: tuple[Constraint, ...],
+    source_digest: str,
 ) -> _WireMessage:
-    """Convert a recognized runtime definition to generated protobuf types."""
+    """Convert validated source values without loading the CAD runtime."""
     _assert_schema_coverage()
-    if not isinstance(definition, SketchDefinition):
+    try:
+        entities, constraints = validate_definition_values(entities, constraints)
+    except SketchDefinitionError as error:
         raise SketchWireError(
-            "sketch.wire.invalid-definition", "value is not a sketch definition"
-        )
+            "sketch.wire.invalid-domain", "sketch definition is invalid"
+        ) from error
     if (
-        len(definition.entities) > MAXIMUM_ENTITIES
-        or len(definition.constraints) > MAXIMUM_CONSTRAINTS
+        len(entities) > MAXIMUM_ENTITIES
+        or len(constraints) > MAXIMUM_CONSTRAINTS
     ):
         raise SketchWireError(
             "sketch.wire.count-limit", "sketch definition exceeds a count limit"
         )
     result = _message_type("SketchDefinition")()
     _write_digest(_child(result, "source_digest"), source_digest)
-    entities = _repeated(result, "entities")
-    for entity in definition.entities:
-        _write_entity(entities.add(), entity)
-    constraints = _repeated(result, "constraints")
-    for constraint in definition.constraints:
-        _write_constraint(constraints.add(), constraint)
+    entity_messages = _repeated(result, "entities")
+    for entity in entities:
+        _write_entity(entity_messages.add(), entity)
+    constraint_messages = _repeated(result, "constraints")
+    for constraint in constraints:
+        _write_constraint(constraint_messages.add(), constraint)
     if result.ByteSize() > MAXIMUM_SERIALIZED_BYTES:
         raise SketchWireError(
             "sketch.wire.byte-limit", "sketch definition exceeds the byte limit"
@@ -487,10 +500,23 @@ def definition_to_wire(
     return result
 
 
-def definition_from_wire(
-    message: _WireMessage, plane: SketchPlane
-) -> DecodedSketchDefinition:
-    """Convert generated protobuf types to a validated runtime definition."""
+def definition_to_wire(
+    definition: SketchDefinition, source_digest: str
+) -> _WireMessage:
+    """Convert a recognized runtime definition to generated protobuf types."""
+    from kearne.sketch import SketchDefinition
+
+    if not isinstance(definition, SketchDefinition):
+        raise SketchWireError(
+            "sketch.wire.invalid-definition", "value is not a sketch definition"
+        )
+    return definition_values_to_wire(
+        definition.entities, definition.constraints, source_digest
+    )
+
+
+def definition_values_from_wire(message: _WireMessage) -> DecodedSketchValues:
+    """Validate source-edit values without loading the CAD runtime."""
     _assert_schema_coverage()
     if message.DESCRIPTOR.full_name != "kearne.api.v1.SketchDefinition":
         raise SketchWireError(
@@ -512,8 +538,7 @@ def definition_from_wire(
             "sketch.wire.count-limit", "sketch definition exceeds a count limit"
         )
     try:
-        definition = SketchDefinition(
-            plane,
+        entities, constraints = validate_definition_values(
             tuple(_read_entity(value) for value in entities_wire),
             tuple(_read_constraint(value) for value in constraints_wire),
         )
@@ -521,8 +546,21 @@ def definition_from_wire(
         raise SketchWireError(
             "sketch.wire.invalid-domain", "wire sketch definition is invalid"
         ) from error
+    return DecodedSketchValues(
+        _read_digest(_child(message, "source_digest")), entities, constraints
+    )
+
+
+def definition_from_wire(
+    message: _WireMessage, plane: SketchPlane
+) -> DecodedSketchDefinition:
+    """Convert generated protobuf types to a validated runtime definition."""
+    from kearne.sketch import SketchDefinition
+
+    decoded = definition_values_from_wire(message)
     return DecodedSketchDefinition(
-        _read_digest(_child(message, "source_digest")), definition
+        decoded.source_digest,
+        SketchDefinition(plane, decoded.entities, decoded.constraints),
     )
 
 
@@ -557,9 +595,12 @@ __all__ = [
     "MAXIMUM_ENTITIES",
     "MAXIMUM_SERIALIZED_BYTES",
     "DecodedSketchDefinition",
+    "DecodedSketchValues",
     "SketchWireError",
     "definition_from_wire",
     "definition_to_wire",
+    "definition_values_from_wire",
+    "definition_values_to_wire",
     "parse_definition",
     "serialize_definition",
 ]

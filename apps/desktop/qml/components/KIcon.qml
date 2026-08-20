@@ -197,6 +197,21 @@ Canvas {
             context.stroke()
             paintPath(context, [4, 8, 4, 3, 9, 4], false)
             break
+        case "undo":
+        case "redo":
+            context.save()
+            if (icon === "redo") {
+                context.translate(24, 0)
+                context.scale(-1, 1)
+            }
+            context.beginPath()
+            context.moveTo(5, 10)
+            context.bezierCurveTo(9, 5, 17, 5, 20, 12)
+            context.bezierCurveTo(21, 15, 20, 18, 18, 20)
+            context.stroke()
+            paintPath(context, [5, 10, 5, 5, 10, 10], false)
+            context.restore()
+            break
         case "model":
         case "assemble":
             cube(context)

@@ -8,6 +8,7 @@
 #include <kearne/sketch/tools.hpp>
 #include <kearne/sketch_workflow/workflow.hpp>
 
+#include <QByteArray>
 #include <QDateTime>
 #include <QMetaObject>
 #include <QPointer>
@@ -20,6 +21,7 @@
 #include <chrono>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -99,7 +101,8 @@ QString solveStatus(sketch::SolveStatus value) {
 }
 
 Result<LocalSketchProjection>
-frontendProjection(const sketch_workflow::SketchState &state) {
+frontendProjection(const sketch_workflow::SketchState &state,
+                   LocalSketchPlane plane) {
   if (!state.evaluation)
     return std::unexpected(state.evaluationFailure.value_or(diagnostic(
         "desktop.sketch.evaluation-missing",
@@ -125,6 +128,7 @@ frontendProjection(const sketch_workflow::SketchState &state) {
       QString::fromStdString(state.address.sourcePath),
       QString::fromStdString(state.address.functionName),
       source,
+      plane,
       solveStatus(state.evaluation->solve.status),
       static_cast<int>(state.evaluation->solve.degreesOfFreedom),
       state.evaluation->replacementScene,
@@ -162,6 +166,7 @@ struct Backend final {
     auto worker = makeId<WorkerInstanceId>();
     auto binding = makeId<ModelBindingId>();
     auto schemaJob = makeId<JobId>();
+    auto warmupJob = makeId<JobId>();
     if (!project)
       return std::unexpected(std::move(project.error()));
     if (!actor)
@@ -178,6 +183,8 @@ struct Backend final {
       return std::unexpected(std::move(binding.error()));
     if (!schemaJob)
       return std::unexpected(std::move(schemaJob.error()));
+    if (!warmupJob)
+      return std::unexpected(std::move(warmupJob.error()));
     auto schema = operationDigest<SchemaSetDigest>(
         "kearne.desktop.local-schema.v1", *schemaJob);
     if (!schema)
@@ -195,7 +202,7 @@ struct Backend final {
     if (!engineering)
       return std::unexpected(std::move(engineering.error()));
     try {
-      return std::unique_ptr<Backend>(new Backend{
+      auto backend = std::unique_ptr<Backend>(new Backend{
           {*project, *actor, *permission},
           *binding,
           std::move(content),
@@ -203,6 +210,11 @@ struct Backend final {
           std::move(process),
           *worker,
       });
+      auto warmed = backend->sourceEditor.create(*warmupJob,
+                                                 "_kearne_source_editor_ready");
+      if (!warmed)
+        return std::unexpected(std::move(warmed.error()));
+      return backend;
     } catch (const std::bad_alloc &) {
       return std::unexpected(
           diagnostic("desktop.sketch.session-allocation",
@@ -210,7 +222,7 @@ struct Backend final {
     }
   }
 
-  Result<LocalSketchProjection> createSketch() {
+  Result<LocalSketchProjection> createSketch(LocalSketchCreation creation) {
     if (state)
       return std::unexpected(
           diagnostic("desktop.sketch.already-created",
@@ -225,8 +237,9 @@ struct Backend final {
         workflow.create({"model/sketch.py", "sketch"}, *operation, *identity);
     if (!created)
       return std::unexpected(std::move(created.error()));
-    state = std::move(*created);
-    return frontendProjection(*state);
+    plane = creation.plane;
+    publishState(std::move(*created));
+    return projection();
   }
 
   Result<LocalSketchProjection>
@@ -271,13 +284,134 @@ struct Backend final {
                                      *identity);
     if (!edited)
       return std::unexpected(std::move(edited.error()));
-    state = std::move(*edited);
-    return frontendProjection(*state);
+    publishState(std::move(*edited));
+    return projection();
+  }
+
+  Result<LocalSketchProjection>
+  replaceSource(const LocalSourceReplacement &replacement) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before replacing its source"));
+    if (replacement.expectedSourceRevision !=
+        QString::fromStdString(state->source.digest.toString()))
+      return std::unexpected(
+          diagnostic("desktop.sketch.stale-source",
+                     "Sketch source changed after it was observed"));
+    const QByteArray utf8 = replacement.source.toUtf8();
+    document::Bytes bytes(
+        reinterpret_cast<const std::uint8_t *>(utf8.constData()),
+        reinterpret_cast<const std::uint8_t *>(utf8.constData()) + utf8.size());
+    auto operation = nextOperation();
+    if (!operation)
+      return std::unexpected(std::move(operation.error()));
+    auto identity = nextEvaluation(operation->sourceJob);
+    if (!identity)
+      return std::unexpected(std::move(identity.error()));
+    auto recognized =
+        sourceEditor.replace(operation->sourceJob, bytes,
+                             state->address.functionName, state->source.digest);
+    if (!recognized)
+      return std::unexpected(std::move(recognized.error()));
+    auto edited = workflow.replaceSource(
+        *state, *operation, std::move(recognized->source),
+        std::move(recognized->definition), *identity);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    publishState(std::move(*edited));
+    return projection();
+  }
+
+  Result<LocalSketchProjection> undo() {
+    if (!state)
+      return std::unexpected(diagnostic("desktop.sketch.not-created",
+                                        "there is no Sketch to undo"));
+    const auto current = parents.find(state->revision);
+    if (current == parents.end() || !current->second)
+      return std::unexpected(
+          diagnostic("engineering.history.no-undo",
+                     "workspace has no Sketch revision to undo"));
+    if (auto moved = engineering->undo(); !moved)
+      return std::unexpected(std::move(moved.error()));
+    return restoreCachedHead();
+  }
+
+  Result<LocalSketchProjection> redo() {
+    if (!state)
+      return std::unexpected(diagnostic("desktop.sketch.not-created",
+                                        "there is no Sketch to redo"));
+    const std::vector<RevisionId> choices = engineering->redoChoices();
+    if (choices.empty())
+      return std::unexpected(diagnostic("engineering.history.no-redo",
+                                        "there is no revision to redo"));
+    if (choices.size() != 1U)
+      return std::unexpected(diagnostic(
+          "engineering.history.ambiguous-redo",
+          "redo requires an explicit revision on a branched history"));
+    if (std::ranges::none_of(states, [&choices](const auto &candidate) {
+          return candidate->revision == choices.front();
+        }))
+      return std::unexpected(diagnostic(
+          "desktop.sketch.history-cache",
+          "redo revision is unavailable in the local evaluation cache",
+          Severity::Fatal));
+    if (auto moved = engineering->redo(choices.front()); !moved)
+      return std::unexpected(std::move(moved.error()));
+    return restoreCachedHead();
   }
 
   void shutdown() { sourceEditor.stop(); }
 
 private:
+  void publishState(sketch_workflow::SketchState next) {
+    auto published =
+        std::make_shared<const sketch_workflow::SketchState>(std::move(next));
+    const std::optional<RevisionId> parent =
+        state ? std::optional<RevisionId>{state->revision} : std::nullopt;
+    const auto existing =
+        std::ranges::find_if(states, [&published](const auto &candidate) {
+          return candidate->revision == published->revision;
+        });
+    if (existing == states.end())
+      states.push_back(published);
+    else
+      *existing = published;
+    parents.insert_or_assign(published->revision, parent);
+    state = std::move(published);
+  }
+
+  Result<LocalSketchProjection> projection() const {
+    auto projected = frontendProjection(*state, plane);
+    if (!projected)
+      return std::unexpected(std::move(projected.error()));
+    const auto current = parents.find(state->revision);
+    projected->canUndo =
+        current != parents.end() && current->second.has_value();
+    const std::vector<RevisionId> choices = engineering->redoChoices();
+    projected->canRedo =
+        choices.size() == 1U &&
+        std::ranges::any_of(states, [&choices](const auto &candidate) {
+          return candidate->revision == choices.front();
+        });
+    return projected;
+  }
+
+  Result<LocalSketchProjection> restoreCachedHead() {
+    const RevisionId &head = engineering->headSnapshot()->revisionId();
+    const auto found =
+        std::ranges::find_if(states, [&head](const auto &candidate) {
+          return candidate->revision == head;
+        });
+    if (found == states.end())
+      return std::unexpected(diagnostic(
+          "desktop.sketch.history-cache",
+          "Sketch revision is unavailable in the local evaluation cache",
+          Severity::Fatal));
+    state = *found;
+    return projection();
+  }
+
   Backend(sketch_workflow::ActorContext actorContext,
           ModelBindingId attachmentBinding,
           std::shared_ptr<document::InMemoryContentStore> contentStore,
@@ -345,7 +479,10 @@ private:
   adapters::SketchSourceWorker sourceEditor;
   adapters::CeresSketchSolver solver;
   sketch_workflow::Workflow workflow;
-  std::optional<sketch_workflow::SketchState> state;
+  std::vector<std::shared_ptr<const sketch_workflow::SketchState>> states;
+  std::map<RevisionId, std::optional<RevisionId>> parents;
+  std::shared_ptr<const sketch_workflow::SketchState> state;
+  LocalSketchPlane plane = LocalSketchPlane::XY;
   std::uint64_t sceneGeneration = 0U;
 };
 
@@ -354,10 +491,12 @@ public:
   explicit SessionWorker(adapters::FramedWorkerProcessConfig process)
       : process_(std::move(process)) {}
 
-  Result<LocalSketchProjection> createSketch() {
+  Result<void> prepare() { return ensureBackend(); }
+
+  Result<LocalSketchProjection> createSketch(LocalSketchCreation creation) {
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
-    return backend_->createSketch();
+    return backend_->createSketch(creation);
   }
 
   Result<LocalSketchProjection>
@@ -365,6 +504,25 @@ public:
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
     return backend_->applyRectangle(gesture);
+  }
+
+  Result<LocalSketchProjection>
+  replaceSource(const LocalSourceReplacement &replacement) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->replaceSource(replacement);
+  }
+
+  Result<LocalSketchProjection> undo() {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->undo();
+  }
+
+  Result<LocalSketchProjection> redo() {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->redo();
   }
 
   void shutdown() {
@@ -389,6 +547,28 @@ private:
 
 } // namespace
 
+QString localSketchPlaneId(LocalSketchPlane plane) {
+  switch (plane) {
+  case LocalSketchPlane::XY:
+    return QStringLiteral("reference.plane.xy");
+  case LocalSketchPlane::XZ:
+    return QStringLiteral("reference.plane.xz");
+  case LocalSketchPlane::YZ:
+    return QStringLiteral("reference.plane.yz");
+  }
+  return {};
+}
+
+std::optional<LocalSketchPlane> localSketchPlaneFromId(QStringView id) {
+  if (id == QStringLiteral("reference.plane.xy"))
+    return LocalSketchPlane::XY;
+  if (id == QStringLiteral("reference.plane.xz"))
+    return LocalSketchPlane::XZ;
+  if (id == QStringLiteral("reference.plane.yz"))
+    return LocalSketchPlane::YZ;
+  return std::nullopt;
+}
+
 struct LocalSketchSession::Impl final {
   Impl(LocalSketchSession &session, LocalSketchSessionConfig config)
       : owner(session), maximumPending(config.maximumPendingOperations),
@@ -398,6 +578,62 @@ struct LocalSketchSession::Impl final {
                      &QObject::deleteLater);
     thread.setObjectName(QStringLiteral("Kearne Sketch engineering"));
     thread.start();
+  }
+
+  void startPreparation() {
+    if (preparationQueued || preparationReady || preparationError || !worker)
+      return;
+    preparationQueued = true;
+    const QPointer<LocalSketchSession> lifetime{&owner};
+    const bool queued = QMetaObject::invokeMethod(
+        worker,
+        [target = worker, lifetime] {
+          auto result = std::make_shared<Result<void>>(target->prepare());
+          if (!lifetime)
+            return;
+          static_cast<void>(QMetaObject::invokeMethod(
+              lifetime,
+              [lifetime, result = std::move(result)]() mutable {
+                if (lifetime)
+                  lifetime->impl_->finishPreparation(std::move(*result));
+              },
+              Qt::QueuedConnection));
+        },
+        Qt::QueuedConnection);
+    if (!queued)
+      finishPreparation(std::unexpected(diagnostic(
+          "desktop.sketch.preparation-dispatch",
+          "Sketch engineering preparation could not be dispatched")));
+  }
+
+  void finishPreparation(Result<void> result) {
+    preparationQueued = false;
+    preparationReady = result.has_value();
+    if (!result)
+      preparationError = std::move(result.error());
+    auto completions = std::move(readinessCompletions);
+    readinessCompletions.clear();
+    for (auto &completion : completions) {
+      if (preparationReady)
+        completion({});
+      else
+        completion(std::unexpected(*preparationError));
+    }
+  }
+
+  void whenReady(ReadinessCompletion completion) {
+    if (!completion)
+      return;
+    if (preparationReady) {
+      completion({});
+      return;
+    }
+    if (preparationError) {
+      completion(std::unexpected(*preparationError));
+      return;
+    }
+    readinessCompletions.push_back(std::move(completion));
+    startPreparation();
   }
 
   ~Impl() {
@@ -449,19 +685,31 @@ struct LocalSketchSession::Impl final {
   QThread thread;
   SessionWorker *worker;
   std::atomic_size_t pending = 0U;
+  std::vector<ReadinessCompletion> readinessCompletions;
+  std::optional<Diagnostic> preparationError;
+  bool preparationQueued = false;
+  bool preparationReady = false;
   bool stopping = false;
 };
 
 LocalSketchSession::LocalSketchSession(LocalSketchSessionConfig config,
                                        QObject *parent)
     : QObject(parent), impl_(std::make_unique<Impl>(*this, std::move(config))) {
+  impl_->startPreparation();
 }
 
 LocalSketchSession::~LocalSketchSession() = default;
 
-bool LocalSketchSession::create(Completion completion) {
+void LocalSketchSession::whenReady(ReadinessCompletion completion) {
+  impl_->whenReady(std::move(completion));
+}
+
+bool LocalSketchSession::create(LocalSketchCreation creation,
+                                Completion completion) {
   return impl_->submit(
-      [](SessionWorker &worker) { return worker.createSketch(); },
+      [creation](SessionWorker &worker) {
+        return worker.createSketch(creation);
+      },
       std::move(completion));
 }
 
@@ -472,6 +720,25 @@ bool LocalSketchSession::applyRectangle(LocalRectangleGesture gesture,
         return worker.applyRectangle(gesture);
       },
       std::move(completion));
+}
+
+bool LocalSketchSession::replaceSource(LocalSourceReplacement replacement,
+                                       Completion completion) {
+  return impl_->submit(
+      [replacement = std::move(replacement)](SessionWorker &worker) {
+        return worker.replaceSource(replacement);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::undo(Completion completion) {
+  return impl_->submit([](SessionWorker &worker) { return worker.undo(); },
+                       std::move(completion));
+}
+
+bool LocalSketchSession::redo(Completion completion) {
+  return impl_->submit([](SessionWorker &worker) { return worker.redo(); },
+                       std::move(completion));
 }
 
 std::size_t LocalSketchSession::pendingOperationCount() const {

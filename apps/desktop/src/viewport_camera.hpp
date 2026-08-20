@@ -50,6 +50,7 @@ public:
   Q_INVOKABLE void applySpaceMotion(qreal tx, qreal ty, qreal tz, qreal rx,
                                     qreal ry, qreal rz, qreal periodMs = 16.0);
   Q_INVOKABLE void orbit(qreal dx, qreal dy);
+  Q_INVOKABLE void turn(qreal yawDegrees, qreal pitchDegrees);
   Q_INVOKABLE void pan(qreal dx, qreal dy);
   Q_INVOKABLE void zoom(qreal amount);
   Q_INVOKABLE void fit();
@@ -68,8 +69,8 @@ private:
 
   NavigationProfile navigationProfile_ = NavigationProfile::SolidWorks;
   bool zoomReversed_ = false;
-  qreal yaw_ = 45.0;
-  qreal pitch_ = -30.0;
+  qreal yaw_ = 35.264389682754654;
+  qreal pitch_ = -45.0;
   qreal roll_ = 0.0;
   qreal panX_ = 0.0;
   qreal panY_ = 0.0;

@@ -32,7 +32,7 @@ from kearne.sketch import (
     vertical,
 )
 from kearne.sketch_source import emit_call
-from kearne.sketch_wire import definition_to_wire
+from kearne.sketch_wire import definition_to_wire, definition_values_from_wire
 from kearne.source import recognize, source_digest
 from kearne.units import Length, m
 
@@ -130,6 +130,43 @@ class FragmentedInput(io.BytesIO):
 
 
 class SketchWorkerProperties(unittest.TestCase):
+    def test_source_worker_does_not_load_the_cad_runtime(self) -> None:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import sys; import kearne._worker.protocol; "
+                "assert 'build123d' not in sys.modules",
+            ],
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr.decode())
+
+    def test_source_replacement_recognizes_geometry_without_execution(self) -> None:
+        initial = create_sketch_source("profile")
+        target, values = rectangle(700, 80, 50)
+        source, prior = transformed(
+            edit_job(
+                initial,
+                target,
+                values,
+                worker_pb2.SKETCH_SOURCE_EDIT_ACTION_APPEND,
+            )
+        )
+        edited = source.replace("m(0.08)", "m(0.09)")
+        job = worker_pb2.SketchSourceTransformJob()
+        job.replace.source_utf8 = edited.encode()
+        job.replace.function_name = "profile"
+        write_digest(job.replace.expected_prior, prior)
+        result = process_transform(job)
+        self.assertEqual(result.WhichOneof("outcome"), "success")
+        decoded = definition_values_from_wire(result.success.definition)
+        self.assertEqual(decoded.source_digest, source_digest(edited))
+        self.assertEqual(len(decoded.entities), 4)
+        self.assertNotEqual(decoded.entities, target.entities)
+
     @settings(max_examples=50, deadline=None)
     @given(
         seed=st.integers(min_value=1, max_value=5_000_000),

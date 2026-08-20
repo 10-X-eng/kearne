@@ -1,8 +1,12 @@
 #include "ui_session.hpp"
 
+#include <QMetaObject>
+#include <QLocale>
+#include <QPointer>
 #include <QVariantMap>
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace kearne::ui {
@@ -64,6 +68,8 @@ QString commandDraftStateName(CommandDraftState state) {
     return QStringLiteral("none");
   case CommandDraftState::Editing:
     return QStringLiteral("editing");
+  case CommandDraftState::Pending:
+    return QStringLiteral("pending");
   case CommandDraftState::Preview:
     return QStringLiteral("preview");
   case CommandDraftState::Stale:
@@ -354,12 +360,57 @@ QVariantList sketchPrimitiveRecords(
   });
 }
 
+QString formatLength(double millimeters, const QString &unitId) {
+  if (!std::isfinite(millimeters))
+    return QStringLiteral("—");
+  double value = millimeters;
+  QString symbol = QStringLiteral("mm");
+  int decimals = 3;
+  if (unitId == QStringLiteral("cm")) {
+    value /= 10.0;
+    symbol = QStringLiteral("cm");
+    decimals = 4;
+  } else if (unitId == QStringLiteral("m")) {
+    value /= millimetersPerMeter;
+    symbol = QStringLiteral("m");
+    decimals = 6;
+  } else if (unitId == QStringLiteral("in")) {
+    value /= 25.4;
+    symbol = QStringLiteral("in");
+    decimals = 4;
+  }
+  if (std::abs(value) < std::pow(10.0, -decimals) * 0.5)
+    value = 0.0;
+  QString number = QLocale::c().toString(value, 'f', decimals);
+  while (number.contains(QLatin1Char('.')) && number.endsWith(QLatin1Char('0')))
+    number.chop(1);
+  if (number.endsWith(QLatin1Char('.')))
+    number.chop(1);
+  return number + QLatin1Char(' ') + symbol;
+}
+
 } // namespace
 
 UiSession::UiSession(std::unique_ptr<FrontendPort> port, QObject *parent)
     : QObject(parent), port_(std::move(port)) {
+  QObject::connect(&gesturePreview_, &SketchGesturePreview::previewChanged,
+                   this, &UiSession::sketchDragPreviewChanged);
+  const QPointer<UiSession> lifetime{this};
+  port_->setChangeHandler([lifetime] {
+    if (!lifetime)
+      return;
+    static_cast<void>(QMetaObject::invokeMethod(
+        lifetime,
+        [lifetime] {
+          if (lifetime)
+            lifetime->refresh();
+        },
+        Qt::QueuedConnection));
+  });
   refresh();
 }
+
+UiSession::~UiSession() { port_->setChangeHandler({}); }
 
 qulonglong UiSession::generation() const { return generation_; }
 QString UiSession::projectName() const { return snapshot_->projectName; }
@@ -423,6 +474,12 @@ QString UiSession::gridSpacingLabel() const {
 qreal UiSession::gridSpacingMillimeters() const {
   return snapshot_->gridSpacingMillimeters;
 }
+QString UiSession::sketchSolveStatus() const {
+  return snapshot_->sketchProjection.solveStatus;
+}
+int UiSession::sketchDegreesOfFreedom() const {
+  return snapshot_->sketchProjection.degreesOfFreedom;
+}
 QVariantList UiSession::sketchPrimitives() const {
   return sketchPrimitiveRecords(snapshot_->sketchProjection.primitives);
 }
@@ -452,8 +509,31 @@ QString UiSession::sketchInputPrompt() const {
   return snapshot_->sketchInteraction.prompt;
 }
 bool UiSession::backendConnected() const { return snapshot_->backendConnected; }
+bool UiSession::projectPersistenceAvailable() const {
+  return snapshot_->projectPersistenceAvailable;
+}
 bool UiSession::sourceEditingAvailable() const {
   return snapshot_->sourceEditingAvailable;
+}
+bool UiSession::canUndo() const { return snapshot_->canUndo; }
+bool UiSession::canRedo() const { return snapshot_->canRedo; }
+bool UiSession::sketchDragPreviewVisible() const {
+  return gesturePreview_.visible();
+}
+bool UiSession::sketchDragPreviewConstruction() const {
+  return gesturePreview_.construction();
+}
+QPointF UiSession::sketchDragPreviewFirst() const {
+  return gesturePreview_.first();
+}
+QPointF UiSession::sketchDragPreviewSecond() const {
+  return gesturePreview_.second();
+}
+QPointF UiSession::sketchDragPreviewThird() const {
+  return gesturePreview_.third();
+}
+QPointF UiSession::sketchDragPreviewFourth() const {
+  return gesturePreview_.fourth();
 }
 QVariantList UiSession::lengthUnits() const {
   return optionRecords(snapshot_->lengthUnits);
@@ -511,6 +591,11 @@ QVariantList UiSession::interfaceStates() const {
   return interfaceStateRecords(snapshot_->interfaceStates);
 }
 
+std::shared_ptr<const render::SketchSceneSnapshot>
+UiSession::sketchScene() const {
+  return snapshot_->sketchScene;
+}
+
 void UiSession::navigateTo(const QString &surfaceId) {
   static const QStringList surfaces{
       QStringLiteral("projects"), QStringLiteral("editor"),
@@ -566,6 +651,14 @@ void UiSession::selectEntity(const QString &entityId) {
 }
 
 void UiSession::requestCommand(const QString &commandId) {
+  if (commandId == QStringLiteral("version.undo")) {
+    static_cast<void>(undo());
+    return;
+  }
+  if (commandId == QStringLiteral("version.redo")) {
+    static_cast<void>(redo());
+    return;
+  }
   port_->requestCommand(commandId);
   refresh();
   emit commandRequested(commandId, generation());
@@ -639,6 +732,7 @@ bool UiSession::submitActiveCommand(bool preview) {
 }
 
 bool UiSession::submitSketchPoint(qreal xMillimeters, qreal yMillimeters) {
+  gesturePreview_.clear();
   const SketchInputRequest request{
       snapshot_->activeCommandId,
       snapshot_->sketchInteraction.expectedRevision,
@@ -652,6 +746,47 @@ bool UiSession::submitSketchPoint(qreal xMillimeters, qreal yMillimeters) {
   refresh();
   return accepted;
 }
+
+bool UiSession::submitSketchDrag(qreal firstXMillimeters,
+                                 qreal firstYMillimeters,
+                                 qreal oppositeXMillimeters,
+                                 qreal oppositeYMillimeters) {
+  gesturePreview_.clear();
+  if (snapshot_->sketchInteraction.inputKind != SketchInputKind::PlanePoint ||
+      snapshot_->sketchInteraction.inputCount != 0 ||
+      snapshot_->sketchInteraction.maximumInputCount != 2)
+    return false;
+  if (!submitSketchPoint(firstXMillimeters, firstYMillimeters))
+    return false;
+  return submitSketchPoint(oppositeXMillimeters, oppositeYMillimeters);
+}
+
+bool UiSession::previewSketchDrag(qreal firstXMillimeters,
+                                  qreal firstYMillimeters,
+                                  qreal oppositeXMillimeters,
+                                  qreal oppositeYMillimeters) {
+  if (snapshot_->sketchInteraction.inputKind != SketchInputKind::PlanePoint ||
+      snapshot_->sketchInteraction.inputCount != 0 ||
+      snapshot_->sketchInteraction.maximumInputCount != 2 ||
+      snapshot_->commandDraft.state != CommandDraftState::Editing)
+    return false;
+  const auto construction =
+      std::ranges::find_if(snapshot_->fields, [](const FieldDescriptor &field) {
+        return field.id.endsWith(QStringLiteral(".construction"));
+      });
+  const bool enabled = construction != snapshot_->fields.end() &&
+                       std::holds_alternative<bool>(construction->value) &&
+                       std::get<bool>(construction->value);
+  return gesturePreview_.updateDrag(
+      snapshot_->activeCommandId, firstXMillimeters, firstYMillimeters,
+      oppositeXMillimeters, oppositeYMillimeters, enabled);
+}
+
+QString UiSession::formatProjectLength(qreal lengthMillimeters) const {
+  return formatLength(lengthMillimeters, snapshot_->projectLengthUnitId);
+}
+
+void UiSession::clearSketchDragPreview() { gesturePreview_.clear(); }
 
 bool UiSession::submitSketchEntity(const QString &entityId,
                                    const QString &subElementKey) {
@@ -669,6 +804,7 @@ bool UiSession::submitSketchEntity(const QString &entityId,
 }
 
 void UiSession::cancelActiveCommand() {
+  gesturePreview_.clear();
   if (snapshot_->activeCommandId.isEmpty())
     return;
   port_->cancelCommandDraft(snapshot_->activeCommandId);
@@ -711,10 +847,31 @@ bool UiSession::submitSourceEdit(const QString &source,
   return accepted;
 }
 
+bool UiSession::undo() {
+  gesturePreview_.clear();
+  const bool accepted = port_->undo();
+  refresh();
+  if (accepted)
+    emit commandRequested(QStringLiteral("version.undo"), generation());
+  return accepted;
+}
+
+bool UiSession::redo() {
+  gesturePreview_.clear();
+  const bool accepted = port_->redo();
+  refresh();
+  if (accepted)
+    emit commandRequested(QStringLiteral("version.redo"), generation());
+  return accepted;
+}
+
 void UiSession::refresh() {
   FrontendSnapshotPtr next = port_->snapshot();
   Q_ASSERT(next);
   snapshot_ = std::move(next);
+  if (snapshot_->activeCommandId != QStringLiteral("sketch.rectangle") ||
+      snapshot_->commandDraft.state != CommandDraftState::Editing)
+    gesturePreview_.clear();
   generation_ =
       std::max(generation_ + 1, static_cast<qulonglong>(snapshot_->generation));
   emit projectionChanged();

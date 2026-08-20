@@ -3,10 +3,15 @@
 #include <QString>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <utility>
 #include <variant>
 #include <vector>
+
+namespace kearne::render {
+class SketchSceneSnapshot;
+}
 
 namespace kearne::ui {
 
@@ -62,6 +67,7 @@ enum class SketchSelectionKind { Any, Point, Curve };
 enum class CommandDraftState {
   None,
   Editing,
+  Pending,
   Preview,
   Stale,
   Unavailable,
@@ -310,7 +316,10 @@ struct FrontendSnapshot {
   QString gridSpacingLabel;
   double gridSpacingMillimeters = 10.0;
   bool backendConnected = false;
+  bool projectPersistenceAvailable = false;
   bool sourceEditingAvailable = false;
+  bool canUndo = false;
+  bool canRedo = false;
   std::vector<UiOption> lengthUnits;
   std::vector<PreferenceCategory> preferenceCategories;
   std::vector<PreferenceDescriptor> preferences;
@@ -332,16 +341,20 @@ struct FrontendSnapshot {
   std::vector<InterfaceStateDescriptor> interfaceStates;
   SketchProjection sketchProjection;
   SketchInteractionSummary sketchInteraction;
+  std::shared_ptr<const render::SketchSceneSnapshot> sketchScene;
 };
 
 using FrontendSnapshotPtr = std::shared_ptr<const FrontendSnapshot>;
 
 class FrontendPort {
 public:
+  using ChangeHandler = std::function<void()>;
+
   virtual ~FrontendPort() = default;
   // Published generations are immutable and may be retained by asynchronous
   // UI consumers. Implementations return the same pointer until state changes.
   [[nodiscard]] virtual FrontendSnapshotPtr snapshot() const = 0;
+  virtual void setChangeHandler(ChangeHandler handler) = 0;
   virtual void selectWorkspace(const QString &workspaceId) = 0;
   virtual void selectEntity(const QString &entityId) = 0;
   virtual void requestCommand(const QString &commandId) = 0;
@@ -358,6 +371,8 @@ public:
   virtual bool submitParameterEdit(const ParameterEditRequest &request) = 0;
   virtual bool submitSourceEdit(const SourceEditRequest &request,
                                 SourceEditMode mode) = 0;
+  virtual bool undo() = 0;
+  virtual bool redo() = 0;
 };
 
 } // namespace kearne::ui

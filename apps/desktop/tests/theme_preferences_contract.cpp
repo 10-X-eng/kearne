@@ -240,6 +240,11 @@ void verifyViewportCamera() {
   const int shift = static_cast<int>(Qt::ShiftModifier);
   const int control = static_cast<int>(Qt::ControlModifier);
 
+  const QString initialState = camera.state();
+  require(camera.setView(QStringLiteral("isometric")) &&
+              camera.state() == initialState,
+          "initial camera disagrees with its declared home view");
+
   camera.setNavigationProfile(QStringLiteral("fusion"));
   camera.fit();
   require(camera.applyPointerDrag(middle, 0, 10, 5) && camera.panX() == 10,
@@ -266,6 +271,76 @@ void verifyViewportCamera() {
           "Onshape orbit mapping failed");
   require(!camera.applyPointerDrag(static_cast<int>(Qt::LeftButton), 0, 10, 5),
           "selection drag was consumed as navigation");
+
+  const struct {
+    const char *id;
+    qreal yaw;
+    qreal pitch;
+  } cubeViews[] = {
+      {"front", 0.0, 0.0},
+      {"back", 180.0, 0.0},
+      {"left", 90.0, 0.0},
+      {"right", -90.0, 0.0},
+      {"top", 0.0, -90.0},
+      {"bottom", 0.0, 90.0},
+      {"front-top", 0.0, -45.0},
+      {"front-left", 45.0, 0.0},
+      {"back-bottom", 180.0, -45.0},
+      {"top-right", -45.0, -90.0},
+      {"front-top-left", 35.264389682754654, -45.0},
+      {"back-bottom-right", -144.73561031724535, -45.0},
+  };
+  for (const auto &preset : cubeViews) {
+    require(camera.setView(QString::fromLatin1(preset.id)) &&
+                qFuzzyCompare(camera.yaw() + 181.0, preset.yaw + 181.0) &&
+                qFuzzyCompare(camera.pitch() + 91.0, preset.pitch + 91.0),
+            "navigation cube preset produced the wrong orientation");
+  }
+  constexpr qreal radiansPerDegree =
+      3.141592653589793238462643383279502884 / 180.0;
+  for (const int x : {-1, 1}) {
+    for (const int y : {-1, 1}) {
+      for (const int z : {-1, 1}) {
+        const QString id =
+            QString::fromLatin1(z > 0 ? "front" : "back") +
+            QLatin1Char('-') + QString::fromLatin1(y > 0 ? "top" : "bottom") +
+            QLatin1Char('-') + QString::fromLatin1(x < 0 ? "left" : "right");
+        require(camera.setView(id), "generated cube corner was rejected");
+        const qreal xRotation = -camera.pitch() * radiansPerDegree;
+        const qreal yaw = camera.yaw() * radiansPerDegree;
+        const qreal afterXy = y * std::cos(xRotation) -
+                             z * std::sin(xRotation);
+        const qreal afterXz = y * std::sin(xRotation) +
+                             z * std::cos(xRotation);
+        const qreal projectedX = x * std::cos(yaw) +
+                                 afterXz * std::sin(yaw);
+        const qreal depth = -x * std::sin(yaw) +
+                            afterXz * std::cos(yaw);
+        require(std::abs(projectedX) < 1.0e-12 &&
+                    std::abs(afterXy) < 1.0e-12 && depth > 0.0,
+                "cube corner did not face the viewport");
+      }
+    }
+  }
+  require(!camera.setView(QStringLiteral("not-a-view")),
+          "unknown navigation cube view was accepted");
+  camera.setView(QStringLiteral("front"));
+  camera.orbit(0.0, 10.0);
+  require(camera.pitch() < 0.0,
+          "downward pointer orbit moved the view upward");
+  camera.setView(QStringLiteral("front"));
+  camera.turn(15.0, -10.0);
+  require(camera.viewName() == QStringLiteral("custom") &&
+              qFuzzyCompare(camera.yaw(), 15.0) &&
+              qFuzzyCompare(camera.pitch(), -10.0),
+          "direct navigation turn did not preserve angular intent");
+  camera.setView(QStringLiteral("front"));
+  for (int step = 0; step < 12; ++step) {
+    const qreal previousPitch = camera.pitch();
+    camera.turn(0.0, 45.0);
+    require(camera.pitch() != previousPitch,
+            "vertical cube arrow stopped at a camera pole");
+  }
 
   QRandomGenerator random(0x56494557u);
   for (int operation = 0; operation < 10'000; ++operation) {
@@ -294,22 +369,27 @@ void verifyViewportCamera() {
     case 4:
       camera.applyWheel(static_cast<qreal>(random.bounded(2401u)) - 1200.0);
       break;
-    default:
-      require(camera.setView(
-                  QStringList{QStringLiteral("front"), QStringLiteral("back"),
-                              QStringLiteral("left"), QStringLiteral("right"),
-                              QStringLiteral("top"), QStringLiteral("bottom"),
-                              QStringLiteral("isometric")}
-                      .at(static_cast<qsizetype>(random.bounded(7u)))),
+    default: {
+      static const QStringList presets{
+          QStringLiteral("front"), QStringLiteral("back"),
+          QStringLiteral("left"), QStringLiteral("right"),
+          QStringLiteral("top"), QStringLiteral("bottom"),
+          QStringLiteral("isometric"), QStringLiteral("front-top"),
+          QStringLiteral("back-left"),
+          QStringLiteral("front-top-right"),
+          QStringLiteral("back-bottom-left")};
+      require(camera.setView(presets.at(static_cast<qsizetype>(
+                  random.bounded(static_cast<quint32>(presets.size()))))),
               "declared camera preset was rejected");
       break;
+    }
     }
     require(std::isfinite(camera.yaw()) && std::isfinite(camera.pitch()) &&
                 std::isfinite(camera.roll()) && std::isfinite(camera.panX()) &&
                 std::isfinite(camera.panY()) &&
                 std::isfinite(camera.distance()),
             "camera state became non-finite");
-    require(camera.pitch() >= -90.0 && camera.pitch() <= 90.0 &&
+    require(camera.pitch() > -180.0 && camera.pitch() <= 180.0 &&
                 std::abs(camera.panX()) <= 1'000'000.0 &&
                 std::abs(camera.panY()) <= 1'000'000.0 &&
                 camera.distance() >= 36.0 && camera.distance() <= 1600.0,

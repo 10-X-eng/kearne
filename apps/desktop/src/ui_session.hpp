@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frontend_contract.hpp"
+#include "sketch_gesture_preview.hpp"
 
 #include <QObject>
 #include <QString>
@@ -68,6 +69,10 @@ class UiSession : public QObject {
       QString gridSpacingLabel READ gridSpacingLabel NOTIFY projectionChanged)
   Q_PROPERTY(qreal gridSpacingMillimeters READ gridSpacingMillimeters NOTIFY
                  projectionChanged)
+  Q_PROPERTY(
+      QString sketchSolveStatus READ sketchSolveStatus NOTIFY projectionChanged)
+  Q_PROPERTY(int sketchDegreesOfFreedom READ sketchDegreesOfFreedom NOTIFY
+                 projectionChanged)
   Q_PROPERTY(QVariantList sketchPrimitives READ sketchPrimitives NOTIFY
                  projectionChanged)
   Q_PROPERTY(
@@ -84,8 +89,24 @@ class UiSession : public QObject {
       QString sketchInputPrompt READ sketchInputPrompt NOTIFY projectionChanged)
   Q_PROPERTY(
       bool backendConnected READ backendConnected NOTIFY projectionChanged)
+  Q_PROPERTY(bool projectPersistenceAvailable READ projectPersistenceAvailable
+                 NOTIFY projectionChanged)
   Q_PROPERTY(bool sourceEditingAvailable READ sourceEditingAvailable NOTIFY
                  projectionChanged)
+  Q_PROPERTY(bool canUndo READ canUndo NOTIFY projectionChanged)
+  Q_PROPERTY(bool canRedo READ canRedo NOTIFY projectionChanged)
+  Q_PROPERTY(bool sketchDragPreviewVisible READ sketchDragPreviewVisible NOTIFY
+                 sketchDragPreviewChanged)
+  Q_PROPERTY(bool sketchDragPreviewConstruction READ
+                 sketchDragPreviewConstruction NOTIFY sketchDragPreviewChanged)
+  Q_PROPERTY(QPointF sketchDragPreviewFirst READ sketchDragPreviewFirst NOTIFY
+                 sketchDragPreviewChanged)
+  Q_PROPERTY(QPointF sketchDragPreviewSecond READ sketchDragPreviewSecond NOTIFY
+                 sketchDragPreviewChanged)
+  Q_PROPERTY(QPointF sketchDragPreviewThird READ sketchDragPreviewThird NOTIFY
+                 sketchDragPreviewChanged)
+  Q_PROPERTY(QPointF sketchDragPreviewFourth READ sketchDragPreviewFourth NOTIFY
+                 sketchDragPreviewChanged)
   Q_PROPERTY(QVariantList lengthUnits READ lengthUnits NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList preferenceCategories READ preferenceCategories NOTIFY
                  projectionChanged)
@@ -116,6 +137,7 @@ class UiSession : public QObject {
 public:
   explicit UiSession(std::unique_ptr<FrontendPort> port,
                      QObject *parent = nullptr);
+  ~UiSession() override;
 
   [[nodiscard]] qulonglong generation() const;
   [[nodiscard]] QString projectName() const;
@@ -147,6 +169,8 @@ public:
   [[nodiscard]] QString gridPlaneLabel() const;
   [[nodiscard]] QString gridSpacingLabel() const;
   [[nodiscard]] qreal gridSpacingMillimeters() const;
+  [[nodiscard]] QString sketchSolveStatus() const;
+  [[nodiscard]] int sketchDegreesOfFreedom() const;
   [[nodiscard]] QVariantList sketchPrimitives() const;
   [[nodiscard]] QString sketchInputKind() const;
   [[nodiscard]] QString sketchSelectionKind() const;
@@ -155,7 +179,16 @@ public:
   [[nodiscard]] int sketchInputCount() const;
   [[nodiscard]] QString sketchInputPrompt() const;
   [[nodiscard]] bool backendConnected() const;
+  [[nodiscard]] bool projectPersistenceAvailable() const;
   [[nodiscard]] bool sourceEditingAvailable() const;
+  [[nodiscard]] bool canUndo() const;
+  [[nodiscard]] bool canRedo() const;
+  [[nodiscard]] bool sketchDragPreviewVisible() const;
+  [[nodiscard]] bool sketchDragPreviewConstruction() const;
+  [[nodiscard]] QPointF sketchDragPreviewFirst() const;
+  [[nodiscard]] QPointF sketchDragPreviewSecond() const;
+  [[nodiscard]] QPointF sketchDragPreviewThird() const;
+  [[nodiscard]] QPointF sketchDragPreviewFourth() const;
   [[nodiscard]] QVariantList lengthUnits() const;
   [[nodiscard]] QVariantList preferenceCategories() const;
   [[nodiscard]] QVariantList preferences() const;
@@ -175,6 +208,8 @@ public:
   [[nodiscard]] QVariantList recoveryItems() const;
   [[nodiscard]] QVariantList operations() const;
   [[nodiscard]] QVariantList interfaceStates() const;
+  [[nodiscard]] std::shared_ptr<const render::SketchSceneSnapshot>
+  sketchScene() const;
 
   Q_INVOKABLE void navigateTo(const QString &surfaceId);
   Q_INVOKABLE void selectSettingsCategory(const QString &categoryId);
@@ -189,6 +224,17 @@ public:
   Q_INVOKABLE void editField(const QString &fieldId, const QVariant &value);
   Q_INVOKABLE bool submitActiveCommand(bool preview);
   Q_INVOKABLE bool submitSketchPoint(qreal xMillimeters, qreal yMillimeters);
+  Q_INVOKABLE bool submitSketchDrag(qreal firstXMillimeters,
+                                    qreal firstYMillimeters,
+                                    qreal oppositeXMillimeters,
+                                    qreal oppositeYMillimeters);
+  Q_INVOKABLE bool previewSketchDrag(qreal firstXMillimeters,
+                                     qreal firstYMillimeters,
+                                     qreal oppositeXMillimeters,
+                                     qreal oppositeYMillimeters);
+  Q_INVOKABLE QString
+  formatProjectLength(qreal lengthMillimeters) const;
+  Q_INVOKABLE void clearSketchDragPreview();
   Q_INVOKABLE bool submitSketchEntity(const QString &entityId,
                                       const QString &subElementKey);
   Q_INVOKABLE void cancelActiveCommand();
@@ -197,9 +243,12 @@ public:
   Q_INVOKABLE bool submitSourceEdit(const QString &source,
                                     const QString &expectedRevision,
                                     bool preview);
+  Q_INVOKABLE bool undo();
+  Q_INVOKABLE bool redo();
 
 signals:
   void projectionChanged();
+  void sketchDragPreviewChanged();
   void commandRequested(const QString &commandId, qulonglong generation);
   void preferenceChanged(const QString &preferenceId, const QVariant &value);
 
@@ -213,6 +262,7 @@ private:
 
   std::unique_ptr<FrontendPort> port_;
   FrontendSnapshotPtr snapshot_;
+  SketchGesturePreview gesturePreview_;
   QString activeSurfaceId_ = QStringLiteral("editor");
   QString settingsCategoryId_ = QStringLiteral("appearance");
   int inspectorPage_ = 0;

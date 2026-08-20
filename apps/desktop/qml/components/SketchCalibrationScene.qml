@@ -116,6 +116,15 @@ Item {
         return true
     }
 
+    function handleDrag(firstX, firstY, oppositeX, oppositeY) {
+        if (App.ui.sketchInputKind !== "plane-point")
+            return false
+        const first = planePoint(firstX, firstY)
+        const opposite = planePoint(oppositeX, oppositeY)
+        return App.ui.submitSketchDrag(first[0], first[1],
+                                       opposite[0], opposite[1])
+    }
+
     Canvas {
         id: sketch
         anchors.fill: parent
@@ -166,12 +175,79 @@ Item {
             context.setLineDash([])
         }
 
+        function drawGesturePreview(context) {
+            if (!App.ui.sketchDragPreviewVisible)
+                return
+            const canonical = [App.ui.sketchDragPreviewFirst,
+                               App.ui.sketchDragPreviewSecond,
+                               App.ui.sketchDragPreviewThird,
+                               App.ui.sketchDragPreviewFourth]
+            const points = canonical
+                           .map(point => root.screenPoint(point))
+            context.setLineDash(App.ui.sketchDragPreviewConstruction
+                                ? [7, 5] : [])
+            context.strokeStyle = Theme.accentHover
+            context.lineWidth = 2.4
+            context.beginPath()
+            context.moveTo(points[0][0], points[0][1])
+            for (let index = 1; index < points.length; ++index)
+                context.lineTo(points[index][0], points[index][1])
+            context.closePath()
+            context.stroke()
+            context.setLineDash([])
+
+            const center = [(points[0][0] + points[2][0]) / 2,
+                            (points[0][1] + points[2][1]) / 2]
+            drawDimensionLabel(
+                        context,
+                        App.ui.formatProjectLength(
+                            Math.abs(canonical[1].x - canonical[0].x)),
+                        points[0], points[1], center)
+            drawDimensionLabel(
+                        context,
+                        App.ui.formatProjectLength(
+                            Math.abs(canonical[2].y - canonical[1].y)),
+                        points[1], points[2], center)
+        }
+
+        function drawDimensionLabel(context, label, start, end, center) {
+            const midpointX = (start[0] + end[0]) / 2
+            const midpointY = (start[1] + end[1]) / 2
+            let outwardX = midpointX - center[0]
+            let outwardY = midpointY - center[1]
+            const magnitude = Math.hypot(outwardX, outwardY)
+            if (magnitude > 0.001) {
+                outwardX /= magnitude
+                outwardY /= magnitude
+            }
+            const labelX = midpointX + outwardX * 18
+            const labelY = midpointY + outwardY * 18
+            context.font = Theme.fontWeightStrong + " " + Theme.fontSmall
+                           + "px sans-serif"
+            const labelWidth = context.measureText(label).width + 14
+            const labelHeight = 22
+            context.fillStyle = Theme.surface
+            context.strokeStyle = Theme.borderStrong
+            context.lineWidth = 1
+            context.fillRect(labelX - labelWidth / 2,
+                             labelY - labelHeight / 2,
+                             labelWidth, labelHeight)
+            context.strokeRect(labelX - labelWidth / 2,
+                               labelY - labelHeight / 2,
+                               labelWidth, labelHeight)
+            context.fillStyle = Theme.text
+            context.textAlign = "center"
+            context.textBaseline = "middle"
+            context.fillText(label, labelX, labelY)
+        }
+
         onPaint: {
             const context = getContext("2d")
             context.reset()
             context.clearRect(0, 0, width, height)
             for (const primitive of App.ui.sketchPrimitives)
                 drawPrimitive(context, primitive)
+            drawGesturePreview(context)
 
             if (root.cursorVisible && App.ui.sketchInputKind === "plane-point") {
                 const point = root.planePoint(root.cursorX, root.cursorY)
@@ -202,6 +278,11 @@ Item {
             function onProjectionChanged() { sketch.requestPaint() }
         }
 
+        Connections {
+            target: App.ui
+            function onSketchDragPreviewChanged() { sketch.requestPaint() }
+        }
+
         onWidthChanged: requestPaint()
         onHeightChanged: requestPaint()
     }
@@ -211,10 +292,17 @@ Item {
         anchors.top: parent.top
         anchors.leftMargin: Theme.space4
         anchors.topMargin: 84
-        label: App.ui.sketchInputKind === "none"
+        semanticId: "sketch.solve.state"
+        semanticName: "Sketch solve state"
+        semanticValue: App.ui.sketchSolveStatus + ":"
+                       + App.ui.sketchDegreesOfFreedom
+        label: App.ui.sketchDegreesOfFreedom < 0
                ? "DOF NOT EVALUATED"
-               : App.ui.sketchInputCount + " / "
-                 + App.ui.sketchMinimumInputCount + " INPUTS"
-        status: App.ui.sketchInputKind === "none" ? "unavailable" : "preview"
+               : App.ui.sketchSolveStatus.toUpperCase() + " · "
+                 + App.ui.sketchDegreesOfFreedom + " DOF"
+        status: App.ui.sketchSolveStatus === "solved" ? "current"
+                : (App.ui.sketchSolveStatus === "underconstrained" ? "preview"
+                   : (App.ui.sketchDegreesOfFreedom < 0 ? "unavailable"
+                      : "failed"))
     }
 }

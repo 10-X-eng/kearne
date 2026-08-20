@@ -7,6 +7,8 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 class QQuickWindow;
 
 namespace kearne::ui {
@@ -22,7 +24,9 @@ class ObservationController final : public QObject {
 public:
   ObservationController(QQuickWindow &window, UiSession &session,
                         ThemeManager &themes, QString outputDirectory,
-                        QList<QJsonObject> operations, QObject *parent);
+                        QList<QJsonObject> operations,
+                        std::function<bool()> presentationCurrent,
+                        QObject *parent);
 
 private:
   void performNextOperation();
@@ -35,6 +39,7 @@ private:
   QList<QJsonObject> pendingOperations_;
   QList<QJsonObject> actionReceipts_;
   QString sessionId_;
+  std::function<bool()> presentationCurrent_;
   int presentedFrames_ = 0;
   int settledFrames_ = 0;
   QByteArray lastFrameFingerprint_;

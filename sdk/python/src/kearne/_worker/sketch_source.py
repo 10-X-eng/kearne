@@ -7,8 +7,6 @@ from importlib import import_module
 from types import ModuleType
 from typing import cast
 
-from build123d import Plane
-
 from kearne._sketch_schema import HELPERS
 from kearne._wire import (
     WireMessage as _WireMessage,
@@ -29,9 +27,13 @@ from kearne._wire import (
 from kearne._wire import (
     set_scalar as _set_scalar,
 )
-from kearne.sketch import Constraint, Entity, SketchPlane
-from kearne.sketch_source import emit_call
-from kearne.sketch_wire import SketchWireError, definition_from_wire
+from kearne.sketch_source import emit_call, values_from_source
+from kearne.sketch_values import Constraint, Entity
+from kearne.sketch_wire import (
+    SketchWireError,
+    definition_values_from_wire,
+    definition_values_to_wire,
+)
 from kearne.source import (
     MAXIMUM_SOURCE_EDIT_BATCH,
     AppendCall,
@@ -46,7 +48,6 @@ from kearne.source import (
 
 MAXIMUM_SOURCE_BYTES = 65_536
 MAXIMUM_TRANSFORM_BYTES = 131_328
-_PLANE = SketchPlane("00000000-0000-7000-8000-000000000000", Plane.XY)
 
 
 def _wire_module() -> ModuleType:
@@ -151,15 +152,20 @@ def {name}(plane: SketchPlane) -> Sketch:
 
 def _target_values(
     target: _WireMessage,
-) -> tuple[dict[str, tuple[str, Entity | Constraint]], str]:
-    decoded = definition_from_wire(target, _PLANE)
+) -> tuple[
+    dict[str, tuple[str, Entity | Constraint]],
+    str,
+    tuple[Entity, ...],
+    tuple[Constraint, ...],
+]:
+    decoded = definition_values_from_wire(target)
     values: dict[str, tuple[str, Entity | Constraint]] = {
-        value.id: ("entities", value) for value in decoded.definition.entities
+        value.id: ("entities", value) for value in decoded.entities
     }
     values.update(
-        (value.id, ("constraints", value)) for value in decoded.definition.constraints
+        (value.id, ("constraints", value)) for value in decoded.constraints
     )
-    return values, decoded.source_digest
+    return values, decoded.source_digest, decoded.entities, decoded.constraints
 
 
 def _source_edit(
@@ -197,7 +203,9 @@ def _source_edit(
     raise SourceError("worker.invalid-enum", "source edit action is unsupported")
 
 
-def _edit(message: _WireMessage) -> tuple[str, str]:
+def _edit(
+    message: _WireMessage,
+) -> tuple[str, str, tuple[Entity, ...], tuple[Constraint, ...]]:
     required = ("source_utf8", "function_name", "expected_prior", "target")
     if not all(message.HasField(field) for field in required):
         raise SourceError("worker.required-field", "source edit batch is incomplete")
@@ -212,7 +220,9 @@ def _edit(message: _WireMessage) -> tuple[str, str]:
     expected = _digest(_child(message, "expected_prior"))
     if source_digest(source) != expected:
         raise SourceError("source.edit.stale", "source changed after it was observed")
-    target, target_digest = _target_values(_child(message, "target"))
+    target, target_digest, entities, constraints = _target_values(
+        _child(message, "target")
+    )
     if target_digest != expected:
         raise SourceError(
             "source.edit.target-stale", "target was derived from another source"
@@ -265,7 +275,26 @@ def _edit(message: _WireMessage) -> tuple[str, str]:
             )
     if len(updated.source.encode()) > MAXIMUM_SOURCE_BYTES:
         raise SourceError("source.sketch.byte-limit", "Sketch source is too large")
-    return updated.source, updated.source_digest
+    return updated.source, updated.source_digest, entities, constraints
+
+
+def _replace(
+    message: _WireMessage,
+) -> tuple[str, str, tuple[Entity, ...], tuple[Constraint, ...]]:
+    required = ("source_utf8", "function_name", "expected_prior")
+    if not all(message.HasField(field) for field in required):
+        raise SourceError("worker.required-field", "source replacement is incomplete")
+    raw = cast(bytes, _scalar(message, "source_utf8"))
+    if not raw or len(raw) > MAXIMUM_SOURCE_BYTES:
+        raise SourceError("source.sketch.byte-limit", "Sketch source is too large")
+    try:
+        source = raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SourceError("source.python.encoding", "source is not UTF-8") from error
+    function = _function_name(_scalar(message, "function_name"))
+    _digest(_child(message, "expected_prior"))
+    digest, entities, constraints = values_from_source(source, function)
+    return source, digest, entities, constraints
 
 
 def _failure(code: str) -> _WireMessage:
@@ -297,14 +326,23 @@ def process_transform(job: _WireMessage) -> _WireMessage:
                 raise SourceError("worker.required-field", "create job is incomplete")
             source = create_sketch_source(cast(str, _scalar(create, "function_name")))
             digest = source_digest(source)
+            entities: tuple[Entity, ...] = ()
+            constraints: tuple[Constraint, ...] = ()
         elif operation == "edit":
-            source, digest = _edit(_child(job, "edit"))
+            source, digest, entities, constraints = _edit(_child(job, "edit"))
+        elif operation == "replace":
+            source, digest, entities, constraints = _replace(
+                _child(job, "replace")
+            )
         else:
             raise SourceError("worker.required-oneof", "worker operation is missing")
         result = _message_type("SketchSourceTransformResult")()
         success = _child(result, "success")
         _set_scalar(success, "source_utf8", source.encode())
         _write_digest(_child(success, "source_digest"), digest)
+        _child(success, "definition").CopyFrom(
+            definition_values_to_wire(entities, constraints, digest)
+        )
         return result
     except (SketchWireError, SourceError) as error:
         return _failure(error.code)
