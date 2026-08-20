@@ -98,6 +98,39 @@ awaitRectangle(ui::LocalSketchSession &session,
   return std::move(*completion);
 }
 
+Result<ui::LocalSketchProjection>
+awaitConstructionToggle(ui::LocalSketchSession &session, QString entityId) {
+  std::optional<Result<ui::LocalSketchProjection>> completion;
+  QEventLoop loop;
+  require(
+      session.toggleConstruction({std::move(entityId)},
+                                 [&](Result<ui::LocalSketchProjection> result) {
+                                   completion = std::move(result);
+                                   loop.quit();
+                                 }),
+      "construction toggle was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "construction toggle did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalSketchProjection>
+awaitCurveDrag(ui::LocalSketchSession &session, ui::LocalSketchCurveDrag drag) {
+  std::optional<Result<ui::LocalSketchProjection>> completion;
+  QEventLoop loop;
+  require(session.dragCurve(std::move(drag),
+                            [&](Result<ui::LocalSketchProjection> result) {
+                              completion = std::move(result);
+                              loop.quit();
+                            }),
+          "curve drag was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "curve drag did not complete");
+  return std::move(*completion);
+}
+
 Result<ui::LocalSketchProjection> awaitSource(ui::LocalSketchSession &session,
                                               const QString &expected,
                                               QString source) {
@@ -165,10 +198,11 @@ void verifyEndToEnd() {
   dispatch.start();
   std::optional<Result<ui::LocalSketchProjection>> createdCompletion;
   QEventLoop loop;
-  require(session.create({}, [&](Result<ui::LocalSketchProjection> result) {
-    createdCompletion = std::move(result);
-    loop.quit();
-  }),
+  require(session.create({},
+                         [&](Result<ui::LocalSketchProjection> result) {
+                           createdCompletion = std::move(result);
+                           loop.quit();
+                         }),
           "Sketch creation was not accepted");
   require(dispatch.elapsed() < 25,
           "Sketch creation blocked the caller instead of dispatching");
@@ -247,14 +281,51 @@ void verifyEndToEnd() {
           "completed operations remained pending");
 }
 
+void verifyInteractiveEdits() {
+  ui::LocalSketchSession session{config()};
+  require(awaitCreate(session).has_value(),
+          "interactive edit fixture Sketch was not created");
+  auto rectangle = awaitRectangle(session, {-0.04, -0.025, 0.04, 0.025, false});
+  require(rectangle && rectangle->scene &&
+              rectangle->scene->primitives().size() == 4U &&
+              rectangle->profileCount == 1U,
+          "interactive edit fixture rectangle was not created");
+  const auto &edge = rectangle->scene->primitives().front();
+  const QString entityId = QString::fromStdString(edge.entity.toString());
+
+  auto construction = awaitConstructionToggle(session, entityId);
+  require(construction && construction->scene,
+          "construction toggle did not publish a scene");
+  const auto *constructionEdge =
+      construction->scene->findPrimitive(edge.entity);
+  require(constructionEdge &&
+              constructionEdge->style < construction->scene->styles().size() &&
+              construction->scene->styles()[constructionEdge->style].role ==
+                  render::SketchStyleRole::Construction &&
+              construction->profileCount == 0U,
+          "construction toggle did not change the canonical render style");
+  auto regular = awaitConstructionToggle(session, entityId);
+  require(regular && regular->scene && regular->source == rectangle->source &&
+              regular->profileCount == 1U,
+          "second construction toggle did not restore normal geometry");
+
+  auto resized = awaitCurveDrag(session, {entityId, 0.0, -0.025, 0.0, -0.04});
+  require(resized && resized->scene && resized->source != regular->source &&
+              resized->degreesOfFreedom == 4,
+          "edge drag did not update canonical source and preserve constraints");
+  requireSceneBounds(*resized->scene, -0.04, -0.04, 0.04, 0.025,
+                     "edge drag did not resize the expected rectangle edge");
+}
+
 void verifyBoundedDispatch() {
   ui::LocalSketchSession session{config(1U)};
   std::optional<Result<ui::LocalSketchProjection>> completion;
   QEventLoop loop;
-  require(session.create({}, [&](Result<ui::LocalSketchProjection> result) {
-    completion = std::move(result);
-    loop.quit();
-  }),
+  require(session.create({},
+                         [&](Result<ui::LocalSketchProjection> result) {
+                           completion = std::move(result);
+                           loop.quit();
+                         }),
           "bounded session rejected its first operation");
   require(!session.create({}, [](Result<ui::LocalSketchProjection>) {}),
           "bounded session accepted work beyond its queue capacity");
@@ -320,26 +391,9 @@ void verifyProductionFrontendProjection() {
   port->requestCommand(QStringLiteral("model.sketch.create"));
   port->selectEntity(QStringLiteral("reference.plane.xz"));
   const auto selectedPlaneDraft = port->snapshot();
-  const auto attachment = std::ranges::find_if(
-      selectedPlaneDraft->fields, [](const ui::FieldDescriptor &field) {
-        return field.id ==
-               QStringLiteral("model.sketch.create.attachment");
-      });
-  require(attachment != selectedPlaneDraft->fields.end() &&
-              std::get<QString>(attachment->value) ==
-                  QStringLiteral("reference.plane.xz"),
-          "canvas datum selection did not update the New Sketch attachment");
-  ui::CommandDraftRequest createRequest{
-      selectedPlaneDraft->activeCommandId,
-      selectedPlaneDraft->commandDraft.baseRevision,
-      {}};
-  for (const ui::FieldDescriptor &field : selectedPlaneDraft->fields)
-    createRequest.fields.push_back({field.id, field.value});
-  require(port->submitCommandDraft(createRequest, ui::CommandDraftMode::Apply),
-          "production frontend rejected New Sketch");
-  require(port->snapshot()->commandDraft.state ==
+  require(selectedPlaneDraft->commandDraft.state ==
               ui::CommandDraftState::Pending,
-          "production frontend did not publish pending New Sketch state");
+          "canvas plane selection did not immediately queue New Sketch");
   auto created = awaitSnapshot(
       *port,
       [](const ui::FrontendSnapshot &value) {
@@ -413,13 +467,20 @@ void verifyProductionFrontendProjection() {
                value.sketchScene->primitives().size() == 4U;
       },
       "rectangle did not complete through the production frontend");
-  require(rectangle->sketchScene &&
-              rectangle->sketchScene->primitives().size() == 4U &&
-              rectangle->projectRevision != base &&
-              rectangle->modelSource.contains(QStringLiteral("coincident(")) &&
-              rectangle->commandDraft.state == ui::CommandDraftState::Editing &&
-              rectangle->sketchInteraction.inputCount == 0,
-          "rectangle source, solve, scene, and continued tool state diverged");
+  require(
+      rectangle->sketchScene &&
+          rectangle->sketchScene->primitives().size() == 4U &&
+          rectangle->projectRevision != base &&
+          rectangle->modelSource.contains(QStringLiteral("coincident(")) &&
+          rectangle->activeCommandId.isEmpty() &&
+          rectangle->commandDraft.state == ui::CommandDraftState::None &&
+          rectangle->sketchInteraction.inputKind == ui::SketchInputKind::None &&
+          std::ranges::any_of(
+              rectangle->structure,
+              [](const ui::StructureItem &item) {
+                return item.id == QStringLiteral("output.sketch.profile.1");
+              }),
+      "rectangle source, solve, scene, structure, and Select state diverged");
 
   QString editedSource = rectangle->modelSource;
   require(editedSource.contains(QStringLiteral("m(0.04)")),
@@ -481,6 +542,7 @@ void verifyProductionFrontendProjection() {
 int main(int argc, char **argv) {
   QCoreApplication application{argc, argv};
   verifyEndToEnd();
+  verifyInteractiveEdits();
   verifyBoundedDispatch();
   verifyRejectedEditPreservesHead();
   verifyPreparationFailureIsAsynchronous();

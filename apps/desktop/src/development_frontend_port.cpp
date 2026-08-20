@@ -1104,16 +1104,53 @@ public:
     else if (entityId == basePlateFunction_.id)
       snapshot_.selectedFunction = basePlateFunction_;
     snapshot_.selectionSummary = entityId;
+    snapshot_.selectedSketchEntityId.clear();
     if (!snapshot_.activeCommandId.isEmpty()) {
       const auto reference = std::ranges::find_if(
           snapshot_.fields, [](const FieldDescriptor &field) {
             return field.kind == FieldKind::Reference && !field.readOnly;
           });
-      if (reference != snapshot_.fields.end())
+      if (reference != snapshot_.fields.end()) {
         reference->value = entityId;
+        if (localMode_ && snapshot_.activeCommandId ==
+                              QStringLiteral("model.sketch.create")) {
+          snapshot_.commandDraft.state = CommandDraftState::Editing;
+          snapshot_.inspectorStatus =
+              QStringLiteral("Creating a Sketch on the selected reference");
+          ++snapshot_.generation;
+          static_cast<void>(submitLocalSketchCreation());
+          return;
+        }
+      }
       snapshot_.commandDraft.state = CommandDraftState::Editing;
       snapshot_.inspectorStatus =
           QStringLiteral("Selection added to the active command draft");
+      ++snapshot_.generation;
+      return;
+    }
+    if (localMode_ && snapshot_.activeWorkspaceId == QStringLiteral("sketch") &&
+        SketchEntityId::parse(entityId.toStdString())) {
+      snapshot_.selectedSketchEntityId = entityId;
+      snapshot_.selectionSummary = QStringLiteral("Sketch edge selected");
+      snapshot_.inspectorTitle = QStringLiteral("Sketch geometry");
+      snapshot_.inspectorStatus =
+          QStringLiteral("Drag to resize · X toggles construction");
+      snapshot_.fields = {
+          {QStringLiteral("selection.identity"),
+           QStringLiteral("Identity"),
+           FieldKind::Text,
+           entityId,
+           {},
+           {},
+           true},
+          {QStringLiteral("selection.revision"),
+           QStringLiteral("Revision"),
+           FieldKind::Text,
+           snapshot_.projectRevision,
+           {},
+           {},
+           true},
+      };
       ++snapshot_.generation;
       return;
     }
@@ -1371,6 +1408,51 @@ public:
             snapshot_.sketchInteraction.maximumInputCount)
       return submitLocalRectangle();
     return true;
+  }
+
+  bool toggleSketchConstruction() override {
+    if (!localMode_ || !localSketchSession_ ||
+        snapshot_.activeWorkspaceId != QStringLiteral("sketch") ||
+        snapshot_.selectedSketchEntityId.isEmpty() ||
+        localSketchSession_->pendingOperationCount() != 0U)
+      return false;
+    localEditEntity_ = snapshot_.selectedSketchEntityId;
+    const bool queued = localSketchSession_->toggleConstruction(
+        {localEditEntity_}, [this](Result<LocalSketchProjection> result) {
+          completeLocalOperation(QStringLiteral("sketch.construction.toggle"),
+                                 std::move(result));
+        });
+    if (queued)
+      setLocalOperationPending();
+    snapshot_.inspectorStatus =
+        queued ? QStringLiteral("Updating construction geometry")
+               : QStringLiteral("Sketch engineering queue is full");
+    ++snapshot_.generation;
+    return queued;
+  }
+
+  bool dragSketchCurve(const QString &entityId, PlanePoint first,
+                       PlanePoint current) override {
+    if (!localMode_ || !localSketchSession_ ||
+        snapshot_.activeWorkspaceId != QStringLiteral("sketch") ||
+        !snapshot_.activeCommandId.isEmpty() || entityId.isEmpty() ||
+        localSketchSession_->pendingOperationCount() != 0U)
+      return false;
+    localEditEntity_ = entityId;
+    const bool queued = localSketchSession_->dragCurve(
+        {entityId, first.xMetres, first.yMetres, current.xMetres,
+         current.yMetres},
+        [this](Result<LocalSketchProjection> result) {
+          completeLocalOperation(QStringLiteral("sketch.curve.drag"),
+                                 std::move(result));
+        });
+    if (queued)
+      setLocalOperationPending();
+    snapshot_.inspectorStatus =
+        queued ? QStringLiteral("Resizing Sketch geometry")
+               : QStringLiteral("Sketch engineering queue is full");
+    ++snapshot_.generation;
+    return queued;
   }
 
   bool submitCommandDraft(const CommandDraftRequest &request,
@@ -1679,8 +1761,7 @@ private:
       return false;
     const auto attachment = std::ranges::find_if(
         snapshot_.fields, [](const FieldDescriptor &field) {
-          return field.id ==
-                 QStringLiteral("model.sketch.create.attachment");
+          return field.id == QStringLiteral("model.sketch.create.attachment");
         });
     const auto plane =
         attachment == snapshot_.fields.end() ||
@@ -1695,8 +1776,7 @@ private:
       return false;
     }
     const bool queued = localSketchSession_->create(
-        {*plane},
-        [this](Result<LocalSketchProjection> result) {
+        {*plane}, [this](Result<LocalSketchProjection> result) {
           completeLocalOperation(QStringLiteral("model.sketch.create"),
                                  std::move(result));
         });
@@ -1863,11 +1943,14 @@ private:
          QStringLiteral("plane")},
         {QStringLiteral("reference.plane.yz"), QStringLiteral("YZ Plane"), 3,
          QStringLiteral("plane")},
-        {localSketchFunction_.id, QStringLiteral("sketch()"), 2,
+        {localSketchFunction_.id, QStringLiteral("Sketch 1"), 2,
          QStringLiteral("model-function")},
-        {QStringLiteral("output.sketch.profile"), QStringLiteral("profile"), 3,
-         QStringLiteral("sketch")},
     };
+    for (std::size_t index = 0; index < projection.profileCount; ++index)
+      snapshot_.structure.push_back(
+          {QStringLiteral("output.sketch.profile.%1").arg(index + 1U),
+           QStringLiteral("Profile %1").arg(index + 1U), 3,
+           QStringLiteral("sketch-profile")});
     if (!commandId.startsWith(QStringLiteral("version."))) {
       snapshot_.revisions.insert(
           snapshot_.revisions.begin(),
@@ -1876,6 +1959,10 @@ private:
                ? QStringLiteral("Create Sketch")
            : commandId == QStringLiteral("sketch.rectangle")
                ? QStringLiteral("Rectangle")
+           : commandId == QStringLiteral("sketch.curve.drag")
+               ? QStringLiteral("Resize Sketch geometry")
+           : commandId == QStringLiteral("sketch.construction.toggle")
+               ? QStringLiteral("Toggle construction geometry")
                : QStringLiteral("Source edit"),
            QStringLiteral("%1 · %2 DOF")
                .arg(projection.solveStatus)
@@ -1948,14 +2035,26 @@ private:
     } else if (commandId == QStringLiteral("sketch.rectangle")) {
       sketchInputs_.clear();
       snapshot_.sketchProjection.primitives.clear();
-      snapshot_.sketchInteraction.expectedRevision = snapshot_.projectRevision;
-      snapshot_.sketchInteraction.inputCount = 0;
-      snapshot_.commandDraft.baseRevision = snapshot_.projectRevision;
-      snapshot_.commandDraft.state = CommandDraftState::Editing;
-      snapshot_.commandDraft.previewSupported = false;
-      snapshot_.commandDraft.applySupported = false;
+      snapshot_.activeCommandId.clear();
+      snapshot_.fields.clear();
+      snapshot_.commandDraft = {};
+      clearSketchInteraction();
+      snapshot_.inspectorTitle = QStringLiteral("Sketch");
       snapshot_.inspectorStatus =
-          QStringLiteral("Rectangle created · choose the next first corner");
+          QStringLiteral("Rectangle created · Select active");
+    } else if (commandId == QStringLiteral("sketch.curve.drag") ||
+               commandId == QStringLiteral("sketch.construction.toggle")) {
+      snapshot_.activeCommandId.clear();
+      snapshot_.fields.clear();
+      snapshot_.commandDraft = {};
+      clearSketchInteraction();
+      snapshot_.selectedSketchEntityId = localEditEntity_;
+      snapshot_.selectionSummary = QStringLiteral("Sketch edge selected");
+      snapshot_.inspectorTitle = QStringLiteral("Sketch geometry");
+      snapshot_.inspectorStatus =
+          commandId == QStringLiteral("sketch.curve.drag")
+              ? QStringLiteral("Geometry resized · Select active")
+              : QStringLiteral("Construction state changed · Select active");
     } else if (commandId == QStringLiteral("source.replace")) {
       snapshot_.activeCommandId.clear();
       snapshot_.fields.clear();
@@ -2327,6 +2426,7 @@ private:
   LocalBackendState localBackendState_ = LocalBackendState::Starting;
   bool historyCanUndo_ = false;
   bool historyCanRedo_ = false;
+  QString localEditEntity_;
   std::unique_ptr<LocalSketchSession> localSketchSession_;
   ChangeHandler changeHandler_;
 };

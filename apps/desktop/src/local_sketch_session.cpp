@@ -21,7 +21,6 @@
 #include <chrono>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -131,6 +130,7 @@ frontendProjection(const sketch_workflow::SketchState &state,
       plane,
       solveStatus(state.evaluation->solve.status),
       static_cast<int>(state.evaluation->solve.degreesOfFreedom),
+      sketch::closedProfileCount(state.definition),
       state.evaluation->replacementScene,
   };
 }
@@ -289,6 +289,54 @@ struct Backend final {
   }
 
   Result<LocalSketchProjection>
+  toggleConstruction(const LocalSketchConstructionToggle &toggle) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before editing its geometry"));
+    auto id = SketchEntityId::parse(toggle.entityId.toStdString());
+    if (!id)
+      return std::unexpected(std::move(id.error()));
+    auto edited = sketch::toggleConstruction(state->definition, *id);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSketchProjection> dragCurve(const LocalSketchCurveDrag &drag) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before editing its geometry"));
+    if (!std::isfinite(drag.firstXMetres) ||
+        !std::isfinite(drag.firstYMetres) ||
+        !std::isfinite(drag.currentXMetres) ||
+        !std::isfinite(drag.currentYMetres))
+      return std::unexpected(diagnostic("desktop.sketch.drag-non-finite",
+                                        "Sketch drag coordinates are invalid"));
+    auto id = SketchEntityId::parse(drag.entityId.toStdString());
+    if (!id)
+      return std::unexpected(std::move(id.error()));
+    auto firstX = length(drag.firstXMetres);
+    auto firstY = length(drag.firstYMetres);
+    auto currentX = length(drag.currentXMetres);
+    auto currentY = length(drag.currentYMetres);
+    if (!firstX)
+      return std::unexpected(std::move(firstX.error()));
+    if (!firstY)
+      return std::unexpected(std::move(firstY.error()));
+    if (!currentX)
+      return std::unexpected(std::move(currentX.error()));
+    if (!currentY)
+      return std::unexpected(std::move(currentY.error()));
+    auto edited = sketch::dragCurve(
+        state->definition, {*id, {*firstX, *firstY}, {*currentX, *currentY}});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSketchProjection>
   replaceSource(const LocalSourceReplacement &replacement) {
     if (!state)
       return std::unexpected(
@@ -364,6 +412,21 @@ struct Backend final {
   void shutdown() { sourceEditor.stop(); }
 
 private:
+  Result<LocalSketchProjection> applyEdits(sketch::AppliedEdits edits) {
+    auto operation = nextOperation();
+    if (!operation)
+      return std::unexpected(std::move(operation.error()));
+    auto identity = nextEvaluation(operation->sourceJob);
+    if (!identity)
+      return std::unexpected(std::move(identity.error()));
+    auto edited =
+        workflow.applyEdits(*state, *operation, std::move(edits), *identity);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    publishState(std::move(*edited));
+    return projection();
+  }
+
   void publishState(sketch_workflow::SketchState next) {
     auto published =
         std::make_shared<const sketch_workflow::SketchState>(std::move(next));
@@ -504,6 +567,19 @@ public:
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
     return backend_->applyRectangle(gesture);
+  }
+
+  Result<LocalSketchProjection>
+  toggleConstruction(const LocalSketchConstructionToggle &toggle) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->toggleConstruction(toggle);
+  }
+
+  Result<LocalSketchProjection> dragCurve(const LocalSketchCurveDrag &drag) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->dragCurve(drag);
   }
 
   Result<LocalSketchProjection>
@@ -718,6 +794,24 @@ bool LocalSketchSession::applyRectangle(LocalRectangleGesture gesture,
   return impl_->submit(
       [gesture](SessionWorker &worker) {
         return worker.applyRectangle(gesture);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::toggleConstruction(
+    LocalSketchConstructionToggle toggle, Completion completion) {
+  return impl_->submit(
+      [toggle = std::move(toggle)](SessionWorker &worker) {
+        return worker.toggleConstruction(toggle);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::dragCurve(LocalSketchCurveDrag drag,
+                                   Completion completion) {
+  return impl_->submit(
+      [drag = std::move(drag)](SessionWorker &worker) {
+        return worker.dragCurve(drag);
       },
       std::move(completion));
 }

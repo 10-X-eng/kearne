@@ -222,6 +222,73 @@ void verifyToolComposition(const testkit::PropertyProfile &profile) {
       });
 }
 
+void verifyDirectManipulation(const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "Sketch direct manipulation", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const std::uint64_t seed = random.next() ^ (index * 64U);
+        const double x = random.between(-100.0, 100.0);
+        const double y = random.between(-100.0, 100.0);
+        const double width = random.between(0.01, 10.0);
+        const double height = random.between(0.01, 10.0);
+        const double dragX = random.between(-width * 0.4, width * 0.4);
+        const double dragY = random.between(-height * 0.4, height * 0.4);
+        sketch::RectangleToolIds ids{
+            {id<SketchEntityId>(seed + 1U), id<SketchEntityId>(seed + 2U),
+             id<SketchEntityId>(seed + 3U), id<SketchEntityId>(seed + 4U)},
+            {id<SketchConstraintId>(seed + 10U),
+             id<SketchConstraintId>(seed + 11U),
+             id<SketchConstraintId>(seed + 12U),
+             id<SketchConstraintId>(seed + 13U),
+             id<SketchConstraintId>(seed + 14U),
+             id<SketchConstraintId>(seed + 15U),
+             id<SketchConstraintId>(seed + 16U),
+             id<SketchConstraintId>(seed + 17U)}};
+        const sketch::Point2 first{length(x), length(y)};
+        auto rectangle = sketch::applyTool(
+            {digest<ContentDigest>(seed), {}, {}},
+            sketch::RectangleToolInput{
+                ids, first, {length(x + width), length(y + height)}, false});
+        require(rectangle.has_value() &&
+                    sketch::closedProfileCount(rectangle->target) == 1U,
+                "direct manipulation rectangle was not created");
+
+        const std::size_t edgeIndex = random.next() % ids.edges.size();
+        auto construction =
+            sketch::toggleConstruction(rectangle->target, ids.edges[edgeIndex]);
+        require(construction && construction->sourceEdits.size() == 1U &&
+                    sketch::closedProfileCount(construction->target) == 0U,
+                "construction toggle was not one reusable entity edit");
+        auto restored = sketch::toggleConstruction(construction->target,
+                                                   ids.edges[edgeIndex]);
+        require(restored && restored->target == rectangle->target &&
+                    sketch::closedProfileCount(restored->target) == 1U,
+                "construction toggle was not reversible");
+
+        const auto selected = std::ranges::find(
+            rectangle->target.entities, ids.edges[edgeIndex], sketch::entityId);
+        require(selected != rectangle->target.entities.end(),
+                "rectangle edge is missing");
+        const auto &line = std::get<sketch::LineEntity>(*selected);
+        const sketch::Point2 midpoint{
+            length((line.start.x.si() + line.end.x.si()) * 0.5),
+            length((line.start.y.si() + line.end.y.si()) * 0.5)};
+        auto dragged = sketch::dragCurve(rectangle->target,
+                                         {ids.edges[edgeIndex],
+                                          midpoint,
+                                          {length(midpoint.x.si() + dragX),
+                                           length(midpoint.y.si() + dragY)}});
+        require(dragged && dragged->sourceEdits.size() == 3U,
+                "rectangle edge drag did not compose three connected edits");
+        auto residuals = sketch::evaluateResiduals(
+            dragged->target, dragged->target.entities, {});
+        require(residuals &&
+                    std::ranges::all_of(*residuals,
+                                        &sketch::ConstraintResidual::satisfied),
+                "rectangle edge drag broke its reusable constraints");
+      });
+}
+
 } // namespace
 
 int main() {
@@ -230,6 +297,7 @@ int main() {
     verifyEvaluatedPlaneIdentity(profile);
     verifyEditLifecycle(profile);
     verifyToolComposition(profile);
+    verifyDirectManipulation(profile);
     return 0;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

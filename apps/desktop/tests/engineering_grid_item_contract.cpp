@@ -80,7 +80,7 @@ bool close(double first, double second, double tolerance = 1.0e-9) {
 }
 
 bool isOneTwoFive(double multiplier) {
-  if (!std::isfinite(multiplier) || multiplier < 1.0)
+  if (!std::isfinite(multiplier) || multiplier <= 0.0)
     return false;
   const double exponent = std::floor(std::log10(multiplier));
   const double normalized = multiplier / std::pow(10.0, exponent);
@@ -292,8 +292,27 @@ void verifyCanonicalGrid() {
   require(metrics.axisLines == 2U && metrics.axisXVertices == axisCapacity &&
               metrics.axisYVertices == axisCapacity,
           "canonical origin did not produce two independent axes");
-  require(metrics.displayedMinorSpacingMetres == projection.minorSpacingMetres,
-          "canonical grid changed already-readable spacing");
+  require(
+      metrics.displayedMinorSpacingMetres < projection.minorSpacingMetres &&
+          metrics.displayedMinorSpacingPixels >=
+              projection.minimumLineSpacingPixels,
+      "canonical grid did not reveal a finer 1-2-5 division when zoomed in");
+}
+
+void verifyZoomChangesDisplayedDivision() {
+  EngineeringGridProjection projection;
+  projection.viewportLogicalPixels = {1'200.0, 800.0};
+  projection.minorSpacingMetres = 0.01;
+  projection.minimumLineSpacingPixels = 20.0;
+  projection.pixelsPerMetre = 1'000.0;
+  const EngineeringGridSpacing distant = engineeringGridSpacing(projection);
+  projection.pixelsPerMetre = 100'000.0;
+  const EngineeringGridSpacing close = engineeringGridSpacing(projection);
+  require(distant.minorMetres > close.minorMetres &&
+              distant.minorPixels >= projection.minimumLineSpacingPixels &&
+              close.minorPixels >= projection.minimumLineSpacingPixels &&
+              isOneTwoFive(distant.minorMetres / close.minorMetres),
+          "zoom did not choose useful exact 1-2-5 grid divisions");
 }
 
 void verifyInvalidInputsClearGeometry() {
@@ -474,6 +493,7 @@ void verifyGeneratedProjections(
 int main() {
   try {
     verifyCanonicalGrid();
+    verifyZoomChangesDisplayedDivision();
     verifyInvalidInputsClearGeometry();
     verifyPeriodicCameraContinuity();
     verifyWorldExtentDoesNotSetWork();

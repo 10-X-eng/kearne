@@ -42,6 +42,18 @@ struct LocalRectangleGesture {
   bool construction = false;
 };
 
+struct LocalSketchConstructionToggle {
+  QString entityId;
+};
+
+struct LocalSketchCurveDrag {
+  QString entityId;
+  double firstXMetres = 0.0;
+  double firstYMetres = 0.0;
+  double currentXMetres = 0.0;
+  double currentYMetres = 0.0;
+};
+
 struct LocalSourceReplacement {
   QString expectedSourceRevision;
   QString source;
@@ -56,6 +68,7 @@ struct LocalSketchProjection {
   LocalSketchPlane plane = LocalSketchPlane::XY;
   QString solveStatus;
   int degreesOfFreedom = -1;
+  std::size_t profileCount = 0U;
   std::shared_ptr<const render::SketchSceneSnapshot> scene;
   bool canUndo = false;
   bool canRedo = false;
@@ -82,6 +95,10 @@ public:
                             Completion completion);
   [[nodiscard]] bool applyRectangle(LocalRectangleGesture gesture,
                                     Completion completion);
+  [[nodiscard]] bool toggleConstruction(LocalSketchConstructionToggle toggle,
+                                        Completion completion);
+  [[nodiscard]] bool dragCurve(LocalSketchCurveDrag drag,
+                               Completion completion);
   [[nodiscard]] bool replaceSource(LocalSourceReplacement replacement,
                                    Completion completion);
   [[nodiscard]] bool undo(Completion completion);

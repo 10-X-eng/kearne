@@ -52,8 +52,22 @@ struct AppliedEdits {
   bool operator==(const AppliedEdits &) const = default;
 };
 
+struct CurveDragEdit {
+  SketchEntityId entity;
+  Point2 first;
+  Point2 current;
+};
+
 [[nodiscard]] Result<AppliedEdits>
 applyEdits(const Definition &current, std::span<const Edit> edits,
            const NumericalProfile &profile = {});
+
+[[nodiscard]] Result<AppliedEdits>
+toggleConstruction(const Definition &current, SketchEntityId entity,
+                   const NumericalProfile &profile = {});
+
+[[nodiscard]] Result<AppliedEdits>
+dragCurve(const Definition &current, const CurveDragEdit &drag,
+          const NumericalProfile &profile = {});
 
 } // namespace kearne::sketch

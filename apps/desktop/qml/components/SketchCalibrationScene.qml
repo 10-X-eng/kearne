@@ -13,6 +13,7 @@ Item {
     property real cursorX: 0
     property real cursorY: 0
     property bool cursorVisible: false
+    required property real snapSpacingMillimeters
     readonly property real pixelsPerMillimeter: App.sketchCamera.pixelsPerMetre
                                                  / 1000
 
@@ -43,7 +44,7 @@ Item {
         let planeY = (App.sketchCamera.centerMetres.y
                       - sine * projectedX + cosine * projectedY) * 1000
         if (App.workspace.gridSnapEnabled) {
-            const spacing = App.ui.gridSpacingMillimeters
+            const spacing = snapSpacingMillimeters
             planeX = Math.round(planeX / spacing) * spacing
             planeY = Math.round(planeY / spacing) * spacing
         }
@@ -107,6 +108,8 @@ Item {
             const point = planePoint(x, y)
             return App.ui.submitSketchPoint(point[0], point[1])
         }
+        if (App.ui.submitSketchPointerClick(x, y))
+            return true
         const pick = hitTest(x, y)
         if (pick.id.length === 0)
             return false
@@ -117,12 +120,15 @@ Item {
     }
 
     function handleDrag(firstX, firstY, oppositeX, oppositeY) {
-        if (App.ui.sketchInputKind !== "plane-point")
-            return false
         const first = planePoint(firstX, firstY)
         const opposite = planePoint(oppositeX, oppositeY)
-        return App.ui.submitSketchDrag(first[0], first[1],
-                                       opposite[0], opposite[1])
+        if (App.ui.sketchInputKind === "plane-point")
+            return App.ui.submitSketchDrag(first[0], first[1],
+                                           opposite[0], opposite[1])
+        if (App.ui.activeCommandId.length === 0)
+            return App.ui.submitSketchCurveDrag(firstX, firstY,
+                                                opposite[0], opposite[1])
+        return false
     }
 
     Canvas {

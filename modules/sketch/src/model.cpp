@@ -4,8 +4,10 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <ranges>
+#include <set>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -426,6 +428,86 @@ SketchEntityId entityId(const Entity &entity) {
 
 SketchConstraintId constraintId(const Constraint &constraint) {
   return std::visit([](const auto &value) { return value.id; }, constraint);
+}
+
+std::size_t closedProfileCount(const Definition &definition) {
+  std::map<PointRef, std::size_t> nodes;
+  std::map<std::pair<double, double>, PointRef> coordinateNodes;
+  std::vector<std::size_t> parents;
+  std::vector<std::pair<PointRef, PointRef>> lineEdges;
+  std::vector<std::pair<PointRef, PointRef>> coordinateEdges;
+  std::size_t profiles = 0U;
+  for (const Entity &entity : definition.entities) {
+    std::visit(
+        [&](const auto &value) {
+          using Type = std::remove_cvref_t<decltype(value)>;
+          if (value.construction)
+            return;
+          if constexpr (std::is_same_v<Type, CircleEntity>) {
+            ++profiles;
+          } else if constexpr (std::is_same_v<Type, LineEntity>) {
+            for (const PointKey key : {PointKey::Start, PointKey::End}) {
+              const PointRef point{value.id, key};
+              if (!nodes.contains(point)) {
+                const std::size_t index = parents.size();
+                nodes.emplace(point, index);
+                parents.push_back(index);
+              }
+              const Point2 &coordinate =
+                  key == PointKey::Start ? value.start : value.end;
+              const auto [same, inserted] = coordinateNodes.emplace(
+                  std::pair{coordinate.x.si(), coordinate.y.si()}, point);
+              if (!inserted)
+                coordinateEdges.emplace_back(same->second, point);
+            }
+            lineEdges.emplace_back(PointRef{value.id, PointKey::Start},
+                                   PointRef{value.id, PointKey::End});
+          }
+        },
+        entity);
+  }
+  const auto root = [&parents](std::size_t index) {
+    while (parents[index] != index) {
+      parents[index] = parents[parents[index]];
+      index = parents[index];
+    }
+    return index;
+  };
+  const auto join = [&nodes, &parents, &root](PointRef first, PointRef second) {
+    const auto firstNode = nodes.find(first);
+    const auto secondNode = nodes.find(second);
+    if (firstNode == nodes.end() || secondNode == nodes.end())
+      return;
+    const std::size_t firstRoot = root(firstNode->second);
+    const std::size_t secondRoot = root(secondNode->second);
+    if (firstRoot != secondRoot)
+      parents[secondRoot] = firstRoot;
+  };
+  for (const auto &[first, second] : coordinateEdges)
+    join(first, second);
+  for (const Constraint &constraint : definition.constraints) {
+    const auto *coincident = std::get_if<Coincident>(&constraint);
+    if (!coincident)
+      continue;
+    join(coincident->first, coincident->second);
+  }
+  std::set<std::size_t> vertices;
+  for (std::size_t index = 0; index < parents.size(); ++index)
+    vertices.insert(root(index));
+  for (const auto &[firstPoint, secondPoint] : lineEdges) {
+    const std::size_t firstRoot = root(nodes.at(firstPoint));
+    const std::size_t secondRoot = root(nodes.at(secondPoint));
+    if (firstRoot != secondRoot)
+      parents[secondRoot] = firstRoot;
+  }
+  std::set<std::size_t> components;
+  for (const auto &[point, index] : nodes) {
+    static_cast<void>(point);
+    components.insert(root(index));
+  }
+  if (lineEdges.size() + components.size() >= vertices.size())
+    profiles += lineEdges.size() + components.size() - vertices.size();
+  return profiles;
 }
 
 Result<void> validate(const Definition &definition,

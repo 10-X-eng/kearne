@@ -9,10 +9,21 @@
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace kearne::ui {
+
+struct SketchPickSelection {
+  QString entityId;
+  QString pointKey;
+  QPointF closestPointMillimeters;
+};
+
+using SketchPickHandler = std::function<std::optional<SketchPickSelection>(
+    QPointF itemPoint, double tolerancePixels, SketchSelectionKind targets)>;
 
 class UiSession : public QObject {
   Q_OBJECT
@@ -232,11 +243,15 @@ public:
                                      qreal firstYMillimeters,
                                      qreal oppositeXMillimeters,
                                      qreal oppositeYMillimeters);
-  Q_INVOKABLE QString
-  formatProjectLength(qreal lengthMillimeters) const;
+  Q_INVOKABLE QString formatProjectLength(qreal lengthMillimeters) const;
   Q_INVOKABLE void clearSketchDragPreview();
   Q_INVOKABLE bool submitSketchEntity(const QString &entityId,
                                       const QString &subElementKey);
+  Q_INVOKABLE bool submitSketchPointerClick(qreal itemX, qreal itemY);
+  Q_INVOKABLE bool submitSketchCurveDrag(qreal itemPressX, qreal itemPressY,
+                                         qreal currentXMillimeters,
+                                         qreal currentYMillimeters);
+  Q_INVOKABLE bool toggleSketchConstruction();
   Q_INVOKABLE void cancelActiveCommand();
   Q_INVOKABLE bool submitParameterEdit(const QString &parameterId,
                                        const QString &expression);
@@ -253,6 +268,8 @@ signals:
   void preferenceChanged(const QString &preferenceId, const QVariant &value);
 
 public:
+  void setSketchPickHandler(SketchPickHandler handler);
+  void clearSketchPickHandler();
   void replacePreferenceOptions(const QString &preferenceId,
                                 std::vector<UiOption> options,
                                 const QString &value);
@@ -263,6 +280,7 @@ private:
   std::unique_ptr<FrontendPort> port_;
   FrontendSnapshotPtr snapshot_;
   SketchGesturePreview gesturePreview_;
+  SketchPickHandler sketchPickHandler_;
   QString activeSurfaceId_ = QStringLiteral("editor");
   QString settingsCategoryId_ = QStringLiteral("appearance");
   int inspectorPage_ = 0;

@@ -36,6 +36,7 @@ add_test(
             --max-edit-p95-ms 20)
 set_tests_properties(python-sdk-source-performance PROPERTIES
     LABELS performance
+    RUN_SERIAL TRUE
     TIMEOUT 30)
 
 add_test(
@@ -49,6 +50,7 @@ add_test(
             --max-edit-p95-ms 220)
 set_tests_properties(python-sdk-source-scale PROPERTIES
     LABELS performance
+    RUN_SERIAL TRUE
     TIMEOUT 30)
 
 add_test(
@@ -63,6 +65,7 @@ add_test(
             --max-batch-p95-ms 16)
 set_tests_properties(python-sdk-source-session-performance PROPERTIES
     LABELS performance
+    RUN_SERIAL TRUE
     TIMEOUT 30)
 
 add_test(
@@ -77,4 +80,5 @@ add_test(
             --max-batch-p95-ms 160)
 set_tests_properties(python-sdk-source-session-scale PROPERTIES
     LABELS performance
+    RUN_SERIAL TRUE
     TIMEOUT 30)

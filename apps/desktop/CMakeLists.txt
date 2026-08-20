@@ -263,6 +263,7 @@ if(BUILD_TESTING)
              COMMAND kearne_local_sketch_session_benchmark)
     set_tests_properties(local-sketch-session-performance PROPERTIES
         LABELS "desktop;sketch;workflow;performance"
+        RUN_SERIAL TRUE
         TIMEOUT 30)
 
     add_executable(kearne_navigation_input_contract_tests

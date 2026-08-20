@@ -10,11 +10,16 @@ Rectangle {
     property string semanticName: "Primary model viewport"
     property string semanticRole: "canvas"
     property var semanticActions: ["orbit", "pan", "zoom", "fit", "select",
-                                   "pointerDrag", "pointerClick"]
+                                   "pointerDrag", "pointerClick",
+                                   "toggleConstruction"]
     property string semanticValue: App.camera.state + ":" + App.ui.selectionSummary
     property bool structureAvailable: true
     property bool inspectorAvailable: true
     property real modelGridSpacingMillimeters: App.ui.gridSpacingMillimeters
+    readonly property real displayedGridSpacingMillimeters:
+        App.ui.activeWorkspaceId === "sketch"
+        ? engineeringGrid.displayedSpacingMillimeters
+        : modelGridSpacingMillimeters
     signal requestStructure()
     signal requestInspector()
 
@@ -52,6 +57,8 @@ Rectangle {
                 App.camera.fit()
             return true
         }
+        if (action === "toggleConstruction")
+            return App.ui.toggleSketchConstruction()
         if (action !== "select" || value === null || value === undefined
                 || String(value).length === 0)
             return false
@@ -69,7 +76,10 @@ Rectangle {
 
     Keys.onPressed: event => {
         const key = event.text.toUpperCase()
-        if (event.key === Qt.Key_Home) {
+        if (event.key === Qt.Key_X
+                && App.ui.activeWorkspaceId === "sketch") {
+            event.accepted = App.ui.toggleSketchConstruction()
+        } else if (event.key === Qt.Key_Home) {
             if (App.ui.activeWorkspaceId === "sketch")
                 App.sketchCamera.reset()
             else
@@ -89,6 +99,7 @@ Rectangle {
     }
 
     EngineeringGrid {
+        id: engineeringGrid
         anchors.fill: parent
         visible: App.workspace.gridVisible
                  && App.ui.activeWorkspaceId === "sketch"
@@ -114,6 +125,7 @@ Rectangle {
         id: sketchScene
         anchors.fill: parent
         visible: App.ui.activeWorkspaceId === "sketch"
+        snapSpacingMillimeters: engineeringGrid.displayedSpacingMillimeters
     }
 
     MouseArea {
@@ -195,6 +207,7 @@ Rectangle {
     DatumPlaneSelector {
         anchors.fill: parent
         visible: App.ui.activeCommandId === "model.sketch.create"
+                 && App.ui.commandDraftState !== "pending"
     }
 
     Rectangle {

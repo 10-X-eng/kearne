@@ -8,12 +8,18 @@ Item {
     property string semanticName: "Modeling grid"
     property string semanticRole: "grid"
     property var semanticActions: []
-    property string semanticValue: App.ui.gridPlaneLabel + ":" + App.ui.gridSpacingLabel
+    property string semanticValue: App.ui.gridPlaneLabel + ":"
+                                   + (sketchView
+                                      ? displayedSpacingMillimeters
+                                      : App.ui.gridSpacingLabel)
     property bool sketchView: App.ui.activeWorkspaceId === "sketch"
+    readonly property real displayedSpacingMillimeters:
+        nativeGrid.displayedMinorSpacingMetres * 1000
     property real minorPixelSpacing: 28
     property int majorInterval: 5
 
     EngineeringGridItem {
+        id: nativeGrid
         anchors.fill: parent
         visible: root.sketchView
         viewCenterMetres: App.sketchCamera.centerMetres
@@ -21,6 +27,7 @@ Item {
         pixelsPerMetre: App.sketchCamera.pixelsPerMetre
         rotationRadians: App.sketchCamera.rotationRadians
         minorSpacingMetres: App.ui.gridSpacingMillimeters / 1000
+        minimumLineSpacingPixels: 20
         majorInterval: root.majorInterval
         minorLineWidthPixels: Theme.gridLineWidthMinor
         majorLineWidthPixels: Theme.gridLineWidthMajor
@@ -112,7 +119,8 @@ Item {
         Text {
             id: gridReadout
             anchors.centerIn: parent
-            text: App.ui.gridPlaneLabel + " plane  ·  Grid " + App.ui.gridSpacingLabel
+            text: App.ui.gridPlaneLabel + " plane  ·  Grid "
+                  + App.ui.formatProjectLength(root.displayedSpacingMillimeters)
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
         }

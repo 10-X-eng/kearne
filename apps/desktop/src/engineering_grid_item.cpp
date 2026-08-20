@@ -51,8 +51,8 @@ bool validProjection(const EngineeringGridProjection &projection) {
 }
 
 double oneTwoFiveCeiling(double ratio) {
-  if (!std::isfinite(ratio) || ratio <= 1.0)
-    return 1.0;
+  if (!std::isfinite(ratio) || ratio <= 0.0)
+    return std::numeric_limits<double>::quiet_NaN();
   const double exponent = std::floor(std::log10(ratio));
   const double decade = std::pow(10.0, exponent);
   if (!std::isfinite(decade) || decade <= 0.0)
@@ -339,6 +339,36 @@ private:
 
 } // namespace
 
+EngineeringGridSpacing
+engineeringGridSpacing(const EngineeringGridProjection &projection) noexcept {
+  EngineeringGridSpacing spacing;
+  if (!validProjection(projection))
+    return spacing;
+  const double baseSpacingPixels =
+      projection.minorSpacingMetres * projection.pixelsPerMetre;
+  const double diagonal = std::hypot(projection.viewportLogicalPixels.width(),
+                                     projection.viewportLogicalPixels.height());
+  const double lineMargin = std::max({projection.minorLineWidthPixels,
+                                      projection.majorLineWidthPixels,
+                                      projection.axisLineWidthPixels});
+  constexpr double densityDivisor = static_cast<double>(lineCapacity) - 4.0;
+  const double requiredSpacingPixels =
+      std::max(projection.minimumLineSpacingPixels,
+               (diagonal + 2.0 * lineMargin) / densityDivisor);
+  if (!std::isfinite(baseSpacingPixels) || baseSpacingPixels <= 0.0 ||
+      !std::isfinite(requiredSpacingPixels))
+    return spacing;
+  const double multiplier =
+      oneTwoFiveCeiling(requiredSpacingPixels / baseSpacingPixels);
+  spacing.minorMetres = projection.minorSpacingMetres * multiplier;
+  spacing.minorPixels = baseSpacingPixels * multiplier;
+  spacing.densityLimited = multiplier > 1.0;
+  if (!std::isfinite(spacing.minorMetres) || spacing.minorMetres <= 0.0 ||
+      !std::isfinite(spacing.minorPixels) || spacing.minorPixels <= 0.0)
+    return {};
+  return spacing;
+}
+
 EngineeringGridMetrics
 buildEngineeringGrid(const EngineeringGridProjection &projection,
                      EngineeringGridLineBuffers buffers) noexcept {
@@ -358,26 +388,10 @@ buildEngineeringGrid(const EngineeringGridProjection &projection,
     return metrics;
   }
 
-  const double baseSpacingPixels =
-      projection.minorSpacingMetres * projection.pixelsPerMetre;
-  const double diagonal = std::hypot(projection.viewportLogicalPixels.width(),
-                                     projection.viewportLogicalPixels.height());
-  const double lineMargin = std::max({projection.minorLineWidthPixels,
-                                      projection.majorLineWidthPixels,
-                                      projection.axisLineWidthPixels});
-  constexpr double densityDivisor = static_cast<double>(lineCapacity) - 4.0;
-  const double requiredSpacingPixels =
-      std::max(projection.minimumLineSpacingPixels,
-               (diagonal + 2.0 * lineMargin) / densityDivisor);
-  if (!std::isfinite(baseSpacingPixels) || baseSpacingPixels <= 0.0 ||
-      !std::isfinite(requiredSpacingPixels))
-    return metrics;
-  const double multiplier =
-      oneTwoFiveCeiling(requiredSpacingPixels / baseSpacingPixels);
-  metrics.displayedMinorSpacingMetres =
-      projection.minorSpacingMetres * multiplier;
-  metrics.displayedMinorSpacingPixels = baseSpacingPixels * multiplier;
-  metrics.densityLimited = multiplier > 1.0;
+  const EngineeringGridSpacing spacing = engineeringGridSpacing(projection);
+  metrics.displayedMinorSpacingMetres = spacing.minorMetres;
+  metrics.displayedMinorSpacingPixels = spacing.minorPixels;
+  metrics.densityLimited = spacing.densityLimited;
   if (!std::isfinite(metrics.displayedMinorSpacingMetres) ||
       metrics.displayedMinorSpacingMetres <= 0.0 ||
       !std::isfinite(metrics.displayedMinorSpacingPixels) ||
@@ -470,6 +484,10 @@ qreal EngineeringGridItem::rotationRadians() const {
 
 qreal EngineeringGridItem::minorSpacingMetres() const {
   return projection_.minorSpacingMetres;
+}
+
+qreal EngineeringGridItem::displayedMinorSpacingMetres() const {
+  return engineeringGridSpacing(projection()).minorMetres;
 }
 
 int EngineeringGridItem::majorInterval() const {
@@ -652,6 +670,7 @@ void EngineeringGridItem::geometryChange(const QRectF &newGeometry,
 
 void EngineeringGridItem::requestGeometryUpdate() {
   ++geometryGeneration_;
+  emit displayedMinorSpacingChanged();
   update();
 }
 

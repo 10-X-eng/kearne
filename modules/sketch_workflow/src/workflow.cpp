@@ -150,14 +150,35 @@ Result<SketchState> Workflow::applyTool(const SketchState &current,
   auto edits = sketch::applyTool(current.definition, tool);
   if (!edits)
     return std::unexpected(std::move(edits.error()));
+  return applyEdits(current, operation, std::move(*edits), evaluation,
+                    cancellation);
+}
+
+Result<SketchState> Workflow::applyEdits(const SketchState &current,
+                                         const OperationContext &operation,
+                                         sketch::AppliedEdits edits,
+                                         const EvaluationIdentity &evaluation,
+                                         std::stop_token cancellation) {
+  if (cancellation.stop_requested())
+    return std::unexpected(cancelledBeforeCommit());
+  if (current.revision != operation.baseRevision ||
+      current.revision != engineering_.headSnapshot()->revisionId())
+    return std::unexpected(
+        diagnostic("sketch.workflow.stale-base",
+                   "Sketch edit is based on another project revision"));
+  if (edits.sourceEdits.empty() ||
+      edits.target.sourceDigest != current.definition.sourceDigest)
+    return std::unexpected(
+        diagnostic("sketch.workflow.edit-definition",
+                   "Sketch edits are based on another definition"));
   auto source =
       sourceEditor_.apply(operation.sourceJob, current.source.bytes,
-                          current.address.functionName, *edits, cancellation);
+                          current.address.functionName, edits, cancellation);
   if (!source)
     return std::unexpected(std::move(source.error()));
   if (cancellation.stop_requested())
     return std::unexpected(cancelledBeforeCommit());
-  sketch::Definition definition = std::move(edits->target);
+  sketch::Definition definition = std::move(edits.target);
   definition.sourceDigest = source->digest;
   auto revision =
       commitSource(current.address, *source, operation, current.source.digest);

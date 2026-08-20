@@ -12,6 +12,35 @@
 #include <utility>
 
 namespace kearne::ui {
+namespace {
+
+QString pointKeyName(sketch::PointKey key) {
+  switch (key) {
+  case sketch::PointKey::Point:
+    return QStringLiteral("point");
+  case sketch::PointKey::Start:
+    return QStringLiteral("start");
+  case sketch::PointKey::End:
+    return QStringLiteral("end");
+  case sketch::PointKey::Center:
+    return QStringLiteral("center");
+  }
+  return {};
+}
+
+render::SketchPickTargets pickTargets(SketchSelectionKind selection) {
+  switch (selection) {
+  case SketchSelectionKind::Point:
+    return render::SketchPickTargets::Points;
+  case SketchSelectionKind::Curve:
+    return render::SketchPickTargets::Curves;
+  case SketchSelectionKind::Any:
+    return render::SketchPickTargets::All;
+  }
+  return render::SketchPickTargets::All;
+}
+
+} // namespace
 
 Result<std::unique_ptr<SketchViewportBridge>>
 SketchViewportBridge::create(QQuickItem &host, UiSession &session,
@@ -62,6 +91,20 @@ Result<void> SketchViewportBridge::initialize() {
                    [this] { record(publishScene()); });
   QObject::connect(&camera_, &SketchCameraController::cameraChanged, this,
                    [this] { record(publishCamera()); });
+  session_.setSketchPickHandler([this](QPointF point, double tolerance,
+                                       SketchSelectionKind selection)
+                                    -> std::optional<SketchPickSelection> {
+    auto evidence =
+        publication_->pick(point, tolerance, pickTargets(selection));
+    if (!evidence || !evidence->item.hit)
+      return std::nullopt;
+    const auto &hit = *evidence->item.hit;
+    return SketchPickSelection{QString::fromStdString(hit.entity.toString()),
+                               hit.pointKey ? pointKeyName(*hit.pointKey)
+                                            : QString{},
+                               {millimetersFromMetres(hit.closestPoint.x),
+                                millimetersFromMetres(hit.closestPoint.y)}};
+  });
   if (auto cameraResult = publishCamera(); !cameraResult)
     return cameraResult;
   return publishScene();
@@ -85,13 +128,13 @@ Result<void> SketchViewportBridge::publishCamera() {
         "desktop.sketch.camera-stale",
         "native Sketch viewport rejected a stale camera generation"));
   case SketchCameraDecision::GenerationConflict:
-    return std::unexpected(diagnostic(
-        "desktop.sketch.camera-generation-conflict",
-        "native Sketch viewport rejected conflicting camera state"));
+    return std::unexpected(
+        diagnostic("desktop.sketch.camera-generation-conflict",
+                   "native Sketch viewport rejected conflicting camera state"));
   }
-  return std::unexpected(diagnostic(
-      "desktop.sketch.camera-decision",
-      "native Sketch viewport returned an unknown camera decision"));
+  return std::unexpected(
+      diagnostic("desktop.sketch.camera-decision",
+                 "native Sketch viewport returned an unknown camera decision"));
 }
 
 Result<void> SketchViewportBridge::publishScene() {
@@ -141,6 +184,8 @@ Result<void> SketchViewportBridge::shutdown(std::chrono::milliseconds timeout) {
     return std::unexpected(
         diagnostic("desktop.sketch.viewport-shutdown-thread",
                    "native Sketch viewport must stop on the UI thread"));
+
+  session_.clearSketchPickHandler();
 
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (publication_) {

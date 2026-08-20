@@ -83,6 +83,10 @@ public:
             const sketch::ToolInput &tool, const EvaluationIdentity &evaluation,
             std::stop_token cancellation = {});
   [[nodiscard]] Result<SketchState>
+  applyEdits(const SketchState &current, const OperationContext &operation,
+             sketch::AppliedEdits edits, const EvaluationIdentity &evaluation,
+             std::stop_token cancellation = {});
+  [[nodiscard]] Result<SketchState>
   replaceSource(const SketchState &current, const OperationContext &operation,
                 SourceRevision source, sketch::Definition definition,
                 const EvaluationIdentity &evaluation,

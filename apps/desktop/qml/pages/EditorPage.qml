@@ -57,6 +57,8 @@ Item {
             }
 
             DesignViewport {
+                id: designViewport
+
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 structureAvailable: structure.active
@@ -105,9 +107,8 @@ Item {
 
         StatusBar {
             Layout.fillWidth: true
-            gridSpacingLabel: App.ui.activeWorkspaceId === "model"
-                              ? App.ui.formatProjectLength(modelGridScale.spacing)
-                              : App.ui.gridSpacingLabel
+            gridSpacingLabel: App.ui.formatProjectLength(
+                                  designViewport.displayedGridSpacingMillimeters)
         }
     }
 

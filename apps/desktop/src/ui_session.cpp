@@ -1,7 +1,7 @@
 #include "ui_session.hpp"
 
-#include <QMetaObject>
 #include <QLocale>
+#include <QMetaObject>
 #include <QPointer>
 #include <QVariantMap>
 
@@ -802,6 +802,76 @@ bool UiSession::submitSketchEntity(const QString &entityId,
   refresh();
   return accepted;
 }
+
+bool UiSession::submitSketchPointerClick(qreal itemX, qreal itemY) {
+  if (!sketchPickHandler_ ||
+      snapshot_->activeWorkspaceId != QStringLiteral("sketch"))
+    return false;
+  const SketchSelectionKind targets =
+      snapshot_->sketchInteraction.inputKind == SketchInputKind::Entity &&
+              !snapshot_->sketchInteraction.selectionSequence.empty()
+          ? snapshot_->sketchInteraction.selectionSequence[std::min(
+                static_cast<std::size_t>(
+                    snapshot_->sketchInteraction.inputCount),
+                snapshot_->sketchInteraction.selectionSequence.size() - 1U)]
+          : SketchSelectionKind::Any;
+  const auto picked = sketchPickHandler_(QPointF{itemX, itemY}, 8.0, targets);
+  if (!picked)
+    return false;
+  if (snapshot_->sketchInteraction.inputKind == SketchInputKind::Entity)
+    return submitSketchEntity(picked->entityId, picked->pointKey);
+  port_->selectEntity(picked->entityId);
+  refresh();
+  return true;
+}
+
+bool UiSession::submitSketchCurveDrag(qreal itemPressX, qreal itemPressY,
+                                      qreal currentXMillimeters,
+                                      qreal currentYMillimeters) {
+  if (!sketchPickHandler_ ||
+      snapshot_->activeWorkspaceId != QStringLiteral("sketch") ||
+      !snapshot_->activeCommandId.isEmpty())
+    return false;
+  const auto picked = sketchPickHandler_(QPointF{itemPressX, itemPressY}, 8.0,
+                                         SketchSelectionKind::Curve);
+  if (!picked)
+    return false;
+  const bool accepted = port_->dragSketchCurve(
+      picked->entityId,
+      {metresFromMillimeters(picked->closestPointMillimeters.x()),
+       metresFromMillimeters(picked->closestPointMillimeters.y())},
+      {metresFromMillimeters(currentXMillimeters),
+       metresFromMillimeters(currentYMillimeters)});
+  refresh();
+  return accepted;
+}
+
+bool UiSession::toggleSketchConstruction() {
+  if (snapshot_->activeWorkspaceId != QStringLiteral("sketch"))
+    return false;
+  if (!snapshot_->activeCommandId.isEmpty()) {
+    const auto field = std::ranges::find_if(
+        snapshot_->fields, [](const FieldDescriptor &candidate) {
+          return candidate.kind == FieldKind::Toggle &&
+                 candidate.id.endsWith(QStringLiteral(".construction"));
+        });
+    if (field == snapshot_->fields.end() ||
+        !std::holds_alternative<bool>(field->value))
+      return false;
+    port_->editField(field->id, !std::get<bool>(field->value));
+    refresh();
+    return true;
+  }
+  const bool accepted = port_->toggleSketchConstruction();
+  refresh();
+  return accepted;
+}
+
+void UiSession::setSketchPickHandler(SketchPickHandler handler) {
+  sketchPickHandler_ = std::move(handler);
+}
+
+void UiSession::clearSketchPickHandler() { sketchPickHandler_ = {}; }
 
 void UiSession::cancelActiveCommand() {
   gesturePreview_.clear();

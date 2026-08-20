@@ -282,6 +282,7 @@ struct SolveResult {
 
 [[nodiscard]] SketchEntityId entityId(const Entity &entity);
 [[nodiscard]] SketchConstraintId constraintId(const Constraint &constraint);
+[[nodiscard]] std::size_t closedProfileCount(const Definition &definition);
 [[nodiscard]] Result<void> validate(const Definition &definition,
                                     const NumericalProfile &profile);
 [[nodiscard]] Result<std::vector<ConstraintResidual>>

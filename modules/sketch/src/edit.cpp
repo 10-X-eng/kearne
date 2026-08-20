@@ -1,6 +1,11 @@
 #include <kearne/sketch/edit.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <deque>
+#include <map>
+#include <set>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -107,6 +112,38 @@ Result<SourceEditIntent> apply(Definition &target, const Edit &edit) {
       edit);
 }
 
+bool setEntityPoint(Entity &entity, PointKey key, Point2 point) {
+  return std::visit(
+      [key, point = std::move(point)](auto &value) {
+        using Type = std::remove_cvref_t<decltype(value)>;
+        if constexpr (std::is_same_v<Type, PointEntity>) {
+          if (key != PointKey::Point)
+            return false;
+          value.point = point;
+          return true;
+        } else if constexpr (std::is_same_v<Type, LineEntity>) {
+          if (key == PointKey::Start)
+            value.start = point;
+          else if (key == PointKey::End)
+            value.end = point;
+          else
+            return false;
+          return true;
+        } else if constexpr (std::is_same_v<Type, CircleEntity> ||
+                             std::is_same_v<Type, ArcEntity>) {
+          if (key != PointKey::Center)
+            return false;
+          value.center = point;
+          return true;
+        }
+      },
+      entity);
+}
+
+Result<LengthValue> length(double metres) {
+  return LengthValue::fromSi(metres);
+}
+
 } // namespace
 
 Result<AppliedEdits> applyEdits(const Definition &current,
@@ -135,6 +172,135 @@ Result<AppliedEdits> applyEdits(const Definition &current,
   if (auto valid = validate(result.target, profile); !valid)
     return std::unexpected(std::move(valid.error()));
   return result;
+}
+
+Result<AppliedEdits> toggleConstruction(const Definition &current,
+                                        SketchEntityId entity,
+                                        const NumericalProfile &profile) {
+  const auto found = findById(current.entities, entity, entityId);
+  if (found == current.entities.end())
+    return std::unexpected(
+        diagnostic("sketch.edit.entity-missing", "Sketch entity is missing"));
+  Entity replacement = *found;
+  std::visit([](auto &value) { value.construction = !value.construction; },
+             replacement);
+  const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
+  return applyEdits(current, edits, profile);
+}
+
+Result<AppliedEdits> dragCurve(const Definition &current,
+                               const CurveDragEdit &drag,
+                               const NumericalProfile &profile) {
+  const auto selected = findById(current.entities, drag.entity, entityId);
+  if (selected == current.entities.end())
+    return std::unexpected(
+        diagnostic("sketch.edit.entity-missing", "Sketch entity is missing"));
+  if (std::holds_alternative<CircleEntity>(*selected) ||
+      std::holds_alternative<ArcEntity>(*selected)) {
+    Entity replacement = *selected;
+    const Point2 center = std::holds_alternative<CircleEntity>(replacement)
+                              ? std::get<CircleEntity>(replacement).center
+                              : std::get<ArcEntity>(replacement).center;
+    auto radius = length(std::hypot(drag.current.x.si() - center.x.si(),
+                                    drag.current.y.si() - center.y.si()));
+    if (!radius || radius->si() <= profile.minimumLengthMeters)
+      return std::unexpected(diagnostic("sketch.edit.drag-degenerate",
+                                        "curve drag produced no radius"));
+    std::visit(
+        [&radius](auto &value) {
+          using Type = std::remove_cvref_t<decltype(value)>;
+          if constexpr (std::is_same_v<Type, CircleEntity> ||
+                        std::is_same_v<Type, ArcEntity>)
+            value.radius = *radius;
+        },
+        replacement);
+    const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
+    return applyEdits(current, edits, profile);
+  }
+
+  const auto *line = std::get_if<LineEntity>(&*selected);
+  if (!line)
+    return std::unexpected(diagnostic("sketch.edit.drag-not-curve",
+                                      "Sketch entity is not a curve"));
+  double deltaX = drag.current.x.si() - drag.first.x.si();
+  double deltaY = drag.current.y.si() - drag.first.y.si();
+  const bool horizontal = std::ranges::any_of(
+      current.constraints, [&drag](const Constraint &value) {
+        const auto *constraint = std::get_if<Horizontal>(&value);
+        return constraint && constraint->line == drag.entity;
+      });
+  const bool vertical = std::ranges::any_of(
+      current.constraints, [&drag](const Constraint &value) {
+        const auto *constraint = std::get_if<Vertical>(&value);
+        return constraint && constraint->line == drag.entity;
+      });
+  if (horizontal)
+    deltaX = 0.0;
+  if (vertical)
+    deltaY = 0.0;
+  const auto moved = [deltaX, deltaY](Point2 point) -> Result<Point2> {
+    auto x = length(point.x.si() + deltaX);
+    auto y = length(point.y.si() + deltaY);
+    if (!x)
+      return std::unexpected(std::move(x.error()));
+    if (!y)
+      return std::unexpected(std::move(y.error()));
+    return Point2{*x, *y};
+  };
+  auto movedStart = moved(line->start);
+  auto movedEnd = moved(line->end);
+  if (!movedStart)
+    return std::unexpected(std::move(movedStart.error()));
+  if (!movedEnd)
+    return std::unexpected(std::move(movedEnd.error()));
+
+  std::map<SketchEntityId, const Entity *> entitiesById;
+  for (const Entity &entity : current.entities)
+    entitiesById.emplace(entityId(entity), &entity);
+  std::map<PointRef, std::vector<PointRef>> graph;
+  for (const Constraint &value : current.constraints) {
+    const auto *coincident = std::get_if<Coincident>(&value);
+    if (!coincident)
+      continue;
+    graph[coincident->first].push_back(coincident->second);
+    graph[coincident->second].push_back(coincident->first);
+  }
+  std::map<SketchEntityId, Entity> replacements;
+  const auto replacePoint = [&](const PointRef &reference, Point2 point) {
+    auto replacement = replacements.find(reference.entity);
+    if (replacement == replacements.end()) {
+      const auto source = entitiesById.find(reference.entity);
+      if (source == entitiesById.end())
+        return false;
+      replacement =
+          replacements.emplace(reference.entity, *source->second).first;
+    }
+    return setEntityPoint(replacement->second, reference.key, std::move(point));
+  };
+  const auto moveComponent = [&](PointRef seed, Point2 point) {
+    std::deque<PointRef> pending{seed};
+    std::set<PointRef> visited;
+    while (!pending.empty()) {
+      const PointRef currentPoint = pending.front();
+      pending.pop_front();
+      if (!visited.insert(currentPoint).second ||
+          !replacePoint(currentPoint, point))
+        continue;
+      const auto neighbors = graph.find(currentPoint);
+      if (neighbors != graph.end())
+        pending.insert(pending.end(), neighbors->second.begin(),
+                       neighbors->second.end());
+    }
+  };
+  moveComponent({drag.entity, PointKey::Start}, *movedStart);
+  moveComponent({drag.entity, PointKey::End}, *movedEnd);
+  std::vector<Edit> edits;
+  edits.reserve(replacements.size());
+  for (auto &[entity, replacement] : replacements) {
+    static_cast<void>(entity);
+    edits.push_back(ReplaceEntity{std::move(replacement)});
+  }
+  return applyEdits(current, edits, profile);
 }
 
 } // namespace kearne::sketch

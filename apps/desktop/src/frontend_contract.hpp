@@ -305,6 +305,7 @@ struct FrontendSnapshot {
   QString viewportDetail;
   QString modelHealth;
   QString selectionSummary;
+  QString selectedSketchEntityId;
   QString agentStatus;
   QString modelSource;
   FunctionSummary selectedFunction;
@@ -367,6 +368,9 @@ public:
   virtual bool submitCommandDraft(const CommandDraftRequest &request,
                                   CommandDraftMode mode) = 0;
   virtual bool submitSketchInput(const SketchInputRequest &request) = 0;
+  virtual bool toggleSketchConstruction() = 0;
+  virtual bool dragSketchCurve(const QString &entityId, PlanePoint first,
+                               PlanePoint current) = 0;
   virtual void cancelCommandDraft(const QString &commandId) = 0;
   virtual bool submitParameterEdit(const ParameterEditRequest &request) = 0;
   virtual bool submitSourceEdit(const SourceEditRequest &request,

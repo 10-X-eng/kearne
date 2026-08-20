@@ -70,6 +70,15 @@ struct EngineeringGridMetrics {
   bool operator==(const EngineeringGridMetrics &) const = default;
 };
 
+struct EngineeringGridSpacing {
+  double minorMetres = 0.0;
+  double minorPixels = 0.0;
+  bool densityLimited = false;
+};
+
+[[nodiscard]] EngineeringGridSpacing
+engineeringGridSpacing(const EngineeringGridProjection &projection) noexcept;
+
 struct EngineeringGridLineBuffers {
   std::span<QSGGeometry::Point2D> minor;
   std::span<QSGGeometry::Point2D> major;
@@ -94,6 +103,8 @@ class EngineeringGridItem : public QQuickItem {
                  NOTIFY rotationRadiansChanged)
   Q_PROPERTY(qreal minorSpacingMetres READ minorSpacingMetres WRITE
                  setMinorSpacingMetres NOTIFY minorSpacingMetresChanged)
+  Q_PROPERTY(qreal displayedMinorSpacingMetres READ displayedMinorSpacingMetres
+                 NOTIFY displayedMinorSpacingChanged)
   Q_PROPERTY(int majorInterval READ majorInterval WRITE setMajorInterval NOTIFY
                  majorIntervalChanged)
   Q_PROPERTY(
@@ -122,6 +133,7 @@ public:
   [[nodiscard]] qreal pixelsPerMetre() const;
   [[nodiscard]] qreal rotationRadians() const;
   [[nodiscard]] qreal minorSpacingMetres() const;
+  [[nodiscard]] qreal displayedMinorSpacingMetres() const;
   [[nodiscard]] int majorInterval() const;
   [[nodiscard]] qreal minimumLineSpacingPixels() const;
   [[nodiscard]] qreal minorLineWidthPixels() const;
@@ -155,6 +167,7 @@ signals:
   void pixelsPerMetreChanged();
   void rotationRadiansChanged();
   void minorSpacingMetresChanged();
+  void displayedMinorSpacingChanged();
   void majorIntervalChanged();
   void minimumLineSpacingPixelsChanged();
   void lineWidthsChanged();
