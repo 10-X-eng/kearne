@@ -123,6 +123,8 @@ Targets:
 * camera movement must never wait for CAD recomputation;
 * selection highlighting should generally appear within one frame;
 * geometry recomputation must never execute synchronously on the UI thread;
+* engineering work shall use multithreaded CPU execution where its dependencies and backend safety permit;
+* GPU compute may accelerate suitable workloads, but ordinary CAD editing shall retain a CPU path;
 * simulation jobs must never block editing;
 * large assembly loading shall be incremental.
 
@@ -2478,6 +2480,10 @@ No code running on the UI thread may perform:
 * heavy database operations.
 
 The UI thread orchestrates, it does not compute.
+
+Rendering belongs to the render thread. Engineering work belongs to CPU worker threads or isolated worker processes. Independent work may execute concurrently. A backend operation that is internally serial or unsafe to call concurrently still runs outside the UI thread.
+
+GPU compute is an optional accelerator for suitable work, not a requirement for opening or editing a project. The CPU path shall use multiple cores where practical.
 
 ---
 

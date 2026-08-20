@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -10,7 +12,27 @@ Rectangle {
     property string semanticName: "Command and properties inspector"
     property string semanticRole: "panel"
     property var semanticActions: []
-    property int activePage: uiSession.inspectorPage
+    property int activePage: App.ui.inspectorPage
+    property bool closable: false
+    signal closeRequested()
+
+    function previewSourceDraft() {
+        if (!sourceEditor.dirty || sourceEditor.conflict)
+            return false
+        if (!App.ui.submitSourceEdit(sourceEditor.text,
+                                     sourceEditor.baselineRevision, true))
+            return false
+        sourceDiff.review(App.ui.selectedFunction.sourcePath,
+                          sourceEditor.baselineText, sourceEditor.text)
+        return true
+    }
+
+    function applySourceDraft() {
+        if (!sourceEditor.dirty || sourceEditor.conflict)
+            return false
+        return App.ui.submitSourceEdit(sourceEditor.text,
+                                       sourceEditor.baselineRevision, false)
+    }
 
     color: Theme.surface
     border.color: Theme.border
@@ -31,32 +53,42 @@ Rectangle {
                 Layout.fillWidth: true
 
                 Rectangle {
-                    Layout.preferredWidth: 14
-                    Layout.preferredHeight: 14
+                    Layout.preferredWidth: Theme.iconSizeSmall
+                    Layout.preferredHeight: Theme.iconSizeSmall
                     color: Theme.transparent
                     border.color: Theme.accent
                 }
 
                 Text {
                     Layout.fillWidth: true
-                    text: uiSession.inspectorTitle
+                    text: App.ui.inspectorTitle
                     color: Theme.text
                     font.pixelSize: Theme.fontTitle
-                    font.weight: Font.DemiBold
+                    font.weight: Theme.fontWeightStrong
                     elide: Text.ElideRight
+                }
+
+                KButton {
+                    semanticId: visible ? "inspector.collapse" : ""
+                    semanticName: "Collapse inspector panel"
+                    iconName: "collapse-right"
+                    quiet: true
+                    compact: true
+                    visible: root.closable
+                    onClicked: root.closeRequested()
                 }
             }
 
             Text {
                 Layout.fillWidth: true
-                text: uiSession.inspectorStatus
-                color: uiSession.backendConnected ? Theme.success : Theme.warning
+                text: App.ui.inspectorStatus
+                color: App.ui.backendConnected ? Theme.success : Theme.warning
                 font.pixelSize: Theme.fontSmall
                 wrapMode: Text.WordWrap
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        KSeparator { }
 
         RowLayout {
             Layout.fillWidth: true
@@ -76,7 +108,7 @@ Rectangle {
                 Layout.fillWidth: true
                 onClicked: {
                     root.activePage = 0
-                    uiSession.selectInspectorPage("properties")
+                    App.ui.selectInspectorPage("properties")
                 }
             }
 
@@ -92,12 +124,12 @@ Rectangle {
                 Layout.fillWidth: true
                 onClicked: {
                     root.activePage = 1
-                    uiSession.selectInspectorPage("source")
+                    App.ui.selectInspectorPage("source")
                 }
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        KSeparator { }
 
         ScrollView {
             visible: root.activePage === 0
@@ -114,20 +146,21 @@ Rectangle {
                     Layout.leftMargin: Theme.space3
                     Layout.rightMargin: Theme.space3
                     Layout.topMargin: Theme.space3
-                    text: uiSession.fields.length > 0 ? "COMMAND" : "PROPERTIES"
+                    text: App.ui.activeCommandId.length > 0 ? "COMMAND" : "PROPERTIES"
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall
-                    font.weight: Font.DemiBold
-                    font.letterSpacing: 0.8
+                    font.weight: Theme.fontWeightStrong
+                    font.letterSpacing: Theme.letterSpacing
                 }
 
                 Repeater {
-                    model: uiSession.fields
+                    model: App.ui.fields
 
                     ColumnLayout {
+                        id: fieldGroup
                         required property var modelData
-                        property string semanticId: "field." + modelData.id
-                        property string semanticName: modelData.label
+                        property string semanticId: "field." + fieldGroup.modelData.id
+                        property string semanticName: fieldGroup.modelData.label
                         property string semanticRole: "group"
                         property var semanticActions: []
                         Layout.fillWidth: true
@@ -136,46 +169,107 @@ Rectangle {
                         spacing: Theme.space1
 
                         Text {
-                            text: parent.modelData.label
+                            text: fieldGroup.modelData.label
                             color: Theme.textMuted
                             font.pixelSize: Theme.fontSmall
                         }
 
-                        Loader {
+                        StackLayout {
                             Layout.fillWidth: true
-                            sourceComponent: parent.modelData.kind === "choice" ? choiceEditor
-                                                                                  : textEditor
-                            property var field: parent.modelData
+                            currentIndex: fieldGroup.modelData.kind === "choice" ? 1
+                                          : (fieldGroup.modelData.kind === "toggle" ? 2 : 0)
+
+                            KTextField {
+                                semanticId: fieldGroup.modelData.kind === "choice"
+                                            || fieldGroup.modelData.kind === "toggle"
+                                            ? "" : "input." + fieldGroup.modelData.id
+                                semanticName: fieldGroup.modelData.label
+                                text: fieldGroup.modelData.value
+                                readOnly: fieldGroup.modelData.readOnly ?? false
+                                onEditingFinished: App.ui.editField(
+                                                       fieldGroup.modelData.id, text)
+                            }
+
+                            KChoice {
+                                semanticId: fieldGroup.modelData.kind === "choice"
+                                            ? "input." + fieldGroup.modelData.id : ""
+                                semanticName: fieldGroup.modelData.label
+                                model: fieldGroup.modelData.options
+                                semanticOptions: fieldGroup.modelData.optionIds
+                                currentIndex: Math.max(
+                                                  0,
+                                                  fieldGroup.modelData.optionIds.indexOf(
+                                                      fieldGroup.modelData.value))
+                                onActivated: index => App.ui.editField(
+                                                 fieldGroup.modelData.id,
+                                                 fieldGroup.modelData.optionIds[index])
+                            }
+
+                            KToggle {
+                                semanticId: fieldGroup.modelData.kind === "toggle"
+                                            ? "input." + fieldGroup.modelData.id : ""
+                                semanticName: fieldGroup.modelData.label
+                                checked: fieldGroup.modelData.value
+                                enabled: !(fieldGroup.modelData.readOnly ?? false)
+                                onToggled: App.ui.editField(fieldGroup.modelData.id,
+                                                            checked)
+                            }
                         }
                     }
                 }
 
                 RowLayout {
-                    visible: uiSession.fields.length > 0
+                    visible: App.ui.activeCommandId.length > 0
                     Layout.fillWidth: true
                     Layout.leftMargin: Theme.space3
                     Layout.rightMargin: Theme.space3
                     spacing: Theme.space2
 
                     KButton {
+                        semanticId: "inspector.cancel"
+                        semanticName: "Cancel command draft"
+                        text: "Cancel"
+                        quiet: true
+                        Layout.fillWidth: true
+                        onClicked: App.ui.cancelActiveCommand()
+                    }
+
+                    KButton {
                         semanticId: "inspector.preview"
                         semanticName: "Preview command"
+                        visible: App.ui.commandPreviewSupported
+                        enabled: App.ui.commandDraftState === "editing"
                         Layout.fillWidth: true
                         text: "Preview"
-                        onClicked: uiSession.requestCommand(uiSession.activeCommandId + ".preview")
+                        onClicked: App.ui.submitActiveCommand(true)
                     }
 
                     KButton {
                         semanticId: "inspector.apply"
                         semanticName: "Apply command"
+                        visible: App.ui.commandApplySupported
+                        enabled: App.ui.commandDraftState === "editing"
+                                 || App.ui.commandDraftState === "preview"
                         Layout.fillWidth: true
                         text: "Apply"
                         primary: true
-                        onClicked: uiSession.requestCommand(uiSession.activeCommandId + ".apply")
+                        onClicked: App.ui.submitActiveCommand(false)
                     }
                 }
 
-                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+                StateBadge {
+                    visible: App.ui.activeCommandId.length > 0
+                    Layout.leftMargin: Theme.space3
+                    semanticId: visible ? "command.draft.state" : ""
+                    semanticName: "Command draft state"
+                    semanticValue: App.ui.commandDraftState
+                    label: App.ui.commandDraftState
+                    status: App.ui.commandDraftState === "rejected" ? "failed"
+                            : (App.ui.commandDraftState === "editing" ? "current"
+                               : App.ui.commandDraftState)
+                }
+
+                KSeparator { }
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -187,8 +281,8 @@ Rectangle {
                         text: "PARAMETERS"
                         color: Theme.textFaint
                         font.pixelSize: Theme.fontSmall
-                        font.weight: Font.DemiBold
-                        font.letterSpacing: 0.8
+                        font.weight: Theme.fontWeightStrong
+                        font.letterSpacing: Theme.letterSpacing
                     }
 
                     KButton {
@@ -196,46 +290,74 @@ Rectangle {
                         semanticName: "Manage parameters"
                         text: "Manage"
                         quiet: true
-                        onClicked: uiSession.requestCommand("parameters.manage")
+                        onClicked: parameterManager.begin("")
                     }
                 }
 
                 Repeater {
-                    model: uiSession.parameters
+                    model: App.ui.parameters
 
-                    RowLayout {
+                    ItemDelegate {
+                        id: parameterRow
                         required property var modelData
-                        property string semanticId: "parameter." + modelData.name
-                        property string semanticName: modelData.name
+                        property string semanticId: "parameter." + parameterRow.modelData.id
+                        property string semanticName: parameterRow.modelData.name
                         property string semanticRole: "row"
                         property var semanticActions: ["edit"]
-                        property string semanticValue: modelData.expression
+                        property string semanticValue: parameterRow.modelData.expression
+
+                        function editParameter() {
+                            return parameterManager.begin(
+                                        parameterRow.modelData.id)
+                        }
+
+                        function performSemanticAction(action, value) {
+                            return action === "edit" && editParameter()
+                        }
+
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space3
                         Layout.rightMargin: Theme.space3
+                        hoverEnabled: true
+                        Accessible.name: semanticName
+                        Accessible.id: semanticId
+                        Accessible.role: Accessible.ListItem
+                        Accessible.focusable: enabled && visible
+                        onClicked: editParameter()
 
-                        Text {
-                            Layout.preferredWidth: 88
-                            text: parent.modelData.name
-                            color: Theme.text
-                            font.pixelSize: Theme.fontSmall
-                            font.family: "monospace"
-                            elide: Text.ElideRight
+                        contentItem: RowLayout {
+                            Text {
+                                Layout.preferredWidth: 88
+                                text: parameterRow.modelData.name
+                                color: Theme.text
+                                font.pixelSize: Theme.fontSmall
+                                font.family: Theme.fontDataFamily
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: parameterRow.modelData.expression
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontSmall
+                                font.family: Theme.fontDataFamily
+                                elide: Text.ElideRight
+                            }
+
+                            Text {
+                                text: parameterRow.modelData.value
+                                color: Theme.textFaint
+                                font.pixelSize: Theme.fontSmall
+                            }
                         }
 
-                        Text {
-                            Layout.fillWidth: true
-                            text: parent.modelData.expression
-                            color: Theme.textMuted
-                            font.pixelSize: Theme.fontSmall
-                            font.family: "monospace"
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            text: parent.modelData.value
-                            color: Theme.textFaint
-                            font.pixelSize: Theme.fontSmall
+                        background: Rectangle {
+                            radius: Theme.radiusSmall
+                            color: parameterRow.hovered || parameterRow.visualFocus
+                                   ? Theme.surfaceMuted : Theme.transparent
+                            border.width: parameterRow.visualFocus
+                                          ? Theme.focusRingWidth : 0
+                            border.color: Theme.focus
                         }
                     }
                 }
@@ -250,52 +372,109 @@ Rectangle {
             Layout.fillHeight: true
             spacing: 0
 
-            RowLayout {
+            FunctionContractPanel {
                 Layout.fillWidth: true
-                Layout.leftMargin: Theme.space3
-                Layout.rightMargin: Theme.space3
+                Layout.leftMargin: Theme.space2
+                Layout.rightMargin: Theme.space2
                 Layout.topMargin: Theme.space2
-                Layout.bottomMargin: Theme.space2
-
-                Text {
-                    Layout.fillWidth: true
-                    text: "base_plate.py"
-                    color: Theme.textMuted
-                    font.pixelSize: Theme.fontSmall
-                    font.family: "monospace"
-                }
-
-                StateBadge {
-                    label: "Native build123d"
-                    state: "current"
-                }
+                descriptor: App.ui.selectedFunction
             }
 
             TextArea {
+                id: sourceEditor
                 property string semanticId: "inspector.source.editor"
-                property string semanticName: "Native build123d source"
+                property string semanticName: App.ui.selectedFunction.sourcePath
+                                              + " native build123d source"
                 property string semanticRole: "textbox"
                 property var semanticActions: readOnly ? ["focus"] : ["focus", "setValue"]
-                property string semanticValue: text
+                property string semanticValue: conflict ? "conflict"
+                                                       : (dirty ? "modified" : "current")
+                property string baselineText: ""
+                property string baselineRevision: ""
+                readonly property bool dirty: text !== baselineText
+                readonly property bool conflict: dirty
+                                                 && baselineRevision
+                                                    !== App.ui.selectedFunction.revision
+
+                function loadBaseline() {
+                    baselineText = App.ui.modelSource
+                    baselineRevision = App.ui.selectedFunction.revision
+                    text = baselineText
+                }
+
+                function performSemanticAction(action, value) {
+                    if (action === "focus") {
+                        forceActiveFocus()
+                        return true
+                    }
+                    if (action !== "setValue" || readOnly)
+                        return false
+                    text = String(value)
+                    return true
+                }
+
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: Theme.space2
                 Layout.rightMargin: Theme.space2
-                text: uiSession.modelSource
-                readOnly: !uiSession.backendConnected
+                readOnly: !App.ui.sourceEditingAvailable
                 selectByMouse: true
                 wrapMode: TextEdit.NoWrap
                 color: Theme.text
                 selectionColor: Theme.accentSoft
                 selectedTextColor: Theme.text
-                font.family: "monospace"
+                font.family: Theme.fontDataFamily
                 font.pixelSize: Theme.fontSmall
                 Accessible.name: semanticName
+                Accessible.id: semanticId
+                Accessible.role: Accessible.EditableText
+                Accessible.editable: !readOnly
+                Accessible.focusable: enabled && visible
                 background: Rectangle {
                     radius: Theme.radiusSmall
                     color: Theme.surfaceRaised
                     border.color: parent.activeFocus ? Theme.focus : Theme.border
                     border.width: parent.activeFocus ? 2 : 1
+                }
+
+                Component.onCompleted: loadBaseline()
+
+                Connections {
+                    target: App.ui
+                    function onProjectionChanged() {
+                        if (!sourceEditor.dirty
+                                || sourceEditor.text === App.ui.modelSource)
+                            sourceEditor.loadBaseline()
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: Theme.space2
+                Layout.rightMargin: Theme.space2
+
+                StateBadge {
+                    semanticId: "source.draft.state"
+                    semanticName: "Source draft state"
+                    semanticValue: sourceEditor.conflict ? "conflict"
+                                   : (sourceEditor.dirty ? "modified" : "current")
+                    label: semanticValue
+                    status: sourceEditor.conflict ? "failed"
+                                                  : (sourceEditor.dirty ? "preview"
+                                                                        : "current")
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: sourceEditor.conflict
+                          ? "The source revision changed; preserve this draft and reload before applying."
+                          : (sourceEditor.dirty ? "Uncommitted source revision"
+                                                : App.ui.selectedFunction.revision)
+                    color: sourceEditor.conflict ? Theme.error : Theme.textMuted
+                    font.pixelSize: Theme.fontSmall
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignRight
                 }
             }
 
@@ -309,8 +488,10 @@ Rectangle {
                     semanticName: "Review source changes"
                     text: "Diff"
                     iconName: "compare"
-                    enabled: uiSession.backendConnected
+                    enabled: App.ui.sourceEditingAvailable
+                             && sourceEditor.dirty && !sourceEditor.conflict
                     Layout.fillWidth: true
+                    onClicked: root.previewSourceDraft()
                 }
 
                 KButton {
@@ -319,8 +500,10 @@ Rectangle {
                     text: "Apply"
                     iconName: "check"
                     primary: true
-                    enabled: uiSession.backendConnected
+                    enabled: App.ui.sourceEditingAvailable
+                             && sourceEditor.dirty && !sourceEditor.conflict
                     Layout.fillWidth: true
+                    onClicked: root.applySourceDraft()
                 }
             }
         }
@@ -331,38 +514,11 @@ Rectangle {
         }
     }
 
-    Component {
-        id: textEditor
+    ParameterManagerDialog { id: parameterManager }
 
-        TextField {
-            property string semanticId: "input." + field.id
-            property string semanticName: field.label
-            property string semanticRole: "textbox"
-            property var semanticActions: readOnly ? [] : ["focus", "setValue"]
-            property string semanticValue: text
-            text: field.value
-            readOnly: field.readOnly ?? false
-            color: Theme.text
-            font.pixelSize: Theme.fontBody
-            selectByMouse: true
-            Accessible.name: semanticName
-            background: Rectangle {
-                radius: Theme.radiusSmall
-                color: Theme.surface
-                border.color: parent.activeFocus ? Theme.focus : Theme.border
-                border.width: parent.activeFocus ? 2 : 1
-            }
-        }
+    SourceDiffDialog {
+        id: sourceDiff
+        onApplyRequested: root.applySourceDraft()
     }
 
-    Component {
-        id: choiceEditor
-
-        KChoice {
-            semanticId: "input." + field.id
-            semanticName: field.label
-            model: field.options
-            currentIndex: Math.max(0, field.options.indexOf(field.value))
-        }
-    }
 }

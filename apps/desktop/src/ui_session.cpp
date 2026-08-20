@@ -2,9 +2,7 @@
 
 #include <QVariantMap>
 
-#include <array>
 #include <algorithm>
-#include <span>
 #include <utility>
 
 namespace kearne::ui {
@@ -12,620 +10,351 @@ namespace {
 
 using Record = QVariantMap;
 
-struct CommandDefinition {
-  const char *id;
-  const char *label;
-  const char *icon;
-  const char *group;
-  const char *shortcut;
-};
-
-QVariantList records(std::initializer_list<Record> values) {
+template <typename Value, typename Convert>
+QVariantList recordsFor(const std::vector<Value> &values, Convert convert) {
   QVariantList result;
   result.reserve(static_cast<qsizetype>(values.size()));
-  for (const Record &value : values)
-    result.push_back(value);
+  for (const Value &value : values)
+    result.push_back(convert(value));
   return result;
 }
 
-QVariantList commandRecords(const std::span<const CommandDefinition> definitions) {
+QVariantList optionRecords(const std::vector<UiOption> &options) {
   QVariantList result;
-  result.reserve(static_cast<qsizetype>(definitions.size()));
-  for (const CommandDefinition &definition : definitions) {
-    result.push_back(Record{{QStringLiteral("id"), QString::fromLatin1(definition.id)},
-                            {QStringLiteral("label"), QString::fromLatin1(definition.label)},
-                            {QStringLiteral("icon"),
-                             QString::fromLatin1(definition.icon)},
-                            {QStringLiteral("group"), QString::fromLatin1(definition.group)},
-                            {QStringLiteral("shortcut"),
-                             QString::fromLatin1(definition.shortcut)},
-                            {QStringLiteral("available"), true}});
+  result.reserve(static_cast<qsizetype>(options.size()));
+  for (const UiOption &option : options) {
+    result.push_back(Record{{QStringLiteral("id"), option.id},
+                            {QStringLiteral("label"), option.label},
+                            {QStringLiteral("symbol"), option.symbol}});
   }
   return result;
 }
 
-constexpr std::array modelCommands{
-    CommandDefinition{"model.sketch.create", "New Sketch", "sketch", "Create", "S"},
-    CommandDefinition{"model.extrude", "Extrude", "extrude", "Create", "E"},
-    CommandDefinition{"model.revolve", "Revolve", "revolve", "Create", "R"},
-    CommandDefinition{"model.sweep", "Sweep", "path", "Create", ""},
-    CommandDefinition{"model.loft", "Loft", "layers", "Create", ""},
-    CommandDefinition{"model.fillet", "Fillet", "round", "Modify", "F"},
-    CommandDefinition{"model.chamfer", "Chamfer", "chamfer", "Modify", ""},
-    CommandDefinition{"model.shell", "Shell", "shell", "Modify", ""},
-    CommandDefinition{"model.hole", "Hole", "hole", "Modify", "H"},
-    CommandDefinition{"model.pattern", "Pattern", "grid", "Transform", ""},
-    CommandDefinition{"model.mirror", "Mirror", "mirror", "Transform", ""},
-    CommandDefinition{"model.plane.create", "Plane", "plane", "Reference", ""},
-    CommandDefinition{"model.material.assign", "Material", "material", "Inspect", ""},
-    CommandDefinition{"inspect.measure", "Measure", "measure", "Inspect", "M"},
-    CommandDefinition{"inspect.section", "Section", "section", "Inspect", ""},
-};
-
-constexpr std::array sketchCommands{
-    CommandDefinition{"sketch.line", "Line", "line", "Geometry", "L"},
-    CommandDefinition{"sketch.polyline", "Polyline", "polyline", "Geometry", ""},
-    CommandDefinition{"sketch.rectangle", "Rectangle", "rectangle", "Geometry", "G, R"},
-    CommandDefinition{"sketch.circle", "Circle", "circle", "Geometry", "C"},
-    CommandDefinition{"sketch.arc", "Arc", "arc", "Geometry", "A"},
-    CommandDefinition{"sketch.trim", "Trim", "trim", "Modify", "T"},
-    CommandDefinition{"sketch.dimension", "Dimension", "dimension", "Constrain", "D"},
-    CommandDefinition{"sketch.coincident", "Coincident", "coincident", "Constrain", ""},
-    CommandDefinition{"sketch.horizontal", "Horizontal", "horizontal", "Constrain", ""},
-    CommandDefinition{"sketch.vertical", "Vertical", "vertical", "Constrain", ""},
-    CommandDefinition{"sketch.equal", "Equal", "equal", "Constrain", ""},
-};
-
-constexpr std::array assemblyCommands{
-    CommandDefinition{"assembly.insert", "Insert", "add", "Components", "I"},
-    CommandDefinition{"assembly.fastener.insert", "Fastener", "fastener", "Components", ""},
-    CommandDefinition{"assembly.material.assign", "Material", "material", "Components", ""},
-    CommandDefinition{"assembly.joint", "Joint", "joint", "Relationships", "J"},
-    CommandDefinition{"assembly.fastened", "Fastened", "fastener", "Relationships", ""},
-    CommandDefinition{"assembly.revolute", "Revolute", "revolve", "Relationships", ""},
-    CommandDefinition{"assembly.slider", "Slider", "path", "Relationships", ""},
-    CommandDefinition{"assembly.drive", "Drive", "play", "Motion", ""},
-    CommandDefinition{"assembly.interference", "Interference", "interference", "Inspect", ""},
-};
-
-constexpr std::array sheetMetalCommands{
-    CommandDefinition{"sheet-metal.base", "Base flange", "sheet-metal", "Create", ""},
-    CommandDefinition{"sheet-metal.flange", "Flange", "sheet-metal", "Create", ""},
-    CommandDefinition{"sheet-metal.bend", "Bend", "bend", "Create", ""},
-    CommandDefinition{"sheet-metal.hem", "Hem", "bend", "Create", ""},
-    CommandDefinition{"sheet-metal.relief", "Corner relief", "trim", "Modify", ""},
-    CommandDefinition{"sheet-metal.rip", "Rip", "section", "Modify", ""},
-    CommandDefinition{"sheet-metal.unfold", "Unfold", "unfold", "Review", ""},
-    CommandDefinition{"sheet-metal.refold", "Refold", "mirror", "Review", ""},
-};
-
-constexpr std::array simulationCommands{
-    CommandDefinition{"simulation.study", "Study", "simulate", "Setup", ""},
-    CommandDefinition{"simulation.material", "Material", "material", "Setup", ""},
-    CommandDefinition{"simulation.constraint", "Constraint", "lock", "Loads", ""},
-    CommandDefinition{"simulation.load", "Load", "target", "Loads", ""},
-    CommandDefinition{"simulation.mesh", "Mesh", "mesh", "Solve", ""},
-    CommandDefinition{"simulation.solve", "Solve", "solve", "Solve", ""},
-    CommandDefinition{"simulation.results", "Results", "chart", "Review", ""},
-};
-
-constexpr std::array drawingCommands{
-    CommandDefinition{"drawing.sheet", "Sheet", "sheet", "Create", ""},
-    CommandDefinition{"drawing.base_view", "Base view", "view", "Views", ""},
-    CommandDefinition{"drawing.projected_view", "Projected", "layers", "Views", ""},
-    CommandDefinition{"drawing.section_view", "Section", "section", "Views", ""},
-    CommandDefinition{"drawing.dimension", "Dimension", "dimension", "Annotate", ""},
-    CommandDefinition{"drawing.gdt", "GD&T", "target", "Annotate", ""},
-};
-
-constexpr std::array bomCommands{
-    CommandDefinition{"bom.refresh", "Refresh", "refresh", "Table", ""},
-    CommandDefinition{"bom.columns", "Columns", "columns", "Table", ""},
-    CommandDefinition{"bom.balloon", "Balloon", "circle", "Annotate", ""},
-    CommandDefinition{"bom.export", "Export", "export", "Output", ""},
-};
-
-constexpr std::array camCommands{
-    CommandDefinition{"cam.setup", "Setup", "cam", "Setup", ""},
-    CommandDefinition{"cam.stock", "Stock", "stock", "Setup", ""},
-    CommandDefinition{"cam.face", "Face", "face", "2D", ""},
-    CommandDefinition{"cam.contour", "Contour", "contour", "2D", ""},
-    CommandDefinition{"cam.pocket", "Pocket", "pocket", "2D", ""},
-    CommandDefinition{"cam.drill", "Drill", "drill", "Hole", ""},
-    CommandDefinition{"cam.adaptive", "Adaptive", "toolpath", "3D", ""},
-    CommandDefinition{"cam.simulate", "Simulate", "play", "Verify", ""},
-    CommandDefinition{"cam.post", "Post", "export", "Output", ""},
-};
-
-constexpr std::array versionCommands{
-    CommandDefinition{"version.checkpoint", "Checkpoint", "checkpoint", "History", ""},
-    CommandDefinition{"version.branch", "Branch", "branch", "History", ""},
-    CommandDefinition{"version.compare", "Compare", "compare", "Review", ""},
-    CommandDefinition{"version.merge", "Merge", "merge", "Review", ""},
-};
-
-constexpr std::array agentCommands{
-    CommandDefinition{"agent.ask", "Ask Kearne", "agent", "Agent", "Ctrl+J"},
-    CommandDefinition{"agent.inspect", "Inspect context", "inspect", "Agent", ""},
-    CommandDefinition{"agent.plan", "Plan change", "plan", "Agent", ""},
-    CommandDefinition{"agent.review", "Review change", "review", "Agent", ""},
-};
-
-QVariantList allCommandRecords() {
-  QVariantList result;
-  const auto append = [&result](QVariantList commands) {
-    result.append(commands);
-  };
-  append(commandRecords(modelCommands));
-  append(commandRecords(sketchCommands));
-  append(commandRecords(assemblyCommands));
-  append(commandRecords(sheetMetalCommands));
-  append(commandRecords(simulationCommands));
-  append(commandRecords(camCommands));
-  append(commandRecords(drawingCommands));
-  append(commandRecords(bomCommands));
-  append(commandRecords(versionCommands));
-  append(commandRecords(agentCommands));
-  return result;
-}
-
-QVariantList commandsFor(const QString &workspaceId) {
-  if (workspaceId == QStringLiteral("sketch"))
-    return commandRecords(sketchCommands);
-  if (workspaceId == QStringLiteral("assemble"))
-    return commandRecords(assemblyCommands);
-  if (workspaceId == QStringLiteral("sheet-metal"))
-    return commandRecords(sheetMetalCommands);
-  if (workspaceId == QStringLiteral("simulate"))
-    return commandRecords(simulationCommands);
-  if (workspaceId == QStringLiteral("drawing"))
-    return commandRecords(drawingCommands);
-  if (workspaceId == QStringLiteral("bom"))
-    return commandRecords(bomCommands);
-  if (workspaceId == QStringLiteral("cam"))
-    return commandRecords(camCommands);
-  return commandRecords(modelCommands);
-}
-
-QString commandLabel(const QVariantList &commands, const QString &commandId) {
-  for (const QVariant &value : commands) {
-    const QVariantMap command = value.toMap();
-    if (command.value(QStringLiteral("id")).toString() == commandId)
-      return command.value(QStringLiteral("label")).toString();
+QString preferenceKindName(PreferenceKind kind) {
+  switch (kind) {
+  case PreferenceKind::Choice:
+    return QStringLiteral("choice");
+  case PreferenceKind::Toggle:
+    return QStringLiteral("toggle");
+  case PreferenceKind::Text:
+    return QStringLiteral("text");
   }
   return {};
 }
 
-bool containsRecordId(const QVariantList &records, const QString &id) {
-  return std::any_of(records.cbegin(), records.cend(), [&id](const QVariant &value) {
-    return value.toMap().value(QStringLiteral("id")).toString() == id;
+QString fieldKindName(FieldKind kind) {
+  switch (kind) {
+  case FieldKind::Choice:
+    return QStringLiteral("choice");
+  case FieldKind::Reference:
+    return QStringLiteral("reference");
+  case FieldKind::Expression:
+    return QStringLiteral("expression");
+  case FieldKind::Text:
+    return QStringLiteral("text");
+  case FieldKind::Toggle:
+    return QStringLiteral("toggle");
+  }
+  return {};
+}
+
+QString commandDraftStateName(CommandDraftState state) {
+  switch (state) {
+  case CommandDraftState::None:
+    return QStringLiteral("none");
+  case CommandDraftState::Editing:
+    return QStringLiteral("editing");
+  case CommandDraftState::Preview:
+    return QStringLiteral("preview");
+  case CommandDraftState::Stale:
+    return QStringLiteral("stale");
+  case CommandDraftState::Unavailable:
+    return QStringLiteral("unavailable");
+  case CommandDraftState::Rejected:
+    return QStringLiteral("rejected");
+  }
+  return {};
+}
+
+QString sketchInputKindName(SketchInputKind kind) {
+  switch (kind) {
+  case SketchInputKind::None:
+    return QStringLiteral("none");
+  case SketchInputKind::PlanePoint:
+    return QStringLiteral("plane-point");
+  case SketchInputKind::Entity:
+    return QStringLiteral("entity");
+  }
+  return {};
+}
+
+QString sketchPrimitiveKindName(SketchPrimitiveKind kind) {
+  switch (kind) {
+  case SketchPrimitiveKind::Point:
+    return QStringLiteral("point");
+  case SketchPrimitiveKind::Line:
+    return QStringLiteral("line");
+  case SketchPrimitiveKind::Circle:
+    return QStringLiteral("circle");
+  case SketchPrimitiveKind::Arc:
+    return QStringLiteral("arc");
+  }
+  return {};
+}
+
+QString sketchSelectionKindName(SketchSelectionKind kind) {
+  switch (kind) {
+  case SketchSelectionKind::Any:
+    return QStringLiteral("any");
+  case SketchSelectionKind::Point:
+    return QStringLiteral("point");
+  case SketchSelectionKind::Curve:
+    return QStringLiteral("curve");
+  }
+  return {};
+}
+
+QStringList optionValues(const std::vector<UiOption> &options, bool labels) {
+  QStringList result;
+  result.reserve(static_cast<qsizetype>(options.size()));
+  for (const UiOption &option : options)
+    result.push_back(labels ? option.label : option.id);
+  return result;
+}
+
+QVariantList
+preferenceCategoryRecords(const std::vector<PreferenceCategory> &categories) {
+  QVariantList result;
+  result.reserve(static_cast<qsizetype>(categories.size()));
+  for (const PreferenceCategory &category : categories) {
+    result.push_back(Record{{QStringLiteral("id"), category.id},
+                            {QStringLiteral("label"), category.label},
+                            {QStringLiteral("icon"), category.icon}});
+  }
+  return result;
+}
+
+QVariantList
+preferenceRecords(const std::vector<PreferenceDescriptor> &preferences) {
+  QVariantList result;
+  result.reserve(static_cast<qsizetype>(preferences.size()));
+  for (const PreferenceDescriptor &preference : preferences) {
+    const QVariant value = std::holds_alternative<bool>(preference.value)
+                               ? QVariant(std::get<bool>(preference.value))
+                               : QVariant(std::get<QString>(preference.value));
+    result.push_back(Record{
+        {QStringLiteral("id"), preference.id},
+        {QStringLiteral("categoryId"), preference.categoryId},
+        {QStringLiteral("label"), preference.label},
+        {QStringLiteral("detail"), preference.detail},
+        {QStringLiteral("kind"), preferenceKindName(preference.kind)},
+        {QStringLiteral("value"), value},
+        {QStringLiteral("options"), optionValues(preference.options, true)},
+        {QStringLiteral("optionIds"), optionValues(preference.options, false)},
+        {QStringLiteral("enabled"), preference.enabled}});
+  }
+  return result;
+}
+
+QVariantList fieldRecords(const std::vector<FieldDescriptor> &fields) {
+  return recordsFor(fields, [](const FieldDescriptor &field) {
+    const QVariant value = std::holds_alternative<bool>(field.value)
+                               ? QVariant(std::get<bool>(field.value))
+                               : QVariant(std::get<QString>(field.value));
+    return Record{
+        {QStringLiteral("id"), field.id},
+        {QStringLiteral("label"), field.label},
+        {QStringLiteral("kind"), fieldKindName(field.kind)},
+        {QStringLiteral("value"), value},
+        {QStringLiteral("effectiveValue"), field.effectiveValue},
+        {QStringLiteral("options"), optionValues(field.options, true)},
+        {QStringLiteral("optionIds"), optionValues(field.options, false)},
+        {QStringLiteral("readOnly"), field.readOnly}};
   });
 }
 
-QString gridSpacingFor(const QString &unitId) {
-  if (unitId == QStringLiteral("cm"))
-    return QStringLiteral("1 cm");
-  if (unitId == QStringLiteral("m"))
-    return QStringLiteral("0.01 m");
-  if (unitId == QStringLiteral("in"))
-    return QStringLiteral("0.5 in");
-  return QStringLiteral("10 mm");
+QVariantList commandRecords(const std::vector<CommandDescriptor> &commands) {
+  return recordsFor(commands, [](const CommandDescriptor &command) {
+    return Record{
+        {QStringLiteral("id"), command.id},
+        {QStringLiteral("label"), command.label},
+        {QStringLiteral("icon"), command.icon},
+        {QStringLiteral("group"), command.group},
+        {QStringLiteral("workspaceId"), command.workspaceId},
+        {QStringLiteral("shortcut"), command.shortcut},
+        {QStringLiteral("available"), command.available},
+        {QStringLiteral("unavailableReason"), command.unavailableReason}};
+  });
 }
 
-class DevelopmentFrontendPort final : public FrontendPort {
-public:
-  DevelopmentFrontendPort() {
-    snapshot_.generation = 1;
-    snapshot_.projectName = QStringLiteral("Motor Bracket");
-    snapshot_.branchLabel = QStringLiteral("main");
-    snapshot_.revisionLabel = QStringLiteral("UI contract mode");
-    snapshot_.activeWorkspaceId = QStringLiteral("model");
-    snapshot_.viewportState = QStringLiteral("unavailable");
-    snapshot_.inspectorTitle = QStringLiteral("Selection");
-    snapshot_.inspectorStatus = QStringLiteral("Engineering backend disconnected");
-    snapshot_.viewportHeadline = QStringLiteral("Viewport ready");
-    snapshot_.viewportDetail = QStringLiteral("Render projection is not connected");
-    snapshot_.modelHealth = QStringLiteral("Backend disconnected");
-    snapshot_.selectionSummary = QStringLiteral("Nothing selected");
-    snapshot_.agentStatus = QStringLiteral("Codex harness disconnected");
-    snapshot_.defaultLengthUnitId = QStringLiteral("mm");
-    snapshot_.projectLengthUnitId = QStringLiteral("mm");
-    snapshot_.gridPlaneLabel = QStringLiteral("XY");
-    snapshot_.gridSpacingLabel = gridSpacingFor(snapshot_.projectLengthUnitId);
-    snapshot_.lengthUnits = records({
-        {{QStringLiteral("id"), QStringLiteral("mm")},
-         {QStringLiteral("label"), QStringLiteral("Millimeters")},
-         {QStringLiteral("symbol"), QStringLiteral("mm")}},
-        {{QStringLiteral("id"), QStringLiteral("cm")},
-         {QStringLiteral("label"), QStringLiteral("Centimeters")},
-         {QStringLiteral("symbol"), QStringLiteral("cm")}},
-        {{QStringLiteral("id"), QStringLiteral("m")},
-         {QStringLiteral("label"), QStringLiteral("Meters")},
-         {QStringLiteral("symbol"), QStringLiteral("m")}},
-        {{QStringLiteral("id"), QStringLiteral("in")},
-         {QStringLiteral("label"), QStringLiteral("Inches")},
-         {QStringLiteral("symbol"), QStringLiteral("in")}},
-    });
-    snapshot_.modelSource = QStringLiteral(
-        "from build123d import Box\n\n"
-        "def base_plate(\n"
-        "    width: float = 100.0,\n"
-        "    depth: float = 60.0,\n"
-        "    thickness: float = 8.0,\n"
-        "):\n"
-        "    return Box(width, depth, thickness)\n");
-    snapshot_.commandCatalog = allCommandRecords();
-    snapshot_.workspaces = records({
-        {{QStringLiteral("id"), QStringLiteral("model")},
-         {QStringLiteral("label"), QStringLiteral("Model")},
-         {QStringLiteral("icon"), QStringLiteral("model")}},
-        {{QStringLiteral("id"), QStringLiteral("sketch")},
-         {QStringLiteral("label"), QStringLiteral("Sketch")},
-         {QStringLiteral("icon"), QStringLiteral("sketch")}},
-        {{QStringLiteral("id"), QStringLiteral("assemble")},
-         {QStringLiteral("label"), QStringLiteral("Assemble")},
-         {QStringLiteral("icon"), QStringLiteral("assemble")}},
-        {{QStringLiteral("id"), QStringLiteral("sheet-metal")},
-         {QStringLiteral("label"), QStringLiteral("Sheet Metal")},
-         {QStringLiteral("icon"), QStringLiteral("sheet-metal")}},
-        {{QStringLiteral("id"), QStringLiteral("simulate")},
-         {QStringLiteral("label"), QStringLiteral("Simulate")},
-         {QStringLiteral("icon"), QStringLiteral("simulate")}},
-        {{QStringLiteral("id"), QStringLiteral("cam")},
-         {QStringLiteral("label"), QStringLiteral("CAM")},
-         {QStringLiteral("icon"), QStringLiteral("cam")}},
-        {{QStringLiteral("id"), QStringLiteral("drawing")},
-         {QStringLiteral("label"), QStringLiteral("Drawing")},
-         {QStringLiteral("icon"), QStringLiteral("drawing")}},
-        {{QStringLiteral("id"), QStringLiteral("bom")},
-         {QStringLiteral("label"), QStringLiteral("BOM")},
-         {QStringLiteral("icon"), QStringLiteral("bom")}},
-    });
-    snapshot_.structure = records({
-        {{QStringLiteral("id"), QStringLiteral("project.root")},
-         {QStringLiteral("label"), QStringLiteral("Motor Bracket")},
-         {QStringLiteral("depth"), 0},
-         {QStringLiteral("kind"), QStringLiteral("project")}},
-        {{QStringLiteral("id"), QStringLiteral("component.base_plate")},
-         {QStringLiteral("label"), QStringLiteral("Base Plate")},
-         {QStringLiteral("depth"), 1},
-         {QStringLiteral("kind"), QStringLiteral("component")}},
-        {{QStringLiteral("id"), QStringLiteral("reference.origin")},
-         {QStringLiteral("label"), QStringLiteral("Origin")},
-         {QStringLiteral("depth"), 2},
-         {QStringLiteral("kind"), QStringLiteral("group")}},
-        {{QStringLiteral("id"), QStringLiteral("reference.plane.xy")},
-         {QStringLiteral("label"), QStringLiteral("XY Plane")},
-         {QStringLiteral("depth"), 3},
-         {QStringLiteral("kind"), QStringLiteral("plane")}},
-        {{QStringLiteral("id"), QStringLiteral("reference.plane.xz")},
-         {QStringLiteral("label"), QStringLiteral("XZ Plane")},
-         {QStringLiteral("depth"), 3},
-         {QStringLiteral("kind"), QStringLiteral("plane")}},
-        {{QStringLiteral("id"), QStringLiteral("reference.plane.yz")},
-         {QStringLiteral("label"), QStringLiteral("YZ Plane")},
-         {QStringLiteral("depth"), 3},
-         {QStringLiteral("kind"), QStringLiteral("plane")}},
-        {{QStringLiteral("id"), QStringLiteral("function.sketch_003")},
-         {QStringLiteral("label"), QStringLiteral("sketch_003()")},
-         {QStringLiteral("depth"), 2},
-         {QStringLiteral("kind"), QStringLiteral("model-function")}},
-        {{QStringLiteral("id"), QStringLiteral("function.extrude_004")},
-         {QStringLiteral("label"), QStringLiteral("extrude_004()")},
-         {QStringLiteral("depth"), 2},
-         {QStringLiteral("kind"), QStringLiteral("model-function")}},
-        {{QStringLiteral("id"), QStringLiteral("component.motor")},
-         {QStringLiteral("label"), QStringLiteral("Motor NEMA 23")},
-         {QStringLiteral("depth"), 1},
-         {QStringLiteral("kind"), QStringLiteral("component")}},
-        {{QStringLiteral("id"), QStringLiteral("group.fasteners")},
-         {QStringLiteral("label"), QStringLiteral("Fasteners")},
-         {QStringLiteral("depth"), 1},
-         {QStringLiteral("kind"), QStringLiteral("group")}},
-    });
-    snapshot_.revisions = records({
-        {{QStringLiteral("id"), QStringLiteral("revision.ui.3")},
-         {QStringLiteral("label"), QStringLiteral("Inspector state")},
-         {QStringLiteral("detail"), QStringLiteral("frontend contract")}},
-        {{QStringLiteral("id"), QStringLiteral("revision.ui.2")},
-         {QStringLiteral("label"), QStringLiteral("Workspace layout")},
-         {QStringLiteral("detail"), QStringLiteral("frontend contract")}},
-        {{QStringLiteral("id"), QStringLiteral("revision.ui.1")},
-         {QStringLiteral("label"), QStringLiteral("Application shell")},
-         {QStringLiteral("detail"), QStringLiteral("frontend contract")}},
-    });
-    snapshot_.historyCommands = commandRecords(versionCommands);
-    snapshot_.parameters = records({
-        {{QStringLiteral("name"), QStringLiteral("plateWidth")},
-         {QStringLiteral("expression"), QStringLiteral("100 mm")},
-         {QStringLiteral("value"), QStringLiteral("unresolved")}},
-        {{QStringLiteral("name"), QStringLiteral("height")},
-         {QStringLiteral("expression"), QStringLiteral("plateWidth / 2")},
-         {QStringLiteral("value"), QStringLiteral("unresolved")}},
-        {{QStringLiteral("name"), QStringLiteral("wall")},
-         {QStringLiteral("expression"), QStringLiteral("2.5 mm")},
-         {QStringLiteral("value"), QStringLiteral("unresolved")}},
-    });
-    snapshot_.jobs = records({
-        {{QStringLiteral("id"), QStringLiteral("job.backend")},
-         {QStringLiteral("label"), QStringLiteral("Engineering services")},
-         {QStringLiteral("state"), QStringLiteral("Unavailable")},
-         {QStringLiteral("progress"), -1}},
-    });
-    snapshot_.diagnostics = records({
-        {{QStringLiteral("id"), QStringLiteral("diagnostic.backend")},
-         {QStringLiteral("severity"), QStringLiteral("information")},
-         {QStringLiteral("summary"),
-          QStringLiteral("Frontend contract mode does not evaluate geometry.")}},
-    });
-    snapshot_.proposals = records({
-        {{QStringLiteral("id"), QStringLiteral("proposal.connect")},
-         {QStringLiteral("summary"),
-          QStringLiteral("Connect the supervised Codex harness to enable proposals.")},
-         {QStringLiteral("state"), QStringLiteral("Unavailable")}},
-    });
-    snapshot_.recentProjects = records({
-        {{QStringLiteral("id"), QStringLiteral("project.motor_bracket")},
-         {QStringLiteral("name"), QStringLiteral("Motor Bracket")},
-         {QStringLiteral("detail"), QStringLiteral("UI contract workspace")},
-         {QStringLiteral("modified"), QStringLiteral("Current session")},
-         {QStringLiteral("icon"), QStringLiteral("model")}},
-    });
-    snapshot_.projectTemplates = records({
-        {{QStringLiteral("id"), QStringLiteral("template.part")},
-         {QStringLiteral("name"), QStringLiteral("Model")},
-         {QStringLiteral("detail"), QStringLiteral("Parametric component")},
-         {QStringLiteral("icon"), QStringLiteral("model")}},
-        {{QStringLiteral("id"), QStringLiteral("template.assembly")},
-         {QStringLiteral("name"), QStringLiteral("Assembly")},
-         {QStringLiteral("detail"), QStringLiteral("Components and joints")},
-         {QStringLiteral("icon"), QStringLiteral("assemble")}},
-        {{QStringLiteral("id"), QStringLiteral("template.drawing")},
-         {QStringLiteral("name"), QStringLiteral("Drawing")},
-         {QStringLiteral("detail"), QStringLiteral("Associative documentation")},
-         {QStringLiteral("icon"), QStringLiteral("drawing")}},
-        {{QStringLiteral("id"), QStringLiteral("template.sheet-metal")},
-         {QStringLiteral("name"), QStringLiteral("Sheet Metal")},
-         {QStringLiteral("detail"), QStringLiteral("Fabricated sheet component")},
-         {QStringLiteral("icon"), QStringLiteral("sheet-metal")}},
-        {{QStringLiteral("id"), QStringLiteral("template.cam")},
-         {QStringLiteral("name"), QStringLiteral("CAM")},
-         {QStringLiteral("detail"), QStringLiteral("Manufacturing setup")},
-         {QStringLiteral("icon"), QStringLiteral("cam")}},
-    });
-    snapshot_.recoveryItems = records({
-        {{QStringLiteral("id"), QStringLiteral("recovery.none")},
-         {QStringLiteral("name"), QStringLiteral("No recovery required")},
-         {QStringLiteral("detail"),
-          QStringLiteral("The development workspace has no interrupted writes.")},
-         {QStringLiteral("state"), QStringLiteral("current")},
-         {QStringLiteral("available"), false}},
-    });
-    snapshot_.operations = records({
-        {{QStringLiteral("id"), QStringLiteral("operation.services")},
-         {QStringLiteral("name"), QStringLiteral("Engineering services")},
-         {QStringLiteral("kind"), QStringLiteral("service")},
-         {QStringLiteral("state"), QStringLiteral("unavailable")},
-         {QStringLiteral("detail"),
-          QStringLiteral("No backend process has been started.")},
-         {QStringLiteral("progress"), -1}},
-        {{QStringLiteral("id"), QStringLiteral("operation.frontend")},
-         {QStringLiteral("name"), QStringLiteral("Frontend projection")},
-         {QStringLiteral("kind"), QStringLiteral("projection")},
-         {QStringLiteral("state"), QStringLiteral("current")},
-         {QStringLiteral("detail"),
-          QStringLiteral("Deterministic development data is active.")},
-         {QStringLiteral("progress"), 100}},
-    });
-    snapshot_.interfaceStates = records({
-        {{QStringLiteral("id"), QStringLiteral("empty")},
-         {QStringLiteral("label"), QStringLiteral("Empty")},
-         {QStringLiteral("icon"), QStringLiteral("empty")}},
-        {{QStringLiteral("id"), QStringLiteral("loading")},
-         {QStringLiteral("label"), QStringLiteral("Loading")},
-         {QStringLiteral("icon"), QStringLiteral("loading")}},
-        {{QStringLiteral("id"), QStringLiteral("current")},
-         {QStringLiteral("label"), QStringLiteral("Current")},
-         {QStringLiteral("icon"), QStringLiteral("check")}},
-        {{QStringLiteral("id"), QStringLiteral("preview")},
-         {QStringLiteral("label"), QStringLiteral("Preview")},
-         {QStringLiteral("icon"), QStringLiteral("preview")}},
-        {{QStringLiteral("id"), QStringLiteral("pending")},
-         {QStringLiteral("label"), QStringLiteral("Pending")},
-         {QStringLiteral("icon"), QStringLiteral("clock")}},
-        {{QStringLiteral("id"), QStringLiteral("stale")},
-         {QStringLiteral("label"), QStringLiteral("Stale")},
-         {QStringLiteral("icon"), QStringLiteral("stale")}},
-        {{QStringLiteral("id"), QStringLiteral("failed")},
-         {QStringLiteral("label"), QStringLiteral("Failed")},
-         {QStringLiteral("icon"), QStringLiteral("error")}},
-        {{QStringLiteral("id"), QStringLiteral("unavailable")},
-         {QStringLiteral("label"), QStringLiteral("Unavailable")},
-         {QStringLiteral("icon"), QStringLiteral("unavailable")}},
-        {{QStringLiteral("id"), QStringLiteral("read-only")},
-         {QStringLiteral("label"), QStringLiteral("Read-only")},
-         {QStringLiteral("icon"), QStringLiteral("lock")}},
-        {{QStringLiteral("id"), QStringLiteral("permission-denied")},
-         {QStringLiteral("label"), QStringLiteral("Permission denied")},
-         {QStringLiteral("icon"), QStringLiteral("shield")}},
-    });
-    refreshWorkspace();
-  }
+QVariantList
+workspaceRecords(const std::vector<WorkspaceDescriptor> &workspaces) {
+  return recordsFor(workspaces, [](const WorkspaceDescriptor &workspace) {
+    return Record{{QStringLiteral("id"), workspace.id},
+                  {QStringLiteral("label"), workspace.label},
+                  {QStringLiteral("icon"), workspace.icon}};
+  });
+}
 
-  [[nodiscard]] FrontendSnapshot snapshot() const override { return snapshot_; }
+QVariantList structureRecords(const std::vector<StructureItem> &items) {
+  return recordsFor(items, [](const StructureItem &item) {
+    return Record{{QStringLiteral("id"), item.id},
+                  {QStringLiteral("label"), item.label},
+                  {QStringLiteral("depth"), item.depth},
+                  {QStringLiteral("kind"), item.kind}};
+  });
+}
 
-  void selectWorkspace(const QString &workspaceId) override {
-    const QString label = commandLabel(snapshot_.workspaces, workspaceId);
-    if (label.isEmpty())
-      return;
-    if (workspaceId == snapshot_.activeWorkspaceId)
-      return;
-    snapshot_.activeWorkspaceId = workspaceId;
-    snapshot_.activeCommandId.clear();
-    snapshot_.selectionSummary = QStringLiteral("Nothing selected");
-    snapshot_.inspectorTitle = QStringLiteral("%1 workspace").arg(label);
-    refreshWorkspace();
-  }
+QVariantList revisionRecords(const std::vector<RevisionSummary> &revisions) {
+  return recordsFor(revisions, [](const RevisionSummary &revision) {
+    return Record{{QStringLiteral("id"), revision.id},
+                  {QStringLiteral("label"), revision.label},
+                  {QStringLiteral("detail"), revision.detail}};
+  });
+}
 
-  void selectEntity(const QString &entityId) override {
-    snapshot_.selectionSummary = entityId;
-    snapshot_.inspectorTitle = QStringLiteral("Selection");
-    snapshot_.inspectorStatus = QStringLiteral("Read-only development projection");
-    snapshot_.fields = records({
-        {{QStringLiteral("id"), QStringLiteral("selection.identity")},
-         {QStringLiteral("label"), QStringLiteral("Identity")},
-         {QStringLiteral("kind"), QStringLiteral("text")},
-         {QStringLiteral("value"), entityId},
-         {QStringLiteral("readOnly"), true}},
-        {{QStringLiteral("id"), QStringLiteral("selection.revision")},
-         {QStringLiteral("label"), QStringLiteral("Revision")},
-         {QStringLiteral("kind"), QStringLiteral("text")},
-         {QStringLiteral("value"), QStringLiteral("Not connected")},
-         {QStringLiteral("readOnly"), true}},
-    });
-    ++snapshot_.generation;
-  }
+QVariantList parameterRecords(const std::vector<ParameterSummary> &parameters) {
+  return recordsFor(parameters, [](const ParameterSummary &parameter) {
+    return Record{{QStringLiteral("id"), parameter.id},
+                  {QStringLiteral("name"), parameter.name},
+                  {QStringLiteral("expression"), parameter.expression},
+                  {QStringLiteral("value"), parameter.value}};
+  });
+}
 
-  void requestCommand(const QString &commandId) override {
-    const QString statePrefix = QStringLiteral("development.state.");
-    if (commandId.startsWith(statePrefix)) {
-      const QString state = commandId.sliced(statePrefix.size());
-      snapshot_.viewportState = state;
-      snapshot_.activeCommandId.clear();
-      snapshot_.viewportHeadline = state.left(1).toUpper() + state.mid(1);
-      snapshot_.viewportDetail = QStringLiteral("Deterministic %1 state projection")
-                                     .arg(state);
-      snapshot_.modelHealth = snapshot_.viewportHeadline;
-      ++snapshot_.generation;
-      return;
+QVariantList jobRecords(const std::vector<JobSummary> &jobs) {
+  return recordsFor(jobs, [](const JobSummary &job) {
+    return Record{{QStringLiteral("id"), job.id},
+                  {QStringLiteral("label"), job.label},
+                  {QStringLiteral("state"), job.state},
+                  {QStringLiteral("progress"), job.progress}};
+  });
+}
+
+QVariantList
+diagnosticRecords(const std::vector<DiagnosticSummary> &diagnostics) {
+  return recordsFor(diagnostics, [](const DiagnosticSummary &diagnostic) {
+    return Record{{QStringLiteral("id"), diagnostic.id},
+                  {QStringLiteral("severity"), diagnostic.severity},
+                  {QStringLiteral("summary"), diagnostic.summary}};
+  });
+}
+
+QVariantList proposalRecords(const std::vector<ProposalSummary> &proposals) {
+  return recordsFor(proposals, [](const ProposalSummary &proposal) {
+    return Record{{QStringLiteral("id"), proposal.id},
+                  {QStringLiteral("summary"), proposal.summary},
+                  {QStringLiteral("state"), proposal.state}};
+  });
+}
+
+QVariantList projectRecords(const std::vector<ProjectSummary> &projects) {
+  return recordsFor(projects, [](const ProjectSummary &project) {
+    return Record{{QStringLiteral("id"), project.id},
+                  {QStringLiteral("name"), project.name},
+                  {QStringLiteral("detail"), project.detail},
+                  {QStringLiteral("modified"), project.modified},
+                  {QStringLiteral("icon"), project.icon},
+                  {QStringLiteral("workspaceId"), project.workspaceId}};
+  });
+}
+
+QVariantList
+templateRecords(const std::vector<ProjectTemplateDescriptor> &templates) {
+  return recordsFor(templates, [](const ProjectTemplateDescriptor &project) {
+    return Record{{QStringLiteral("id"), project.id},
+                  {QStringLiteral("name"), project.name},
+                  {QStringLiteral("detail"), project.detail},
+                  {QStringLiteral("icon"), project.icon},
+                  {QStringLiteral("workspaceId"), project.workspaceId}};
+  });
+}
+
+QVariantList recoveryRecords(const std::vector<RecoverySummary> &items) {
+  return recordsFor(items, [](const RecoverySummary &item) {
+    return Record{{QStringLiteral("id"), item.id},
+                  {QStringLiteral("name"), item.name},
+                  {QStringLiteral("detail"), item.detail},
+                  {QStringLiteral("state"), item.state},
+                  {QStringLiteral("available"), item.available}};
+  });
+}
+
+QVariantList operationRecords(const std::vector<OperationSummary> &operations) {
+  return recordsFor(operations, [](const OperationSummary &operation) {
+    return Record{{QStringLiteral("id"), operation.id},
+                  {QStringLiteral("name"), operation.name},
+                  {QStringLiteral("kind"), operation.kind},
+                  {QStringLiteral("state"), operation.state},
+                  {QStringLiteral("detail"), operation.detail},
+                  {QStringLiteral("progress"), operation.progress}};
+  });
+}
+
+QVariantList
+interfaceStateRecords(const std::vector<InterfaceStateDescriptor> &states) {
+  return recordsFor(states, [](const InterfaceStateDescriptor &state) {
+    return Record{{QStringLiteral("id"), state.id},
+                  {QStringLiteral("label"), state.label},
+                  {QStringLiteral("icon"), state.icon}};
+  });
+}
+
+QVariantList
+functionPortRecords(const std::vector<FunctionPortSummary> &ports) {
+  return recordsFor(ports, [](const FunctionPortSummary &port) {
+    return Record{{QStringLiteral("id"), port.id},
+                  {QStringLiteral("label"), port.label},
+                  {QStringLiteral("type"), port.type},
+                  {QStringLiteral("value"), port.value},
+                  {QStringLiteral("state"), port.state}};
+  });
+}
+
+QVariantMap functionRecord(const FunctionSummary &function) {
+  return Record{
+      {QStringLiteral("id"), function.id},
+      {QStringLiteral("name"), function.name},
+      {QStringLiteral("signature"), function.signature},
+      {QStringLiteral("sourcePath"), function.sourcePath},
+      {QStringLiteral("language"), function.language},
+      {QStringLiteral("recognition"), function.recognition},
+      {QStringLiteral("revision"), function.revision},
+      {QStringLiteral("inputs"), functionPortRecords(function.inputs)},
+      {QStringLiteral("outputs"), functionPortRecords(function.outputs)}};
+}
+
+QVariantList sketchPrimitiveRecords(
+    const std::vector<SketchPrimitiveProjection> &primitives) {
+  return recordsFor(primitives, [](const SketchPrimitiveProjection &primitive) {
+    QVariantList points;
+    points.reserve(static_cast<qsizetype>(primitive.points.size()));
+    for (std::size_t index = 0; index < primitive.points.size(); ++index) {
+      const PlanePoint &point = primitive.points[index];
+      const QString key = index < primitive.pointKeys.size()
+                              ? primitive.pointKeys[index]
+                              : QString{};
+      points.push_back(
+          Record{{QStringLiteral("x"), millimetersFromMetres(point.xMetres)},
+                 {QStringLiteral("y"), millimetersFromMetres(point.yMetres)},
+                 {QStringLiteral("key"), key},
+                 {QStringLiteral("selected"),
+                  std::ranges::find(primitive.selectedPointKeys, key) !=
+                      primitive.selectedPointKeys.end()}});
     }
-    if (commandId == QStringLiteral("model.plane.create")) {
-      snapshot_.activeCommandId = commandId;
-      snapshot_.inspectorTitle = QStringLiteral("Plane");
-      snapshot_.inspectorStatus = QStringLiteral("Define a construction plane");
-      snapshot_.fields = records({
-          {{QStringLiteral("id"), QStringLiteral("model.plane.create.method")},
-           {QStringLiteral("label"), QStringLiteral("Method")},
-           {QStringLiteral("kind"), QStringLiteral("choice")},
-           {QStringLiteral("value"), QStringLiteral("Offset")},
-           {QStringLiteral("options"),
-            QStringList{QStringLiteral("Offset"), QStringLiteral("Midplane"),
-                        QStringLiteral("At angle"),
-                        QStringLiteral("Through three points"),
-                        QStringLiteral("Tangent to surface")}},
-           {QStringLiteral("readOnly"), false}},
-          {{QStringLiteral("id"), QStringLiteral("model.plane.create.reference")},
-           {QStringLiteral("label"), QStringLiteral("Reference")},
-           {QStringLiteral("kind"), QStringLiteral("reference")},
-           {QStringLiteral("value"), QStringLiteral("Choose a plane or planar face")},
-           {QStringLiteral("readOnly"), false}},
-          {{QStringLiteral("id"), QStringLiteral("model.plane.create.offset")},
-           {QStringLiteral("label"), QStringLiteral("Offset")},
-           {QStringLiteral("kind"), QStringLiteral("expression")},
-           {QStringLiteral("value"), snapshot_.gridSpacingLabel},
-           {QStringLiteral("effectiveValue"), QStringLiteral("Unresolved")},
-           {QStringLiteral("readOnly"), false}},
-      });
-      ++snapshot_.generation;
-      return;
-    }
-    if (commandId == QStringLiteral("model.sketch.create")) {
-      snapshot_.activeCommandId = commandId;
-      snapshot_.inspectorTitle = QStringLiteral("New Sketch");
-      snapshot_.inspectorStatus = QStringLiteral("Choose where the sketch is attached");
-      snapshot_.fields = records({
-          {{QStringLiteral("id"), QStringLiteral("model.sketch.create.attachment")},
-           {QStringLiteral("label"), QStringLiteral("Plane or planar face")},
-           {QStringLiteral("kind"), QStringLiteral("reference")},
-           {QStringLiteral("value"), QStringLiteral("Choose a reference")},
-           {QStringLiteral("readOnly"), false}},
-          {{QStringLiteral("id"), QStringLiteral("model.sketch.create.orientation")},
-           {QStringLiteral("label"), QStringLiteral("View orientation")},
-           {QStringLiteral("kind"), QStringLiteral("choice")},
-           {QStringLiteral("value"), QStringLiteral("Normal to sketch")},
-           {QStringLiteral("options"),
-            QStringList{QStringLiteral("Normal to sketch"),
-                        QStringLiteral("Keep current view")}},
-           {QStringLiteral("readOnly"), false}},
-      });
-      ++snapshot_.generation;
-      return;
-    }
-    snapshot_.activeCommandId = commandId;
-    const QString label = commandLabel(snapshot_.commandCatalog, commandId);
-    snapshot_.inspectorTitle = label.isEmpty() ? commandId : label;
-    snapshot_.inspectorStatus = QStringLiteral("Ready for backend contract");
-    snapshot_.fields = records({
-        {{QStringLiteral("id"), commandId + QStringLiteral(".target")},
-         {QStringLiteral("label"), QStringLiteral("Target")},
-         {QStringLiteral("kind"), QStringLiteral("reference")},
-         {QStringLiteral("value"), QStringLiteral("Choose a model reference")},
-         {QStringLiteral("readOnly"), false}},
-        {{QStringLiteral("id"), commandId + QStringLiteral(".value")},
-         {QStringLiteral("label"), QStringLiteral("Value")},
-         {QStringLiteral("kind"), QStringLiteral("expression")},
-         {QStringLiteral("value"), snapshot_.gridSpacingLabel},
-         {QStringLiteral("effectiveValue"), QStringLiteral("Unresolved")},
-         {QStringLiteral("readOnly"), false}},
-        {{QStringLiteral("id"), commandId + QStringLiteral(".mode")},
-         {QStringLiteral("label"), QStringLiteral("Mode")},
-         {QStringLiteral("kind"), QStringLiteral("choice")},
-         {QStringLiteral("value"), QStringLiteral("New")},
-         {QStringLiteral("options"), QStringList{QStringLiteral("New"),
-                                                 QStringLiteral("Add"),
-                                                 QStringLiteral("Remove")}},
-         {QStringLiteral("readOnly"), false}},
-    });
-    ++snapshot_.generation;
-  }
-
-  void setDefaultLengthUnit(const QString &unitId) override {
-    if (!containsRecordId(snapshot_.lengthUnits, unitId) ||
-        snapshot_.defaultLengthUnitId == unitId)
-      return;
-    snapshot_.defaultLengthUnitId = unitId;
-    ++snapshot_.generation;
-  }
-
-  void setProjectLengthUnit(const QString &unitId) override {
-    if (!containsRecordId(snapshot_.lengthUnits, unitId) ||
-        snapshot_.projectLengthUnitId == unitId)
-      return;
-    snapshot_.projectLengthUnitId = unitId;
-    snapshot_.gridSpacingLabel = gridSpacingFor(unitId);
-    ++snapshot_.generation;
-  }
-
-  void setGridVisible(bool visible) override {
-    if (snapshot_.gridVisible == visible)
-      return;
-    snapshot_.gridVisible = visible;
-    ++snapshot_.generation;
-  }
-
-  void setGridSnapEnabled(bool enabled) override {
-    if (snapshot_.gridSnapEnabled == enabled)
-      return;
-    snapshot_.gridSnapEnabled = enabled;
-    ++snapshot_.generation;
-  }
-
-private:
-  void refreshWorkspace() {
-    snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId);
-    snapshot_.fields.clear();
-    snapshot_.inspectorStatus = QStringLiteral("Engineering backend disconnected");
-    ++snapshot_.generation;
-  }
-
-  FrontendSnapshot snapshot_;
-};
+    return Record{
+        {QStringLiteral("id"), primitive.id},
+        {QStringLiteral("kind"), sketchPrimitiveKindName(primitive.kind)},
+        {QStringLiteral("points"), points},
+        {QStringLiteral("radius"),
+         millimetersFromMetres(primitive.radiusMetres)},
+        {QStringLiteral("construction"), primitive.construction},
+        {QStringLiteral("selected"), primitive.selected},
+        {QStringLiteral("draft"), primitive.draft}};
+  });
+}
 
 } // namespace
-
-std::unique_ptr<FrontendPort> makeDevelopmentFrontendPort() {
-  return std::make_unique<DevelopmentFrontendPort>();
-}
 
 UiSession::UiSession(std::unique_ptr<FrontendPort> port, QObject *parent)
     : QObject(parent), port_(std::move(port)) {
@@ -633,54 +362,160 @@ UiSession::UiSession(std::unique_ptr<FrontendPort> port, QObject *parent)
 }
 
 qulonglong UiSession::generation() const { return generation_; }
-QString UiSession::projectName() const { return snapshot_.projectName; }
-QString UiSession::branchLabel() const { return snapshot_.branchLabel; }
-QString UiSession::revisionLabel() const { return snapshot_.revisionLabel; }
-QString UiSession::activeWorkspaceId() const { return snapshot_.activeWorkspaceId; }
-QString UiSession::activeCommandId() const { return snapshot_.activeCommandId; }
+QString UiSession::projectName() const { return snapshot_->projectName; }
+QString UiSession::branchLabel() const { return snapshot_->branchLabel; }
+QString UiSession::revisionLabel() const { return snapshot_->revisionLabel; }
+QString UiSession::projectRevision() const {
+  return snapshot_->projectRevision;
+}
+QString UiSession::activeWorkspaceId() const {
+  return snapshot_->activeWorkspaceId;
+}
+QString UiSession::activeCommandId() const {
+  return snapshot_->activeCommandId;
+}
+QString UiSession::commandDraftState() const {
+  return commandDraftStateName(snapshot_->commandDraft.state);
+}
+QString UiSession::commandDraftBaseRevision() const {
+  return snapshot_->commandDraft.baseRevision;
+}
+bool UiSession::commandPreviewSupported() const {
+  return snapshot_->commandDraft.previewSupported;
+}
+bool UiSession::commandApplySupported() const {
+  return snapshot_->commandDraft.applySupported;
+}
 QString UiSession::activeSurfaceId() const { return activeSurfaceId_; }
 QString UiSession::settingsCategoryId() const { return settingsCategoryId_; }
 int UiSession::inspectorPage() const { return inspectorPage_; }
-QString UiSession::viewportState() const { return snapshot_.viewportState; }
-QString UiSession::inspectorTitle() const { return snapshot_.inspectorTitle; }
-QString UiSession::inspectorStatus() const { return snapshot_.inspectorStatus; }
-QString UiSession::viewportHeadline() const { return snapshot_.viewportHeadline; }
-QString UiSession::viewportDetail() const { return snapshot_.viewportDetail; }
-QString UiSession::modelHealth() const { return snapshot_.modelHealth; }
-QString UiSession::selectionSummary() const { return snapshot_.selectionSummary; }
-QString UiSession::agentStatus() const { return snapshot_.agentStatus; }
-QString UiSession::modelSource() const { return snapshot_.modelSource; }
-QString UiSession::defaultLengthUnitId() const { return snapshot_.defaultLengthUnitId; }
-QString UiSession::projectLengthUnitId() const { return snapshot_.projectLengthUnitId; }
-QString UiSession::gridPlaneLabel() const { return snapshot_.gridPlaneLabel; }
-QString UiSession::gridSpacingLabel() const { return snapshot_.gridSpacingLabel; }
-bool UiSession::gridVisible() const { return snapshot_.gridVisible; }
-bool UiSession::gridSnapEnabled() const { return snapshot_.gridSnapEnabled; }
-bool UiSession::backendConnected() const { return snapshot_.backendConnected; }
-QVariantList UiSession::lengthUnits() const { return snapshot_.lengthUnits; }
-QVariantList UiSession::workspaces() const { return snapshot_.workspaces; }
-QVariantList UiSession::commands() const { return snapshot_.commands; }
-QVariantList UiSession::commandCatalog() const { return snapshot_.commandCatalog; }
-QVariantList UiSession::structure() const { return snapshot_.structure; }
-QVariantList UiSession::revisions() const { return snapshot_.revisions; }
-QVariantList UiSession::historyCommands() const { return snapshot_.historyCommands; }
-QVariantList UiSession::fields() const { return snapshot_.fields; }
-QVariantList UiSession::parameters() const { return snapshot_.parameters; }
-QVariantList UiSession::jobs() const { return snapshot_.jobs; }
-QVariantList UiSession::diagnostics() const { return snapshot_.diagnostics; }
-QVariantList UiSession::proposals() const { return snapshot_.proposals; }
-QVariantList UiSession::recentProjects() const { return snapshot_.recentProjects; }
-QVariantList UiSession::projectTemplates() const { return snapshot_.projectTemplates; }
-QVariantList UiSession::recoveryItems() const { return snapshot_.recoveryItems; }
-QVariantList UiSession::operations() const { return snapshot_.operations; }
-QVariantList UiSession::interfaceStates() const { return snapshot_.interfaceStates; }
+QString UiSession::viewportState() const { return snapshot_->viewportState; }
+QString UiSession::inspectorTitle() const { return snapshot_->inspectorTitle; }
+QString UiSession::inspectorStatus() const {
+  return snapshot_->inspectorStatus;
+}
+QString UiSession::viewportHeadline() const {
+  return snapshot_->viewportHeadline;
+}
+QString UiSession::viewportDetail() const { return snapshot_->viewportDetail; }
+QString UiSession::modelHealth() const { return snapshot_->modelHealth; }
+QString UiSession::selectionSummary() const {
+  return snapshot_->selectionSummary;
+}
+QString UiSession::agentStatus() const { return snapshot_->agentStatus; }
+QString UiSession::modelSource() const { return snapshot_->modelSource; }
+QVariantMap UiSession::selectedFunction() const {
+  return functionRecord(snapshot_->selectedFunction);
+}
+QString UiSession::defaultLengthUnitId() const {
+  return snapshot_->defaultLengthUnitId;
+}
+QString UiSession::projectLengthUnitId() const {
+  return snapshot_->projectLengthUnitId;
+}
+QString UiSession::interfaceDensityId() const {
+  return snapshot_->interfaceDensityId;
+}
+QString UiSession::gridPlaneLabel() const { return snapshot_->gridPlaneLabel; }
+QString UiSession::gridSpacingLabel() const {
+  return snapshot_->gridSpacingLabel;
+}
+qreal UiSession::gridSpacingMillimeters() const {
+  return snapshot_->gridSpacingMillimeters;
+}
+QVariantList UiSession::sketchPrimitives() const {
+  return sketchPrimitiveRecords(snapshot_->sketchProjection.primitives);
+}
+QString UiSession::sketchInputKind() const {
+  return sketchInputKindName(snapshot_->sketchInteraction.inputKind);
+}
+QString UiSession::sketchSelectionKind() const {
+  const auto &interaction = snapshot_->sketchInteraction;
+  if (interaction.inputKind != SketchInputKind::Entity ||
+      interaction.selectionSequence.empty())
+    return QStringLiteral("any");
+  const std::size_t index =
+      std::min(static_cast<std::size_t>(std::max(0, interaction.inputCount)),
+               interaction.selectionSequence.size() - 1);
+  return sketchSelectionKindName(interaction.selectionSequence[index]);
+}
+int UiSession::sketchMinimumInputCount() const {
+  return snapshot_->sketchInteraction.minimumInputCount;
+}
+int UiSession::sketchMaximumInputCount() const {
+  return snapshot_->sketchInteraction.maximumInputCount;
+}
+int UiSession::sketchInputCount() const {
+  return snapshot_->sketchInteraction.inputCount;
+}
+QString UiSession::sketchInputPrompt() const {
+  return snapshot_->sketchInteraction.prompt;
+}
+bool UiSession::backendConnected() const { return snapshot_->backendConnected; }
+bool UiSession::sourceEditingAvailable() const {
+  return snapshot_->sourceEditingAvailable;
+}
+QVariantList UiSession::lengthUnits() const {
+  return optionRecords(snapshot_->lengthUnits);
+}
+QVariantList UiSession::preferenceCategories() const {
+  return preferenceCategoryRecords(snapshot_->preferenceCategories);
+}
+QVariantList UiSession::preferences() const {
+  return preferenceRecords(snapshot_->preferences);
+}
+QVariantList UiSession::workspaces() const {
+  return workspaceRecords(snapshot_->workspaces);
+}
+QVariantList UiSession::commands() const {
+  return commandRecords(snapshot_->commands);
+}
+QVariantList UiSession::commandCatalog() const {
+  return commandRecords(snapshot_->commandCatalog);
+}
+QVariantList UiSession::structure() const {
+  return structureRecords(snapshot_->structure);
+}
+QVariantList UiSession::revisions() const {
+  return revisionRecords(snapshot_->revisions);
+}
+QVariantList UiSession::historyCommands() const {
+  return commandRecords(snapshot_->historyCommands);
+}
+QVariantList UiSession::fields() const {
+  return fieldRecords(snapshot_->fields);
+}
+QVariantList UiSession::parameters() const {
+  return parameterRecords(snapshot_->parameters);
+}
+QVariantList UiSession::jobs() const { return jobRecords(snapshot_->jobs); }
+QVariantList UiSession::diagnostics() const {
+  return diagnosticRecords(snapshot_->diagnostics);
+}
+QVariantList UiSession::proposals() const {
+  return proposalRecords(snapshot_->proposals);
+}
+QVariantList UiSession::recentProjects() const {
+  return projectRecords(snapshot_->recentProjects);
+}
+QVariantList UiSession::projectTemplates() const {
+  return templateRecords(snapshot_->projectTemplates);
+}
+QVariantList UiSession::recoveryItems() const {
+  return recoveryRecords(snapshot_->recoveryItems);
+}
+QVariantList UiSession::operations() const {
+  return operationRecords(snapshot_->operations);
+}
+QVariantList UiSession::interfaceStates() const {
+  return interfaceStateRecords(snapshot_->interfaceStates);
+}
 
 void UiSession::navigateTo(const QString &surfaceId) {
-  static const QStringList surfaces{QStringLiteral("projects"),
-                                    QStringLiteral("editor"),
-                                    QStringLiteral("settings"),
-                                    QStringLiteral("recovery"),
-                                    QStringLiteral("operations")};
+  static const QStringList surfaces{
+      QStringLiteral("projects"), QStringLiteral("editor"),
+      QStringLiteral("settings"), QStringLiteral("recovery"),
+      QStringLiteral("operations")};
   if (!surfaces.contains(surfaceId) || activeSurfaceId_ == surfaceId)
     return;
   activeSurfaceId_ = surfaceId;
@@ -689,13 +524,13 @@ void UiSession::navigateTo(const QString &surfaceId) {
 }
 
 void UiSession::selectSettingsCategory(const QString &categoryId) {
-  static const QStringList categories{QStringLiteral("appearance"),
-                                      QStringLiteral("units"),
-                                      QStringLiteral("input"),
-                                      QStringLiteral("files"),
-                                      QStringLiteral("compute"),
-                                      QStringLiteral("agent")};
-  if (!categories.contains(categoryId) || settingsCategoryId_ == categoryId)
+  const bool exists =
+      std::any_of(snapshot_->preferenceCategories.cbegin(),
+                  snapshot_->preferenceCategories.cend(),
+                  [&categoryId](const PreferenceCategory &category) {
+                    return category.id == categoryId;
+                  });
+  if (!exists || settingsCategoryId_ == categoryId)
     return;
   settingsCategoryId_ = categoryId;
   ++generation_;
@@ -716,6 +551,15 @@ void UiSession::selectWorkspace(const QString &workspaceId) {
   refresh();
 }
 
+void UiSession::openProject(const QString &workspaceId,
+                            const QString &commandId) {
+  port_->selectWorkspace(workspaceId);
+  port_->requestCommand(commandId);
+  activeSurfaceId_ = QStringLiteral("editor");
+  refresh();
+  emit commandRequested(commandId, generation());
+}
+
 void UiSession::selectEntity(const QString &entityId) {
   port_->selectEntity(entityId);
   refresh();
@@ -727,30 +571,152 @@ void UiSession::requestCommand(const QString &commandId) {
   emit commandRequested(commandId, generation());
 }
 
-void UiSession::setDefaultLengthUnit(const QString &unitId) {
-  port_->setDefaultLengthUnit(unitId);
+void UiSession::setPreference(const QString &preferenceId,
+                              const QVariant &value) {
+  const auto found = std::find_if(
+      snapshot_->preferences.cbegin(), snapshot_->preferences.cend(),
+      [&preferenceId](const PreferenceDescriptor &preference) {
+        return preference.id == preferenceId;
+      });
+  if (found == snapshot_->preferences.cend())
+    return;
+  const PreferenceValue normalized = found->kind == PreferenceKind::Toggle
+                                         ? PreferenceValue{value.toBool()}
+                                         : PreferenceValue{value.toString()};
+  if (found->value == normalized)
+    return;
+  port_->setPreference(preferenceId, normalized);
+  refresh();
+  const auto updated = std::find_if(
+      snapshot_->preferences.cbegin(), snapshot_->preferences.cend(),
+      [&preferenceId](const PreferenceDescriptor &preference) {
+        return preference.id == preferenceId;
+      });
+  if (updated != snapshot_->preferences.cend() && updated->value == normalized)
+    emit preferenceChanged(preferenceId, value);
+}
+
+void UiSession::replacePreferenceOptions(const QString &preferenceId,
+                                         std::vector<UiOption> options,
+                                         const QString &value) {
+  port_->replacePreferenceOptions(preferenceId, std::move(options), value);
   refresh();
 }
 
-void UiSession::setProjectLengthUnit(const QString &unitId) {
-  port_->setProjectLengthUnit(unitId);
+void UiSession::editField(const QString &fieldId, const QVariant &value) {
+  const auto field =
+      std::find_if(snapshot_->fields.cbegin(), snapshot_->fields.cend(),
+                   [&fieldId](const FieldDescriptor &candidate) {
+                     return candidate.id == fieldId;
+                   });
+  if (field == snapshot_->fields.cend())
+    return;
+  const FieldValue normalized = field->kind == FieldKind::Toggle
+                                    ? FieldValue{value.toBool()}
+                                    : FieldValue{value.toString()};
+  port_->editField(fieldId, normalized);
   refresh();
 }
 
-void UiSession::setGridVisible(bool visible) {
-  port_->setGridVisible(visible);
+bool UiSession::submitActiveCommand(bool preview) {
+  if (snapshot_->activeCommandId.isEmpty())
+    return false;
+  CommandDraftRequest request{
+      snapshot_->activeCommandId,
+      snapshot_->commandDraft.baseRevision,
+      {},
+  };
+  request.fields.reserve(snapshot_->fields.size());
+  for (const FieldDescriptor &field : snapshot_->fields)
+    request.fields.push_back({field.id, field.value});
+  const CommandDraftMode mode =
+      preview ? CommandDraftMode::Preview : CommandDraftMode::Apply;
+  const bool accepted = port_->submitCommandDraft(request, mode);
+  refresh();
+  if (accepted)
+    emit commandRequested(request.commandId, generation());
+  return accepted;
+}
+
+bool UiSession::submitSketchPoint(qreal xMillimeters, qreal yMillimeters) {
+  const SketchInputRequest request{
+      snapshot_->activeCommandId,
+      snapshot_->sketchInteraction.expectedRevision,
+      SketchInputKind::PlanePoint,
+      {metresFromMillimeters(xMillimeters),
+       metresFromMillimeters(yMillimeters)},
+      {},
+      {},
+  };
+  const bool accepted = port_->submitSketchInput(request);
+  refresh();
+  return accepted;
+}
+
+bool UiSession::submitSketchEntity(const QString &entityId,
+                                   const QString &subElementKey) {
+  const SketchInputRequest request{
+      snapshot_->activeCommandId,
+      snapshot_->sketchInteraction.expectedRevision,
+      SketchInputKind::Entity,
+      {},
+      entityId,
+      subElementKey,
+  };
+  const bool accepted = port_->submitSketchInput(request);
+  refresh();
+  return accepted;
+}
+
+void UiSession::cancelActiveCommand() {
+  if (snapshot_->activeCommandId.isEmpty())
+    return;
+  port_->cancelCommandDraft(snapshot_->activeCommandId);
   refresh();
 }
 
-void UiSession::setGridSnapEnabled(bool enabled) {
-  port_->setGridSnapEnabled(enabled);
+bool UiSession::submitParameterEdit(const QString &parameterId,
+                                    const QString &expression) {
+  const ParameterEditRequest request{
+      parameterId,
+      snapshot_->projectRevision,
+      expression,
+  };
+  const bool accepted = port_->submitParameterEdit(request);
   refresh();
+  if (accepted)
+    emit commandRequested(QStringLiteral("parameter.set-expression"),
+                          generation());
+  return accepted;
+}
+
+bool UiSession::submitSourceEdit(const QString &source,
+                                 const QString &expectedRevision,
+                                 bool preview) {
+  const SourceEditRequest request{
+      snapshot_->selectedFunction.id,
+      snapshot_->selectedFunction.sourcePath,
+      expectedRevision,
+      source,
+  };
+  const SourceEditMode mode =
+      preview ? SourceEditMode::Preview : SourceEditMode::Apply;
+  const bool accepted = port_->submitSourceEdit(request, mode);
+  refresh();
+  if (accepted) {
+    emit commandRequested(preview ? QStringLiteral("source.preview")
+                                  : QStringLiteral("source.apply"),
+                          generation());
+  }
+  return accepted;
 }
 
 void UiSession::refresh() {
-  snapshot_ = port_->snapshot();
-  generation_ = std::max(generation_ + 1,
-                         static_cast<qulonglong>(snapshot_.generation));
+  FrontendSnapshotPtr next = port_->snapshot();
+  Q_ASSERT(next);
+  snapshot_ = std::move(next);
+  generation_ =
+      std::max(generation_ + 1, static_cast<qulonglong>(snapshot_->generation));
   emit projectionChanged();
 }
 

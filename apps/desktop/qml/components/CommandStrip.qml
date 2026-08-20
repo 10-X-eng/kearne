@@ -1,6 +1,6 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
 import Kearne.UI
 
 Rectangle {
@@ -10,6 +10,8 @@ Rectangle {
     property string semanticName: "Context commands"
     property string semanticRole: "toolbar"
     property var semanticActions: []
+    readonly property var visibleCommands: App.ui.commands.filter(
+                                               command => command.available)
 
     color: Theme.surface
     implicitHeight: Theme.commandBarHeight
@@ -29,9 +31,10 @@ Rectangle {
             spacing: Theme.space1
 
             Repeater {
-                model: uiSession.commands
+                model: root.visibleCommands
 
                 Row {
+                    id: commandGroup
                     required property var modelData
                     required property int index
                     height: root.height
@@ -39,31 +42,35 @@ Rectangle {
 
                     Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: 1
-                        height: 32
+                        width: Theme.separatorWidth
+                        height: Theme.controlHeight
                         color: Theme.border
-                        visible: index > 0
-                                 && modelData.group !== uiSession.commands[index - 1].group
+                        visible: commandGroup.index > 0
+                                 && commandGroup.modelData.group
+                                    !== root.visibleCommands[commandGroup.index - 1].group
                     }
 
                     KButton {
-                        semanticId: "command." + modelData.id
-                        semanticName: modelData.label
-                        semanticValue: modelData.shortcut
-                        iconName: modelData.icon
+                        semanticId: "command." + commandGroup.modelData.id
+                        semanticName: commandGroup.modelData.available
+                                      ? commandGroup.modelData.label
+                                      : commandGroup.modelData.label + ": "
+                                        + commandGroup.modelData.unavailableReason
+                        semanticValue: commandGroup.modelData.shortcut
+                        iconName: commandGroup.modelData.icon
                         iconAbove: true
                         iconSize: 20
-                        shortcut: modelData.shortcut
+                        shortcut: commandGroup.modelData.shortcut
                         compact: true
                         width: Math.max(52, implicitWidth)
                         height: root.height - 4
                         anchors.verticalCenter: parent.verticalCenter
                         quiet: true
                         checkable: true
-                        checked: uiSession.activeCommandId === modelData.id
-                        enabled: modelData.available
-                        text: modelData.label
-                        onClicked: uiSession.requestCommand(modelData.id)
+                        checked: App.ui.activeCommandId === commandGroup.modelData.id
+                        enabled: commandGroup.modelData.available
+                        text: commandGroup.modelData.label
+                        onClicked: App.ui.requestCommand(commandGroup.modelData.id)
                     }
                 }
             }
@@ -74,7 +81,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 1
+        height: Theme.separatorWidth
         color: Theme.border
     }
 }

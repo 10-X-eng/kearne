@@ -73,6 +73,19 @@ Stitching records tolerance policy, gaps closed, topology changes, and whether a
 
 A successful kernel operation does not prove requested continuity. Kearne evaluates positional/tangent/curvature deviation using a declared sampling/analytic policy and publishes the measured result.
 
+### DSM-009 — Versioned support profiles
+
+Graphical support is declared by descriptor version and profile. `SURFACE-2` includes `SURFACE-1`; `SURFACE-ANALYSIS-1` requires `SURFACE-1`.
+
+| Profile | Required operation families |
+|---|---|
+| `DIRECT-1` | move/rotate, offset/press-pull, delete, and replace face; resize cylindrical group; hole/fillet/pocket/pattern recognition proposals |
+| `SURFACE-1` | surface extrude/revolve/ruled/offset; trim/extend/split; stitch/unstitch; fill; thicken |
+| `SURFACE-2` | sweep, loft, boundary surface, and face blend with declared boundary order and continuity |
+| `SURFACE-ANALYSIS-1` | curvature, zebra, draft, continuity, minimum-radius, and deviation analysis |
+
+Every row declares supported body kinds, selection cardinality, propagation/healing policy, topology edit matrix, approximation profile, and refusal cases. A release exposes only rows passing the common descriptor suite.
+
 ## 5. Preview and interaction
 
 Face dragging creates ephemeral function inputs or source transformations evaluated through the same worker path. UI manipulators use explicit local/world frames and commit one transaction. Preview may lower evaluation or tessellation quality; acceptance re-evaluates at production policy.
@@ -96,7 +109,20 @@ Descriptor-generated tests cover source generation/recognition, body-kind contra
 
 Direct-edit generators create analytic boxes/cylinders and imported-like solids, then verify intended face displacement/radius, unchanged protected topology, shape validity, and source-artifact retention. Curated kernel failures supplement generated domains.
 
-## 8. Open decisions
+## 8. Performance and cancellation
+
+### DSM-010 — Bounded interaction
+
+Face manipulators acknowledge each input generation within the shared interactive budget and never wait for exact geometry. `DIRECT-100` measures analytic face edits; `SURFACE-100` measures boundary/guide count, surface degree, sampling density, and topology growth. Both report first-preview and accepted-result latency, worker peak memory, artifact bytes, and cancellation time.
+
+Preview artifacts are replaceable and byte-bounded. Exact acceptance cannot reuse a lower-quality preview as proof. Superseded work stops cooperatively or through worker termination and cannot replace the newest generation.
+
+## 9. Acceptance
+
+- Direct-edit an imported body through move, resize, and delete/repair; retain import bytes, publish topology evidence, and refuse an ambiguous heal.
+- Build and edit a boundary/guide surface with continuity targets; inspect measured continuity/deviation, stitch to the declared body kind, and cancel a stale preview without changing the accepted result.
+
+## 10. Open decisions
 
 - **DSM-OPEN-001:** Exact direct-edit subset and OCCT Local Operations strategy.
 - **DSM-OPEN-002:** Surface parameterization/orientation schema.
@@ -104,6 +130,6 @@ Direct-edit generators create analytic boxes/cylinders and imported-like solids,
 - **DSM-OPEN-004:** Feature-recognition engine and confidence calibration.
 - **DSM-OPEN-005:** Imported-model reimport/update semantics.
 
-## 9. Definition of done
+## 11. Definition of done
 
 A direct/surface graphical operation is implemented only when it uses the common function infrastructure, declares output/topology contracts, passes generated geometric relations, reports healing/continuity evidence, and preserves source provenance. Equivalent hand-written build123d remains valid without graphical recognition.

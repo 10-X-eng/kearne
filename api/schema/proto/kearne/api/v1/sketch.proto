@@ -1,0 +1,320 @@
+edition = "2024";
+
+package kearne.api.v1;
+
+import "kearne/api/v1/engineering.proto";
+import "kearne/api/v1/options.proto";
+
+enum SketchPointKey {
+  SKETCH_POINT_KEY_UNSPECIFIED = 0;
+  SKETCH_POINT_KEY_POINT = 1;
+  SKETCH_POINT_KEY_START = 2;
+  SKETCH_POINT_KEY_END = 3;
+  SKETCH_POINT_KEY_CENTER = 4;
+}
+
+enum SketchTangency {
+  SKETCH_TANGENCY_UNSPECIFIED = 0;
+  SKETCH_TANGENCY_EXTERNAL = 1;
+  SKETCH_TANGENCY_INTERNAL = 2;
+}
+
+message SketchPoint2 {
+  option (message_rules) = {
+    stable_name : "sketch.point2"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 32
+  };
+  double x = 1 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double y = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchPointGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.point"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 48
+  };
+  SketchPoint2 at = 1 [ (field_rules) = {required : true} ];
+}
+
+message SketchLineGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.line"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 80
+  };
+  SketchPoint2 start = 1 [ (field_rules) = {required : true} ];
+  SketchPoint2 end = 2 [ (field_rules) = {required : true} ];
+}
+
+message SketchCircleGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.circle"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 64
+  };
+  SketchPoint2 center = 1 [ (field_rules) = {required : true} ];
+  double radius = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchArcGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.arc"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 96
+  };
+  SketchPoint2 center = 1 [ (field_rules) = {required : true} ];
+  double radius = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double start_angle = 3 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double end_angle = 4 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchEntity {
+  option (message_rules) = {
+    stable_name : "sketch.entity"
+    schema_version : 1
+    surface : SURFACE_KIND_WIRE
+    max_serialized_bytes : 160
+    required_oneof : "geometry"
+  };
+  UuidV7 id = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  bool construction = 2 [ (field_rules) = {required : true} ];
+  oneof geometry {
+    SketchPointGeometry point = 20;
+    SketchLineGeometry line = 21;
+    SketchCircleGeometry circle = 22;
+    SketchArcGeometry arc = 23;
+  }
+}
+
+message SketchPointReference {
+  option (message_rules) = {
+    stable_name : "sketch.point_reference"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 64
+  };
+  UuidV7 entity = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  SketchPointKey key = 2
+      [ (field_rules) = {required : true disallow_default : true} ];
+}
+
+message SketchPointPairConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.point_pair"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 144
+  };
+  SketchPointReference first = 1 [ (field_rules) = {required : true} ];
+  SketchPointReference second = 2 [ (field_rules) = {required : true} ];
+}
+
+message SketchLineConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.line"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 48
+  };
+  UuidV7 line = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchEntityPairConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.entity_pair"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 80
+  };
+  UuidV7 first = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  UuidV7 second = 2
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchTangentConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.tangent"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 88
+  };
+  UuidV7 first = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  UuidV7 second = 2
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  SketchTangency mode = 3
+      [ (field_rules) = {required : true disallow_default : true} ];
+}
+
+message SketchMidpointConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.midpoint"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 104
+  };
+  SketchPointReference point = 1 [ (field_rules) = {required : true} ];
+  UuidV7 line = 2
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchEntityConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.entity"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 48
+  };
+  UuidV7 entity = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchPointPairLengthConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.point_pair_length"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 160
+  };
+  SketchPointReference first = 1 [ (field_rules) = {required : true} ];
+  SketchPointReference second = 2 [ (field_rules) = {required : true} ];
+  double value = 3 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchCurveLengthConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.curve_length"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 64
+  };
+  UuidV7 curve = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  double value = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchEntityPairAngleConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.entity_pair_angle"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 96
+  };
+  UuidV7 first = 1
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  UuidV7 second = 2
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  double value = 3 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint"
+    schema_version : 1
+    surface : SURFACE_KIND_WIRE
+    max_serialized_bytes : 240
+    required_oneof : "relation"
+  };
+  UuidV7 id = 1 [
+    (field_rules) = {required : true semantic_type : "SketchConstraintId"}
+  ];
+  oneof relation {
+    SketchPointPairConstraint coincident = 20;
+    SketchLineConstraint horizontal = 21;
+    SketchLineConstraint vertical = 22;
+    SketchEntityPairConstraint parallel = 23;
+    SketchEntityPairConstraint perpendicular = 24;
+    SketchTangentConstraint tangent = 25;
+    SketchEntityPairConstraint concentric = 26;
+    SketchEntityPairConstraint equal = 27;
+    SketchMidpointConstraint midpoint = 28;
+    SketchEntityConstraint fixed = 29;
+    SketchEntityPairConstraint collinear = 30;
+    SketchPointPairLengthConstraint distance = 31;
+    SketchPointPairLengthConstraint horizontal_distance = 32;
+    SketchPointPairLengthConstraint vertical_distance = 33;
+    SketchCurveLengthConstraint radius = 34;
+    SketchCurveLengthConstraint diameter = 35;
+    SketchEntityPairAngleConstraint angle = 36;
+  }
+}
+
+message SketchDefinition {
+  option (message_rules) = {
+    stable_name : "sketch.definition"
+    schema_version : 1
+    surface : SURFACE_KIND_WORKER_JOB
+    max_serialized_bytes : 16777216
+  };
+  // Geometry is plane-local. The evaluated function binding owns attachment.
+  Digest source_digest = 1
+      [ (field_rules) = {required : true semantic_type : "ContentDigest"} ];
+  repeated SketchEntity entities = 2 [ (field_rules) = {max_items : 65536} ];
+  repeated SketchConstraint constraints = 3
+      [ (field_rules) = {max_items : 65536} ];
+}

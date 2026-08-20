@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,6 +13,13 @@ Popup {
     property string semanticRole: "dialog"
     property var semanticActions: ["dismiss"]
     property alias query: search.text
+
+    function performSemanticAction(action, value) {
+        if (action !== "dismiss")
+            return false
+        close()
+        return true
+    }
 
     parent: Overlay.overlay
     width: Math.min(620, parent.width - Theme.space6 * 2)
@@ -31,36 +40,32 @@ Popup {
         radius: Theme.radius
         color: Theme.surface
         border.color: Theme.borderStrong
-        border.width: 1
+        border.width: Theme.separatorWidth
     }
 
     contentItem: ColumnLayout {
         spacing: 0
 
-        TextField {
+        KTextField {
             id: search
-            property string semanticId: "command_palette.query"
-            property string semanticName: "Search commands"
-            property string semanticRole: "searchbox"
-            property var semanticActions: ["focus", "setValue"]
-            property string semanticValue: text
+            semanticId: "command_palette.query"
+            semanticName: "Search commands"
+            semanticRole: "searchbox"
             Layout.fillWidth: true
             Layout.preferredHeight: 52
             Layout.margins: Theme.space3
             placeholderText: "Search commands"
-            color: Theme.text
             font.pixelSize: Theme.fontTitle
-            selectByMouse: true
-            Accessible.name: semanticName
             background: Rectangle {
                 radius: Theme.radiusSmall
                 color: Theme.surfaceRaised
                 border.color: parent.activeFocus ? Theme.focus : Theme.border
-                border.width: parent.activeFocus ? 2 : 1
+                border.width: parent.activeFocus ? Theme.focusRingWidth
+                                                 : Theme.separatorWidth
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        KSeparator { }
 
         Flickable {
             Layout.fillWidth: true
@@ -75,24 +80,33 @@ Popup {
                 topPadding: Theme.space2
 
                 Repeater {
-                    model: uiSession.commandCatalog
+                    model: App.ui.commandCatalog
 
                     KButton {
+                        id: commandButton
                         required property var modelData
-                        semanticId: "palette.command." + modelData.id
-                        semanticName: modelData.label
-                        semanticValue: modelData.shortcut
-                        iconName: modelData.icon
-                        shortcut: modelData.shortcut
+                        semanticId: "palette.command." + commandButton.modelData.id
+                        semanticName: commandButton.modelData.available
+                                      ? commandButton.modelData.label
+                                      : commandButton.modelData.label + ": "
+                                        + commandButton.modelData.unavailableReason
+                        semanticValue: commandButton.modelData.shortcut
+                        iconName: commandButton.modelData.icon
+                        shortcut: commandButton.modelData.shortcut
                         visible: root.query.length === 0
-                                 || modelData.label.toLowerCase().includes(root.query.toLowerCase())
-                                 || modelData.id.toLowerCase().includes(root.query.toLowerCase())
+                                 || commandButton.modelData.label.toLowerCase().includes(root.query.toLowerCase())
+                                 || commandButton.modelData.id.toLowerCase().includes(root.query.toLowerCase())
                         width: resultColumn.width
                         height: visible ? 42 : 0
                         quiet: true
-                        text: modelData.label + (modelData.shortcut ? "     " + modelData.shortcut : "")
+                        enabled: commandButton.modelData.available
+                        text: commandButton.modelData.label
+                              + (commandButton.modelData.available ? ""
+                                 : "  · unavailable")
+                              + (commandButton.modelData.shortcut
+                                 ? "     " + commandButton.modelData.shortcut : "")
                         onClicked: {
-                            uiSession.requestCommand(modelData.id)
+                            App.ui.requestCommand(commandButton.modelData.id)
                             root.close()
                         }
                     }

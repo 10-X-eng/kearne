@@ -148,6 +148,10 @@ The logical roles are:
 
 No potentially unbounded engineering, persistence, parsing, or IPC wait may run on the UI thread. UI calls into the Engineering API MUST either complete within the interactive budget from in-memory state or return an asynchronous operation handle.
 
+Engineering backends SHOULD use GPU compute where measurements justify it. Ordinary CAD operations MUST retain a multithreaded CPU path; GPU availability cannot determine whether a project can be edited.
+
+An evaluator that is internally serial or unsafe to invoke concurrently MUST still execute outside the UI thread. Kearne may isolate such calls in dedicated workers; backend limitations do not authorize synchronous UI execution.
+
 ### ARCH-011 — Operational state separation
 
 Job queues, process IDs, open database handles, selections, hover state, and GPU resources are operational state and MUST NOT appear in canonical document schemas.
@@ -237,8 +241,8 @@ Each production module owns its public headers, private source, and focused test
 
 ## 10. Open decisions
 
-- **ARCH-OPEN-001:** Exact IDL and code-generation toolchain; validate Protobuf plus generated JSON Schema in the boundary prototype.
-- **ARCH-OPEN-002:** Persistent data-structure library versus immutable snapshots constructed with copy-on-write entity tables.
+- The IDL and generation toolchain are defined by [ADR-0011](adr/0011-protobuf-engineering-api.md).
+- Published in-memory state is defined by [ADR-0014](adr/0014-persistent-project-state.md).
 - **ARCH-OPEN-003:** Degree of initial geometry worker isolation given OCCT thread-safety and transfer cost.
 - **ARCH-OPEN-004:** Whether the local project coordinator remains in the UI process or becomes a separate long-lived process after MVP.
 

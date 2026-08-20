@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "dependencies": {
+    "blake3": {
+      "version": "1.8.5",
+      "url": "https://github.com/BLAKE3-team/BLAKE3/archive/refs/tags/1.8.5.tar.gz",
+      "sha256": "220bd81286e2a0585beac66d41ac3f4c2c33ae8a4e339fc88cf22d5e00514fe9",
+      "license": "CC0-1.0 OR Apache-2.0"
+    },
+    "immer": {
+      "version": "0.9.1",
+      "url": "https://github.com/arximboldi/immer/archive/refs/tags/v0.9.1.tar.gz",
+      "sha256": "b18b92ba60ec3186dc36ef671d3c2ae542cbb63eb6dc0e258476c6111a67c971",
+      "license": "BSL-1.0"
+    },
+    "eigen": {
+      "version": "3.4.1",
+      "url": "https://gitlab.com/libeigen/eigen/-/archive/3.4.1/eigen-3.4.1.tar.gz",
+      "sha256": "b93c667d1b69265cdb4d9f30ec21f8facbbe8b307cf34c0b9942834c6d4fdbe2",
+      "license": "MPL-2.0"
+    },
+    "ceres": {
+      "version": "2.2.0",
+      "url": "https://github.com/ceres-solver/ceres-solver/archive/refs/tags/2.2.0.tar.gz",
+      "sha256": "12efacfadbfdc1bbfa203c236e96f4d3c210bed96994288b3ff0c8e7c6f350d4",
+      "license": "BSD-3-Clause"
+    },
+    "abseil": {
+      "version": "20250512.1",
+      "url": "https://github.com/abseil/abseil-cpp/archive/refs/tags/20250512.1.tar.gz",
+      "sha256": "9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db",
+      "license": "Apache-2.0"
+    },
+    "protobuf": {
+      "version": "35.1",
+      "python_version": "7.35.1",
+      "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.tar.gz",
+      "sha256": "f0b6838e7522a8da96126d487068c959bc624926368f3024ac8fd03abd0a1ac4",
+      "license": "BSD-3-Clause",
+      "protoc": {
+        "linux-aarch64": {
+          "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-aarch_64.zip",
+          "sha256": "01bf9d08808c7f96678b63f4bd8efa559bb4f83d5a7a270d5edaf507f9d5d9cf"
+        },
+        "linux-x86_64": {
+          "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-linux-x86_64.zip",
+          "sha256": "6930ebf62bd4ea607b98fff052596c6ee564b9835b4ce172c75a3f53ae9d91b7"
+        },
+        "windows-x86_64": {
+          "url": "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protoc-35.1-win64.zip",
+          "sha256": "5d3ff218d7d91eea95f7569bcb5a98f3030f8996d44151279d9772edcff76082"
+        }
+      }
+    }
+  }
+}

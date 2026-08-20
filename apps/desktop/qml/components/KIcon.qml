@@ -8,10 +8,10 @@ Canvas {
     property color color: Theme.text
     property color accentColor: Theme.accent
     property color softColor: Theme.accentSoft
-    property real strokeWidth: 1.7
+    property real strokeWidth: Theme.iconStrokeWidth
 
-    implicitWidth: 18
-    implicitHeight: 18
+    implicitWidth: Theme.iconSize
+    implicitHeight: Theme.iconSize
     antialiasing: true
 
     onNameChanged: requestPaint()
@@ -177,6 +177,17 @@ Canvas {
             break
         case "chevron":
             paintPath(context, [6, 9, 12, 15, 18, 9], false)
+            break
+        case "chevron-up":
+            paintPath(context, [6, 15, 12, 9, 18, 15], false)
+            break
+        case "collapse-left":
+            line(context, 19, 4, 19, 20)
+            paintPath(context, [14, 7, 9, 12, 14, 17], false)
+            break
+        case "collapse-right":
+            line(context, 5, 4, 5, 20)
+            paintPath(context, [10, 7, 15, 12, 10, 17], false)
             break
         case "recovery":
         case "refresh":
@@ -409,6 +420,16 @@ Canvas {
             for (let index = 0; index < 4; ++index)
                 line(context, 6 + index * 4, 6, 4 + index * 4, 10)
             break
+        case "point":
+            useBase(context, 0.7)
+            line(context, 12, 4, 12, 20)
+            line(context, 4, 12, 20, 12)
+            useSoft(context)
+            dot(context, 12, 12, 3.8)
+            useAccent(context)
+            circle(context, 12, 12, 2.2)
+            dot(context, 12, 12, 1)
+            break
         case "line":
             useAccent(context)
             line(context, 5, 19, 19, 5)
@@ -503,6 +524,62 @@ Canvas {
             useAccent(context)
             line(context, 5.5, 11.5, 9, 13.2)
             line(context, 15.5, 11.5, 19, 13.2)
+            break
+        case "parallel":
+            useBase(context)
+            line(context, 5, 17, 13, 5)
+            line(context, 11, 19, 19, 7)
+            useAccent(context)
+            paintPath(context, [6.5, 10.5, 9, 10, 8.5, 12.5], false)
+            paintPath(context, [14.5, 12.5, 17, 12, 16.5, 14.5], false)
+            break
+        case "perpendicular":
+            useBase(context)
+            line(context, 5, 5, 5, 19)
+            line(context, 5, 19, 20, 19)
+            useAccent(context)
+            paintPath(context, [5, 14, 10, 14, 10, 19], false)
+            break
+        case "tangent":
+            useBase(context)
+            circle(context, 10, 13, 6)
+            line(context, 4, 5, 20, 5)
+            useAccent(context)
+            dot(context, 10, 7, 1.8)
+            break
+        case "concentric":
+            useBase(context)
+            circle(context, 12, 12, 8)
+            useAccent(context)
+            circle(context, 12, 12, 4)
+            dot(context, 12, 12, 1.2)
+            break
+        case "midpoint":
+            useBase(context)
+            line(context, 4, 16, 20, 8)
+            dot(context, 4, 16, 1.4)
+            dot(context, 20, 8, 1.4)
+            useAccent(context)
+            fillPath(context, [10, 11.5, 13.5, 9.7, 13.5, 13.3])
+            break
+        case "fixed":
+            useBase(context)
+            line(context, 5, 18, 19, 7)
+            dot(context, 5, 18, 1.4)
+            dot(context, 19, 7, 1.4)
+            useAccent(context)
+            rect(context, 9, 11, 7, 7, 1)
+            context.beginPath()
+            context.arc(12.5, 11, 2.5, Math.PI, Math.PI * 2)
+            context.stroke()
+            break
+        case "collinear":
+            useBase(context)
+            line(context, 4, 18, 20, 6)
+            useAccent(context)
+            dot(context, 5, 17.2, 1.7)
+            dot(context, 12, 12, 1.7)
+            dot(context, 19, 6.8, 1.7)
             break
         case "joint":
             circle(context, 7, 12, 3)

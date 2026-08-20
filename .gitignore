@@ -1,7 +1,9 @@
 /build/
 /build-*/
+/CMakeFiles/
 /.cache/
 /.venv/
+/.bootstrap/
 __pycache__/
 *.py[cod]
 CMakeUserPresets.json

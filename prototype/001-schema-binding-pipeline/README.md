@@ -1,6 +1,6 @@
 # TECH-001 — Schema and Binding Pipeline
 
-- **Status:** In progress
+- **Status:** Complete; selected by [ADR-0011](../../PLAN/adr/0011-protobuf-engineering-api.md)
 - **Question:** Can one IDL generate bounded C++/Python/CLI/AI boundaries while the domain remains strongly typed?
 - **Requirements:** `API-001` through `API-014`, `PLAN-001`, `PLAN-002`, `ARCH-001`, `ARCH-002`, `TST-002`, `TST-004`
 - **Decision:** [ADR-0004](../../PLAN/adr/0004-one-engineering-api.md)
@@ -9,7 +9,7 @@ The probe pins Protobuf 35.1 and Abseil 20250512.1 source archives by SHA-256. P
 
 The same rename/query scenario runs in-process, over framed local IPC, from generated Python, through CLI JSON, and from generated AI-tool arguments. Additional probes cover unknown entity payloads, additive unknown fields, JSON information loss, malformed/oversized frames, deterministic metadata, and a reusable parser fuzz target.
 
-This prototype is not production code. Selection requires retained measurements, supported-platform evidence, an accepted schema ADR, and an upgrade policy.
+This prototype is not production code. Production behavior was reimplemented under [`api/schema`](../../api/schema). Windows build evidence remains part of the supported-platform gate.
 
 Run it:
 

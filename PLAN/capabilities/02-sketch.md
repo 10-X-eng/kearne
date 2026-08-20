@@ -1,6 +1,6 @@
 # Sketch
 
-- **Status:** Proposed; solver and source-pattern gates required
+- **Status:** In progress; solver and source-pattern gates remain open
 - **Requirement prefix:** `SKH`
 - **Depends on:** [project/function model](../foundations/01-document-model.md), [Python/build123d](05-python-and-build123d.md), [evaluation](../foundations/03-evaluation-and-jobs.md), [rendering](01-rendering-and-selection.md)
 - **Unblocks:** solid and surface modeling
@@ -46,6 +46,10 @@ MVP constraints:
 
 Higher-order curves and constraint types follow after the solver and source-transform contracts pass their gates.
 
+The post-v1 operation matrix covers ellipse/elliptical arc, conics, spline, slot, polygon, projected/intersection geometry, trim, extend, split, offset, mirror, move/rotate/scale, driven/reference dimensions, constraint activation, and repair. Each row declares generated source shape, editable selections, solver/profile effects, topology-label behavior, and refusal conditions before its command appears in a production build.
+
+Sketch fillet/chamfer, linked sketch copy, sketch merge, whole-sketch mirror, and B-spline degree/knot editing are also post-v1 matrix rows. Sketch text, optical constraints such as Snell's law, virtual-space geometry, and user-facing solver-algorithm controls are excluded unless a later product decision adds them.
+
 ## 4. Solver port
 
 ```text
@@ -80,13 +84,25 @@ The solver cannot drop, demote, or change a declared constraint. Suggested repai
 
 Every sketch references a stable component origin plane, named construction-plane output, or planar topology reference plus orientation. GUI selection writes that reference into source/function state; no transient active plane becomes durable intent.
 
+Generated helpers receive the attachment through an identity-bound evaluated plane and use explicit typed SI quantities under [ADR-0018](../adr/0018-typed-si-sketch-boundary.md). Arbitrary native build123d functions remain unrestricted.
+
 ## 5. Health and interaction
+
+Entering Sketch edit creates an ephemeral session bound to the exact source digest, project revision, attachment, and return workspace. **Finish** validates the current source draft and solve result, commits one atomic source transaction, then returns to the recorded workspace. **Cancel session** discards every session edit and restores the prior workspace, view, and selection without history or undo residue. A stale session preserves its draft but cannot finish or rebase implicitly. A workspace switch is refused while a session is dirty or stale until the user explicitly finishes or cancels it.
+
+Tool input has three distinct actions. **Undo last input** removes only the most recent ephemeral point or selection. **Stop tool** discards the active tool draft but keeps the edit session and its earlier edits. **Cancel session** has the session-wide behavior above. Keyboard, pointer, UI, and semantic-harness bindings invoke these actions explicitly rather than relying on an ambiguous cancel cascade.
 
 Health reports solve status, remaining degrees of freedom, conflicts, redundancy, conditioning, invalid geometry, and closed-profile analysis separately. Conflict sets refer to stable source IDs and state whether minimality is exact or approximate.
 
-Dragging adds an ephemeral target constraint to a generation-tagged solve. Release proposes one structural source edit or parameter change. If source or base revision changed, commit fails stale and must be regenerated.
+Dragging adds an ephemeral target constraint to a generation-tagged solve. Release proposes one structural source edit or parameter change. Hover and selection are stamped render overlays and never rerun the solver. If source or base revision changed, commit fails stale and must be regenerated.
 
 Constraint inference produces ranked proposals. Accepted proposals become ordinary helper calls in source with provenance. DOF visualization consumes stable IDs and solver modes, not solver variable offsets.
+
+The edit session distinguishes driving, driven/reference, active, suppressed, conflicting, and redundant constraints without exposing solver row numbers. Repair tools propose stable-ID source changes; they never delete or weaken constraints automatically.
+
+### SKH-008 — Typed viewport input
+
+Sketch tools declare ordered point or selection requirements. One displayed-frame transform converts input to canonical plane coordinates or revision-scoped entity and sub-element keys such as `start`, `end`, and `center`. Input carries the exact displayed scene stamp; screen pixels, draw-order IDs, and target-only freshness checks never enter a source transformation. Draft input and its rendered projection are ephemeral and discarded on cancel or revision change.
 
 ## 6. Profiles and projections
 
@@ -98,7 +114,11 @@ Projected external geometry uses explicit named-output/topology references in th
 
 One generated suite covers helper-source generation, parse-without-execution, recognition, source-preserving transformations, stale-digest rejection, solver residuals, DOF, rigid transforms, unit equivalence, declaration reordering, contradiction detection, drag continuity, save/reload, and invalid inputs.
 
+The semantic harness can enter and leave an edit session, start a tool, submit canonical points or stable entity/sub-element selections, edit fields, undo the last input, stop the tool, finish or cancel the session, undo/redo, save, reopen, and inspect the correlated source, solve health, scene stamp, and full-screen capture. The first production vertical slice creates an attached rectangle as ordinary lines and constraints, inspects its native source and solve state, finishes it, undoes and redoes it, saves and reopens the project, and re-enters the same editable Sketch.
+
 The suite also generates valid native build123d sketch functions outside the helper pattern and verifies they evaluate without being mislabeled graphically editable. A model-based editor composes add/delete/constrain/drag/refactor/undo/redo/branch/merge actions and shrinks failures by source construct and stable ID.
+
+Current Ceres-adapter evidence covers all MVP residual equations, nonlinear solve, rank/DOF fallback, order and scale metamorphisms, contradiction, drag refusal, cancellation, and geometry degeneracy. Exact test and footprint results are retained under [`TECH-006`](../delivery/02-technology-gates.md#7-tech-006--sketch-solver); solver selection remains provisional.
 
 ## 8. Performance budgets
 
@@ -111,9 +131,10 @@ The suite also generates valid native build123d sketch functions outside the hel
 
 - **SKH-OPEN-001:** Solver library and license.
 - **SKH-OPEN-002:** `kearne.sketch` helper API and generated source shape.
-- **SKH-OPEN-003:** Concrete-syntax parser/transformer and formatting guarantees.
 - **SKH-OPEN-004:** Stable profile labels across topology-changing sketch edits.
 - **SKH-OPEN-005:** Exact minimal-conflict guarantees and large-sketch target.
+
+`SKH-OPEN-003` is resolved by [ADR-0017](../adr/0017-python-ast-source-editing.md).
 
 ## 10. Definition of done
 

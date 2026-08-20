@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import Kearne.UI
@@ -9,7 +11,26 @@ ComboBox {
     property string semanticName: ""
     property string semanticRole: "combobox"
     property var semanticActions: ["choose", "focus"]
-    property string semanticValue: currentText
+    property var semanticOptions: model
+    property string iconName: ""
+    property string semanticValue: currentIndex >= 0
+                                   && currentIndex < semanticOptions.length
+                                   ? String(semanticOptions[currentIndex]) : ""
+
+    function performSemanticAction(action, value) {
+        if (action === "focus") {
+            forceActiveFocus()
+            return true
+        }
+        if (action !== "choose")
+            return false
+        const index = semanticOptions.indexOf(value)
+        if (index < 0)
+            return false
+        currentIndex = index
+        activated(index)
+        return true
+    }
 
     implicitHeight: Theme.controlHeight
     leftPadding: Theme.space3
@@ -17,22 +38,39 @@ ComboBox {
     font.pixelSize: Theme.fontBody
     hoverEnabled: true
     Accessible.name: semanticName
+    Accessible.id: semanticId
+    Accessible.role: Accessible.ComboBox
+    Accessible.focusable: enabled && visible
 
-    contentItem: Text {
-        leftPadding: 0
-        rightPadding: control.indicator.width + control.spacing
-        text: control.displayText
-        color: control.enabled ? Theme.text : Theme.textFaint
-        font: control.font
-        verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+    contentItem: Row {
+        spacing: Theme.space2
+
+        KIcon {
+            visible: control.iconName.length > 0
+            width: visible ? Theme.iconSize : 0
+            height: Theme.iconSize
+            anchors.verticalCenter: parent.verticalCenter
+            name: control.iconName
+            color: control.enabled ? Theme.textMuted : Theme.textFaint
+        }
+
+        Text {
+            width: parent.width - x
+            height: parent.height
+            rightPadding: control.indicator.width + control.spacing
+            text: control.displayText
+            color: control.enabled ? Theme.text : Theme.textFaint
+            font: control.font
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
     }
 
     indicator: KIcon {
         x: control.width - width - Theme.space2
         y: Math.round((control.height - height) / 2)
-        width: 15
-        height: 15
+        width: Theme.iconSizeSmall
+        height: Theme.iconSizeSmall
         name: "chevron"
         color: control.enabled ? Theme.textMuted : Theme.textFaint
     }
@@ -40,27 +78,29 @@ ComboBox {
     background: Rectangle {
         radius: Theme.radiusSmall
         color: control.hovered ? Theme.surfaceMuted : Theme.surface
-        border.width: control.visualFocus ? 2 : 1
+        border.width: control.visualFocus ? Theme.focusRingWidth
+                                          : Theme.separatorWidth
         border.color: control.visualFocus ? Theme.focus : Theme.border
     }
 
     delegate: ItemDelegate {
+        id: delegateControl
         required property var modelData
         required property int index
         width: control.width
         height: Theme.controlHeight
-        text: modelData
-        highlighted: control.highlightedIndex === index
+        text: String(delegateControl.modelData)
+        highlighted: control.highlightedIndex === delegateControl.index
         font.pixelSize: Theme.fontBody
         contentItem: Text {
-            text: parent.text
+            text: delegateControl.text
             color: Theme.text
-            font: parent.font
+            font: delegateControl.font
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
         background: Rectangle {
-            color: parent.highlighted ? Theme.selection : Theme.surface
+            color: delegateControl.highlighted ? Theme.selection : Theme.surface
         }
     }
 

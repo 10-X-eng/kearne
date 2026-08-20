@@ -9,12 +9,17 @@ Rectangle {
     property string semanticName: "Application status"
     property string semanticRole: "statusbar"
     property var semanticActions: []
-    property string semanticValue: uiSession.modelHealth
+    property string semanticValue: App.ui.modelHealth
 
     color: Theme.surface
     implicitHeight: Theme.statusBarHeight
 
-    Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.border }
+    Rectangle {
+        anchors.top: parent.top
+        width: parent.width
+        height: Theme.separatorWidth
+        color: Theme.border
+    }
 
     RowLayout {
         anchors.fill: parent
@@ -25,20 +30,24 @@ Rectangle {
         Rectangle {
             Layout.preferredWidth: 7
             Layout.preferredHeight: 7
-            radius: 4
-            color: uiSession.backendConnected ? Theme.success : Theme.warning
+            radius: width / 2
+            color: App.ui.backendConnected ? Theme.success : Theme.warning
         }
 
         Text {
-            text: uiSession.modelHealth
+            text: App.ui.modelHealth
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
         }
 
-        Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 14; color: Theme.border }
+        KSeparator {
+            orientation: Qt.Vertical
+            fillAvailable: false
+            Layout.preferredHeight: Theme.iconSizeSmall
+        }
 
         Text {
-            text: uiSession.selectionSummary
+            text: App.ui.selectionSummary
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
         }
@@ -46,16 +55,20 @@ Rectangle {
         Item { Layout.fillWidth: true }
 
         Text {
-            text: uiSession.jobs.length + " operation" + (uiSession.jobs.length === 1 ? "" : "s")
+            text: App.ui.jobs.length + " operation" + (App.ui.jobs.length === 1 ? "" : "s")
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
         }
 
-        Rectangle { Layout.preferredWidth: 1; Layout.preferredHeight: 14; color: Theme.border }
+        KSeparator {
+            orientation: Qt.Vertical
+            fillAvailable: false
+            Layout.preferredHeight: Theme.iconSizeSmall
+        }
 
         Text {
-            text: "Grid " + uiSession.gridSpacingLabel + "  ·  Snap: "
-                  + (uiSession.gridSnapEnabled ? "grid, " : "") + "point, edge"
+            text: "Grid " + App.ui.gridSpacingLabel + "  ·  Snap: "
+                  + (App.workspace.gridSnapEnabled ? "grid, " : "") + "point, edge"
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
         }

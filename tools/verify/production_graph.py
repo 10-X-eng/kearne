@@ -11,6 +11,31 @@ import sys
 
 FORBIDDEN_TREES = ("prototype", "spikes")
 GRAPH_FILES = ("build.ninja", "compile_commands.json")
+CORE_ROOTS = (
+    "api/schema",
+    "modules/base",
+    "modules/document",
+    "modules/engineering",
+    "modules/evaluation",
+    "modules/modeling",
+    "modules/topology",
+)
+CORE_FORBIDDEN_MARKERS = (
+    "/Qt",
+    "\\Qt",
+    "/OpenCASCADE",
+    "\\OpenCASCADE",
+    "/opencascade",
+    "\\opencascade",
+    "/python",
+    "\\python",
+)
+CORE_FORBIDDEN_INCLUDES = (
+    "Qt",
+    "Python.h",
+    "pybind11/",
+    "opencascade/",
+)
 
 
 def forbidden_markers(source_root: Path) -> tuple[str, ...]:
@@ -25,6 +50,40 @@ def generated_graph_files(build_root: Path) -> list[Path]:
     files = [build_root / name for name in GRAPH_FILES]
     files.extend(build_root.rglob("cmake_install.cmake"))
     return sorted(set(files))
+
+
+def is_under(path: Path, roots: tuple[Path, ...]) -> bool:
+    return any(path.is_relative_to(root) for root in roots)
+
+
+def check_core_boundaries(
+    source_root: Path, entries: list[object], failures: list[str]
+) -> None:
+    roots = tuple(source_root / name for name in CORE_ROOTS)
+    for entry in entries:
+        if not isinstance(entry, dict):
+            failures.append("compile database contains a non-object entry")
+            continue
+        source = Path(str(entry.get("file", ""))).resolve()
+        if not is_under(source, roots):
+            continue
+        command = str(entry.get("command", ""))
+        for marker in CORE_FORBIDDEN_MARKERS:
+            if marker.lower() in command.lower():
+                failures.append(
+                    f"{source.relative_to(source_root)} has forbidden compile input {marker}"
+                )
+
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for header in sorted(root.rglob("*.h")) + sorted(root.rglob("*.hpp")):
+            text = header.read_text(encoding="utf-8", errors="replace")
+            for marker in CORE_FORBIDDEN_INCLUDES:
+                if f"#include <{marker}" in text or f'#include "{marker}' in text:
+                    failures.append(
+                        f"{header.relative_to(source_root)} includes forbidden {marker}"
+                    )
 
 
 def main() -> int:
@@ -48,6 +107,8 @@ def main() -> int:
         else:
             if not isinstance(entries, list) or not entries:
                 failures.append("compile database has no production translation units")
+            else:
+                check_core_boundaries(source_root, entries, failures)
 
     for path in generated_graph_files(build_root):
         if not path.is_file():

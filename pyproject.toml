@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling==1.28.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kearne-sdk"
+version = "0.1.0"
+description = "Kearne's Python SDK and native build123d helpers"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "blake3==1.0.9",
+    "build123d==0.11.1",
+    "protobuf==7.35.1",
+]
+
+[dependency-groups]
+dev = [
+    "hypothesis==6.165.10",
+    "mypy==2.3.1",
+    "ruff==0.16.3",
+    "uv==0.11.23",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["sdk/python/src/kearne"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "S", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"sdk/python/tests/*" = ["S101"]
+"tools/bootstrap.py" = ["S603", "UP036"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["kearne"]
+mypy_path = "sdk/python/src"
+
+[[tool.mypy.overrides]]
+module = ["build123d", "build123d.*"]
+ignore_missing_imports = true
+follow_imports = "skip"

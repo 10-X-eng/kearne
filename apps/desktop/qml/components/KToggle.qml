@@ -9,30 +9,51 @@ Switch {
     property string semanticName: ""
     property string semanticRole: "switch"
     property var semanticActions: ["toggle", "focus"]
-    property string semanticValue: checked ? "enabled" : "disabled"
+    property bool semanticValue: checked
 
-    implicitWidth: 44
+    function performSemanticAction(action, value) {
+        if (action === "focus") {
+            forceActiveFocus()
+            return true
+        }
+        if (action !== "toggle")
+            return false
+        const requested = value === null || value === undefined ? !checked : Boolean(value)
+        if (checked !== requested) {
+            checked = requested
+            toggled()
+        }
+        return true
+    }
+
+    implicitWidth: Theme.switchWidth + Theme.space1
     implicitHeight: 26
     hoverEnabled: true
     Accessible.name: semanticName
+    Accessible.id: semanticId
+    Accessible.role: Accessible.Switch
+    Accessible.checkable: true
+    Accessible.checked: checked
+    Accessible.focusable: enabled && visible
 
     indicator: Rectangle {
         x: 0
         y: Math.round((control.height - height) / 2)
-        width: 40
-        height: 22
-        radius: 11
+        width: Theme.switchWidth
+        height: Theme.switchHeight
+        radius: Theme.switchHeight / 2
         color: control.checked ? Theme.accent : Theme.surfaceMuted
-        border.width: control.visualFocus ? 2 : 1
+        border.width: control.visualFocus ? Theme.focusRingWidth
+                                          : Theme.separatorWidth
         border.color: control.visualFocus ? Theme.focus
                                            : (control.checked ? Theme.accent : Theme.borderStrong)
 
         Rectangle {
             x: control.checked ? parent.width - width - 3 : 3
             anchors.verticalCenter: parent.verticalCenter
-            width: 16
-            height: 16
-            radius: 8
+            width: Theme.switchKnobSize
+            height: Theme.switchKnobSize
+            radius: Theme.switchKnobSize / 2
             color: Theme.surface
             border.color: Theme.border
         }

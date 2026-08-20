@@ -5,21 +5,29 @@ import Kearne.UI
 Rectangle {
     id: root
 
-    property string state: "current"
-    property string label: state.replace("-", " ")
+    property string semanticId: ""
+    property string semanticName: label
+    property string semanticRole: "status"
+    property var semanticActions: []
+    property string semanticValue: status
+    property string status: "current"
+    property string label: status.replace("-", " ")
     property color stateColor: {
-        if (state === "current") return Theme.success
-        if (state === "failed" || state === "permission-denied") return Theme.error
-        if (state === "stale" || state === "preview") return Theme.stale
-        if (state === "pending" || state === "loading") return Theme.warning
+        if (status === "current") return Theme.success
+        if (status === "failed" || status === "permission-denied") return Theme.error
+        if (status === "stale" || status === "preview") return Theme.stale
+        if (status === "pending" || status === "loading") return Theme.warning
         return Theme.textMuted
     }
 
     implicitWidth: row.implicitWidth + Theme.space3 * 2
     implicitHeight: 24
-    radius: 12
+    radius: Theme.badgeRadius
     color: Theme.surfaceRaised
     border.color: Theme.border
+    Accessible.id: semanticId
+    Accessible.name: semanticName
+    Accessible.role: Accessible.StaticText
 
     RowLayout {
         id: row
@@ -29,7 +37,7 @@ Rectangle {
         Rectangle {
             Layout.preferredWidth: 6
             Layout.preferredHeight: 6
-            radius: 3
+            radius: width / 2
             color: root.stateColor
         }
 

@@ -186,8 +186,8 @@ Every command descriptor joins a shared conformance suite that checks schema rej
 
 ## 10. Open decisions
 
-- **CMD-OPEN-001:** Revision ID construction: random UUID versus content-derived ID plus collision-safe envelope.
-- **CMD-OPEN-002:** Retention policy for original command request payloads versus only normalized mutations and redacted descriptions.
+- Revision ID construction is defined by [ADR-0012](../adr/0012-content-addressed-revisions.md).
+- Command audit retention is defined by [ADR-0015](../adr/0015-command-audit-retention.md).
 - **CMD-OPEN-003:** Durable semantics of local uncommitted UI workspace settings versus project revisions.
 - **CMD-OPEN-004:** Safe initial set of automatically rebasable commands.
 

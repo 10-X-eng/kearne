@@ -1,125 +1,133 @@
 #pragma once
 
+#include "frontend_contract.hpp"
+
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
+#include <QtQml/qqmlregistration.h>
 
-#include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace kearne::ui {
 
-struct FrontendSnapshot {
-  std::uint64_t generation = 0;
-  QString projectName;
-  QString branchLabel;
-  QString revisionLabel;
-  QString activeWorkspaceId;
-  QString activeCommandId;
-  QString viewportState;
-  QString inspectorTitle;
-  QString inspectorStatus;
-  QString viewportHeadline;
-  QString viewportDetail;
-  QString modelHealth;
-  QString selectionSummary;
-  QString agentStatus;
-  QString modelSource;
-  QString defaultLengthUnitId;
-  QString projectLengthUnitId;
-  QString gridPlaneLabel;
-  QString gridSpacingLabel;
-  bool gridVisible = true;
-  bool gridSnapEnabled = true;
-  bool backendConnected = false;
-  QVariantList lengthUnits;
-  QVariantList workspaces;
-  QVariantList commands;
-  QVariantList commandCatalog;
-  QVariantList structure;
-  QVariantList revisions;
-  QVariantList historyCommands;
-  QVariantList fields;
-  QVariantList parameters;
-  QVariantList jobs;
-  QVariantList diagnostics;
-  QVariantList proposals;
-  QVariantList recentProjects;
-  QVariantList projectTemplates;
-  QVariantList recoveryItems;
-  QVariantList operations;
-  QVariantList interfaceStates;
-};
-
-class FrontendPort {
-public:
-  virtual ~FrontendPort() = default;
-  [[nodiscard]] virtual FrontendSnapshot snapshot() const = 0;
-  virtual void selectWorkspace(const QString &workspaceId) = 0;
-  virtual void selectEntity(const QString &entityId) = 0;
-  virtual void requestCommand(const QString &commandId) = 0;
-  virtual void setDefaultLengthUnit(const QString &unitId) = 0;
-  virtual void setProjectLengthUnit(const QString &unitId) = 0;
-  virtual void setGridVisible(bool visible) = 0;
-  virtual void setGridSnapEnabled(bool enabled) = 0;
-};
-
-[[nodiscard]] std::unique_ptr<FrontendPort> makeDevelopmentFrontendPort();
-
-class UiSession final : public QObject {
+class UiSession : public QObject {
   Q_OBJECT
+  QML_NAMED_ELEMENT(UiSession)
+  QML_UNCREATABLE("Available through App.ui")
   Q_PROPERTY(qulonglong generation READ generation NOTIFY projectionChanged)
   Q_PROPERTY(QString projectName READ projectName NOTIFY projectionChanged)
   Q_PROPERTY(QString branchLabel READ branchLabel NOTIFY projectionChanged)
   Q_PROPERTY(QString revisionLabel READ revisionLabel NOTIFY projectionChanged)
-  Q_PROPERTY(QString activeWorkspaceId READ activeWorkspaceId NOTIFY projectionChanged)
-  Q_PROPERTY(QString activeCommandId READ activeCommandId NOTIFY projectionChanged)
-  Q_PROPERTY(QString activeSurfaceId READ activeSurfaceId NOTIFY projectionChanged)
-  Q_PROPERTY(QString settingsCategoryId READ settingsCategoryId NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString projectRevision READ projectRevision NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString activeWorkspaceId READ activeWorkspaceId NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString activeCommandId READ activeCommandId NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString commandDraftState READ commandDraftState NOTIFY projectionChanged)
+  Q_PROPERTY(QString commandDraftBaseRevision READ commandDraftBaseRevision
+                 NOTIFY projectionChanged)
+  Q_PROPERTY(bool commandPreviewSupported READ commandPreviewSupported NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(bool commandApplySupported READ commandApplySupported NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(
+      QString activeSurfaceId READ activeSurfaceId NOTIFY projectionChanged)
+  Q_PROPERTY(QString settingsCategoryId READ settingsCategoryId NOTIFY
+                 projectionChanged)
   Q_PROPERTY(int inspectorPage READ inspectorPage NOTIFY projectionChanged)
   Q_PROPERTY(QString viewportState READ viewportState NOTIFY projectionChanged)
-  Q_PROPERTY(QString inspectorTitle READ inspectorTitle NOTIFY projectionChanged)
-  Q_PROPERTY(QString inspectorStatus READ inspectorStatus NOTIFY projectionChanged)
-  Q_PROPERTY(QString viewportHeadline READ viewportHeadline NOTIFY projectionChanged)
-  Q_PROPERTY(QString viewportDetail READ viewportDetail NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString inspectorTitle READ inspectorTitle NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString inspectorStatus READ inspectorStatus NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString viewportHeadline READ viewportHeadline NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString viewportDetail READ viewportDetail NOTIFY projectionChanged)
   Q_PROPERTY(QString modelHealth READ modelHealth NOTIFY projectionChanged)
-  Q_PROPERTY(QString selectionSummary READ selectionSummary NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString selectionSummary READ selectionSummary NOTIFY projectionChanged)
   Q_PROPERTY(QString agentStatus READ agentStatus NOTIFY projectionChanged)
   Q_PROPERTY(QString modelSource READ modelSource NOTIFY projectionChanged)
-  Q_PROPERTY(QString defaultLengthUnitId READ defaultLengthUnitId NOTIFY projectionChanged)
-  Q_PROPERTY(QString projectLengthUnitId READ projectLengthUnitId NOTIFY projectionChanged)
-  Q_PROPERTY(QString gridPlaneLabel READ gridPlaneLabel NOTIFY projectionChanged)
-  Q_PROPERTY(QString gridSpacingLabel READ gridSpacingLabel NOTIFY projectionChanged)
-  Q_PROPERTY(bool gridVisible READ gridVisible NOTIFY projectionChanged)
-  Q_PROPERTY(bool gridSnapEnabled READ gridSnapEnabled NOTIFY projectionChanged)
-  Q_PROPERTY(bool backendConnected READ backendConnected NOTIFY projectionChanged)
+  Q_PROPERTY(QVariantMap selectedFunction READ selectedFunction NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(QString defaultLengthUnitId READ defaultLengthUnitId NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(QString projectLengthUnitId READ projectLengthUnitId NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(QString interfaceDensityId READ interfaceDensityId NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(
+      QString gridPlaneLabel READ gridPlaneLabel NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString gridSpacingLabel READ gridSpacingLabel NOTIFY projectionChanged)
+  Q_PROPERTY(qreal gridSpacingMillimeters READ gridSpacingMillimeters NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(QVariantList sketchPrimitives READ sketchPrimitives NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(
+      QString sketchInputKind READ sketchInputKind NOTIFY projectionChanged)
+  Q_PROPERTY(QString sketchSelectionKind READ sketchSelectionKind NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(int sketchMinimumInputCount READ sketchMinimumInputCount NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(int sketchMaximumInputCount READ sketchMaximumInputCount NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(
+      int sketchInputCount READ sketchInputCount NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QString sketchInputPrompt READ sketchInputPrompt NOTIFY projectionChanged)
+  Q_PROPERTY(
+      bool backendConnected READ backendConnected NOTIFY projectionChanged)
+  Q_PROPERTY(bool sourceEditingAvailable READ sourceEditingAvailable NOTIFY
+                 projectionChanged)
   Q_PROPERTY(QVariantList lengthUnits READ lengthUnits NOTIFY projectionChanged)
+  Q_PROPERTY(QVariantList preferenceCategories READ preferenceCategories NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(QVariantList preferences READ preferences NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList workspaces READ workspaces NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList commands READ commands NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList commandCatalog READ commandCatalog NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QVariantList commandCatalog READ commandCatalog NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList structure READ structure NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList revisions READ revisions NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList historyCommands READ historyCommands NOTIFY projectionChanged)
+  Q_PROPERTY(QVariantList historyCommands READ historyCommands NOTIFY
+                 projectionChanged)
   Q_PROPERTY(QVariantList fields READ fields NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList parameters READ parameters NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList jobs READ jobs NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList diagnostics READ diagnostics NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList proposals READ proposals NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList recentProjects READ recentProjects NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList projectTemplates READ projectTemplates NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList recoveryItems READ recoveryItems NOTIFY projectionChanged)
+  Q_PROPERTY(
+      QVariantList recentProjects READ recentProjects NOTIFY projectionChanged)
+  Q_PROPERTY(QVariantList projectTemplates READ projectTemplates NOTIFY
+                 projectionChanged)
+  Q_PROPERTY(
+      QVariantList recoveryItems READ recoveryItems NOTIFY projectionChanged)
   Q_PROPERTY(QVariantList operations READ operations NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList interfaceStates READ interfaceStates NOTIFY projectionChanged)
+  Q_PROPERTY(QVariantList interfaceStates READ interfaceStates NOTIFY
+                 projectionChanged)
 
 public:
-  explicit UiSession(std::unique_ptr<FrontendPort> port, QObject *parent = nullptr);
+  explicit UiSession(std::unique_ptr<FrontendPort> port,
+                     QObject *parent = nullptr);
 
   [[nodiscard]] qulonglong generation() const;
   [[nodiscard]] QString projectName() const;
   [[nodiscard]] QString branchLabel() const;
   [[nodiscard]] QString revisionLabel() const;
+  [[nodiscard]] QString projectRevision() const;
   [[nodiscard]] QString activeWorkspaceId() const;
   [[nodiscard]] QString activeCommandId() const;
+  [[nodiscard]] QString commandDraftState() const;
+  [[nodiscard]] QString commandDraftBaseRevision() const;
+  [[nodiscard]] bool commandPreviewSupported() const;
+  [[nodiscard]] bool commandApplySupported() const;
   [[nodiscard]] QString activeSurfaceId() const;
   [[nodiscard]] QString settingsCategoryId() const;
   [[nodiscard]] int inspectorPage() const;
@@ -132,14 +140,25 @@ public:
   [[nodiscard]] QString selectionSummary() const;
   [[nodiscard]] QString agentStatus() const;
   [[nodiscard]] QString modelSource() const;
+  [[nodiscard]] QVariantMap selectedFunction() const;
   [[nodiscard]] QString defaultLengthUnitId() const;
   [[nodiscard]] QString projectLengthUnitId() const;
+  [[nodiscard]] QString interfaceDensityId() const;
   [[nodiscard]] QString gridPlaneLabel() const;
   [[nodiscard]] QString gridSpacingLabel() const;
-  [[nodiscard]] bool gridVisible() const;
-  [[nodiscard]] bool gridSnapEnabled() const;
+  [[nodiscard]] qreal gridSpacingMillimeters() const;
+  [[nodiscard]] QVariantList sketchPrimitives() const;
+  [[nodiscard]] QString sketchInputKind() const;
+  [[nodiscard]] QString sketchSelectionKind() const;
+  [[nodiscard]] int sketchMinimumInputCount() const;
+  [[nodiscard]] int sketchMaximumInputCount() const;
+  [[nodiscard]] int sketchInputCount() const;
+  [[nodiscard]] QString sketchInputPrompt() const;
   [[nodiscard]] bool backendConnected() const;
+  [[nodiscard]] bool sourceEditingAvailable() const;
   [[nodiscard]] QVariantList lengthUnits() const;
+  [[nodiscard]] QVariantList preferenceCategories() const;
+  [[nodiscard]] QVariantList preferences() const;
   [[nodiscard]] QVariantList workspaces() const;
   [[nodiscard]] QVariantList commands() const;
   [[nodiscard]] QVariantList commandCatalog() const;
@@ -161,22 +180,39 @@ public:
   Q_INVOKABLE void selectSettingsCategory(const QString &categoryId);
   Q_INVOKABLE void selectInspectorPage(const QString &pageId);
   Q_INVOKABLE void selectWorkspace(const QString &workspaceId);
+  Q_INVOKABLE void openProject(const QString &workspaceId,
+                               const QString &commandId);
   Q_INVOKABLE void selectEntity(const QString &entityId);
   Q_INVOKABLE void requestCommand(const QString &commandId);
-  Q_INVOKABLE void setDefaultLengthUnit(const QString &unitId);
-  Q_INVOKABLE void setProjectLengthUnit(const QString &unitId);
-  Q_INVOKABLE void setGridVisible(bool visible);
-  Q_INVOKABLE void setGridSnapEnabled(bool enabled);
+  Q_INVOKABLE void setPreference(const QString &preferenceId,
+                                 const QVariant &value);
+  Q_INVOKABLE void editField(const QString &fieldId, const QVariant &value);
+  Q_INVOKABLE bool submitActiveCommand(bool preview);
+  Q_INVOKABLE bool submitSketchPoint(qreal xMillimeters, qreal yMillimeters);
+  Q_INVOKABLE bool submitSketchEntity(const QString &entityId,
+                                      const QString &subElementKey);
+  Q_INVOKABLE void cancelActiveCommand();
+  Q_INVOKABLE bool submitParameterEdit(const QString &parameterId,
+                                       const QString &expression);
+  Q_INVOKABLE bool submitSourceEdit(const QString &source,
+                                    const QString &expectedRevision,
+                                    bool preview);
 
 signals:
   void projectionChanged();
   void commandRequested(const QString &commandId, qulonglong generation);
+  void preferenceChanged(const QString &preferenceId, const QVariant &value);
+
+public:
+  void replacePreferenceOptions(const QString &preferenceId,
+                                std::vector<UiOption> options,
+                                const QString &value);
 
 private:
   void refresh();
 
   std::unique_ptr<FrontendPort> port_;
-  FrontendSnapshot snapshot_;
+  FrontendSnapshotPtr snapshot_;
   QString activeSurfaceId_ = QStringLiteral("editor");
   QString settingsCategoryId_ = QStringLiteral("appearance");
   int inspectorPage_ = 0;

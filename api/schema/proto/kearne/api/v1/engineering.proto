@@ -1,0 +1,450 @@
+edition = "2024";
+
+package kearne.api.v1;
+
+import "kearne/api/v1/options.proto";
+
+message UuidV7 {
+  option (message_rules) = {
+    stable_name: "value.uuid_v7"
+    schema_version: 1
+    surface: SURFACE_KIND_VALUE
+    max_serialized_bytes: 32
+  };
+  bytes value = 1 [(field_rules) = {
+    required: true
+    min_length: 16
+    max_length: 16
+  }];
+}
+
+message Digest {
+  option (message_rules) = {
+    stable_name: "value.digest"
+    schema_version: 1
+    surface: SURFACE_KIND_VALUE
+    max_serialized_bytes: 80
+  };
+  string algorithm = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 32
+  }];
+  bytes value = 2 [(field_rules) = {
+    required: true
+    min_length: 32
+    max_length: 32
+  }];
+}
+
+message ContentReference {
+  option (message_rules) = {
+    stable_name: "value.content_reference"
+    schema_version: 1
+    surface: SURFACE_KIND_VALUE
+    max_serialized_bytes: 256
+  };
+  Digest digest = 1 [(field_rules) = {
+    required: true
+    semantic_type: "ContentDigest"
+  }];
+  uint64 byte_size = 2 [(field_rules) = {
+    required: true
+    has_numeric_range: true
+    minimum: 0
+    maximum: 16777216
+  }];
+  string media_type = 3 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 64
+  }];
+}
+
+enum Origin {
+  ORIGIN_UNSPECIFIED = 0;
+  ORIGIN_HUMAN = 1;
+  ORIGIN_PYTHON = 2;
+  ORIGIN_AI = 3;
+  ORIGIN_PLUGIN = 4;
+  ORIGIN_IMPORT = 5;
+  ORIGIN_REPLAY = 6;
+  ORIGIN_SYSTEM = 7;
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_INFORMATION = 1;
+  SEVERITY_WARNING = 2;
+  SEVERITY_ERROR = 3;
+  SEVERITY_FATAL = 4;
+}
+
+message Diagnostic {
+  option (message_rules) = {
+    stable_name: "diagnostic"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 4096
+  };
+  string code = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 96
+    semantic_type: "DiagnosticCode"
+  }];
+  Severity severity = 2 [(field_rules) = {
+    required: true
+    disallow_default: true
+  }];
+  string field_path = 3 [(field_rules) = { max_length: 256 }];
+  repeated string parameters = 4 [(field_rules) = {
+    max_items: 16
+    max_length: 256
+  }];
+}
+
+message RenameProjectCommand {
+  option (message_rules) = {
+    stable_name: "project.rename"
+    schema_version: 1
+    surface: SURFACE_KIND_COMMAND
+    max_serialized_bytes: 256
+    permission: "project.edit"
+  };
+  UuidV7 project_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+  string display_name = 2 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 80
+  }];
+}
+
+message CreateSourceModuleCommand {
+  option (message_rules) = {
+    stable_name: "source.module.create"
+    schema_version: 1
+    surface: SURFACE_KIND_COMMAND
+    max_serialized_bytes: 1536
+    permission: "project.edit"
+  };
+  UuidV7 project_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+  string path = 2 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 1024
+    semantic_type: "ProjectPath"
+  }];
+  ContentReference content = 3 [(field_rules) = { required: true }];
+}
+
+message ReplaceSourceModuleCommand {
+  option (message_rules) = {
+    stable_name: "source.module.replace"
+    schema_version: 1
+    surface: SURFACE_KIND_COMMAND
+    max_serialized_bytes: 1664
+    permission: "project.edit"
+  };
+  UuidV7 project_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+  string path = 2 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 1024
+    semantic_type: "ProjectPath"
+  }];
+  Digest expected_prior = 3 [(field_rules) = {
+    required: true
+    semantic_type: "ContentDigest"
+  }];
+  ContentReference content = 4 [(field_rules) = { required: true }];
+}
+
+message CommandOperation {
+  option (message_rules) = {
+    stable_name: "command.operation"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 2048
+    required_oneof: "payload"
+  };
+  oneof payload {
+    RenameProjectCommand rename_project = 20;
+    CreateSourceModuleCommand create_source_module = 21;
+    ReplaceSourceModuleCommand replace_source_module = 22;
+  }
+}
+
+message CommandEnvelope {
+  option (message_rules) = {
+    stable_name: "command.envelope"
+    schema_version: 2
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 4096
+  };
+  UuidV7 request_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "RequestId"
+  }];
+  Digest base_revision = 2 [(field_rules) = {
+    required: true
+    semantic_type: "RevisionId"
+  }];
+  UuidV7 actor_id = 3 [(field_rules) = {
+    required: true
+    semantic_type: "ActorId"
+  }];
+  Origin origin = 4 [(field_rules) = {
+    required: true
+    disallow_default: true
+  }];
+  UuidV7 permission_context_id = 5 [(field_rules) = {
+    required: true
+    semantic_type: "PermissionContextId"
+  }];
+  UuidV7 gesture_id = 6 [(field_rules) = { semantic_type: "GestureId" }];
+  CommandOperation operation = 20 [(field_rules) = { required: true }];
+}
+
+message TransactionEnvelope {
+  option (message_rules) = {
+    stable_name: "transaction.envelope"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 4096
+  };
+  UuidV7 request_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "RequestId"
+  }];
+  Digest base_revision = 2 [(field_rules) = {
+    required: true
+    semantic_type: "RevisionId"
+  }];
+  UuidV7 actor_id = 3 [(field_rules) = {
+    required: true
+    semantic_type: "ActorId"
+  }];
+  Origin origin = 4 [(field_rules) = {
+    required: true
+    disallow_default: true
+  }];
+  UuidV7 permission_context_id = 5 [(field_rules) = {
+    required: true
+    semantic_type: "PermissionContextId"
+  }];
+  UuidV7 gesture_id = 6 [(field_rules) = { semantic_type: "GestureId" }];
+  repeated CommandOperation operations = 20 [(field_rules) = {
+    required: true
+    max_items: 16
+  }];
+}
+
+message CommandResult {
+  option (message_rules) = {
+    stable_name: "command.result"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 8192
+  };
+  bool committed = 1;
+  Digest revision = 2 [(field_rules) = { semantic_type: "RevisionId" }];
+  repeated Diagnostic diagnostics = 3 [(field_rules) = { max_items: 32 }];
+}
+
+message GetProjectMetadataQuery {
+  option (message_rules) = {
+    stable_name: "project.metadata.get"
+    schema_version: 1
+    surface: SURFACE_KIND_QUERY
+    max_serialized_bytes: 128
+    permission: "project.read"
+  };
+  UuidV7 project_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+}
+
+message GetSourceModuleMetadataQuery {
+  option (message_rules) = {
+    stable_name: "source.module.metadata.get"
+    schema_version: 1
+    surface: SURFACE_KIND_QUERY
+    max_serialized_bytes: 1280
+    permission: "project.read"
+  };
+  UuidV7 project_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+  string path = 2 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 1024
+    semantic_type: "ProjectPath"
+  }];
+}
+
+message QueryEnvelope {
+  option (message_rules) = {
+    stable_name: "query.envelope"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 4096
+    required_oneof: "payload"
+  };
+  Digest revision = 1 [(field_rules) = {
+    required: true
+    semantic_type: "RevisionId"
+  }];
+  uint32 limit = 2 [(field_rules) = {
+    required: true
+    has_numeric_range: true
+    minimum: 1
+    maximum: 1000
+  }];
+  bytes continuation_token = 3 [(field_rules) = { max_length: 256 }];
+  UuidV7 actor_id = 4 [(field_rules) = {
+    required: true
+    semantic_type: "ActorId"
+  }];
+  Origin origin = 5 [(field_rules) = {
+    required: true
+    disallow_default: true
+  }];
+  UuidV7 permission_context_id = 6 [(field_rules) = {
+    required: true
+    semantic_type: "PermissionContextId"
+  }];
+  oneof payload {
+    GetProjectMetadataQuery get_project_metadata = 20;
+    GetSourceModuleMetadataQuery get_source_module_metadata = 21;
+  }
+}
+
+message ProjectMetadataResult {
+  option (message_rules) = {
+    stable_name: "project.metadata.result"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 1024
+  };
+  Digest observed_revision = 1 [(field_rules) = {
+    required: true
+    semantic_type: "RevisionId"
+  }];
+  UuidV7 project_id = 2 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+  string display_name = 3 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 80
+  }];
+}
+
+message SourceModuleMetadataResult {
+  option (message_rules) = {
+    stable_name: "source.module.metadata.result"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 1536
+  };
+  Digest observed_revision = 1 [(field_rules) = {
+    required: true
+    semantic_type: "RevisionId"
+  }];
+  UuidV7 project_id = 2 [(field_rules) = {
+    required: true
+    semantic_type: "ProjectId"
+  }];
+  string path = 3 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 1024
+    semantic_type: "ProjectPath"
+  }];
+  ContentReference content = 4 [(field_rules) = { required: true }];
+}
+
+message QueryResult {
+  option (message_rules) = {
+    stable_name: "query.result"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 8192
+  };
+  repeated Diagnostic diagnostics = 1 [(field_rules) = { max_items: 32 }];
+  oneof payload {
+    ProjectMetadataResult project_metadata = 20;
+    SourceModuleMetadataResult source_module_metadata = 21;
+  }
+}
+
+message RevisionCommittedEvent {
+  option (message_rules) = {
+    stable_name: "revision.committed"
+    schema_version: 1
+    surface: SURFACE_KIND_EVENT
+    max_serialized_bytes: 256
+  };
+  Digest revision = 1 [(field_rules) = {
+    required: true
+    semantic_type: "RevisionId"
+  }];
+  UuidV7 request_id = 2 [(field_rules) = {
+    required: true
+    semantic_type: "RequestId"
+  }];
+}
+
+message EventEnvelope {
+  option (message_rules) = {
+    stable_name: "event.envelope"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 4096
+    required_oneof: "payload"
+  };
+  uint64 sequence = 1 [(field_rules) = {
+    required: true
+    has_numeric_range: true
+    minimum: 1
+    maximum: 9007199254740991
+  }];
+  oneof payload {
+    RevisionCommittedEvent revision_committed = 20;
+  }
+}
+
+message OpaqueEntity {
+  option (message_rules) = {
+    stable_name: "entity.opaque"
+    schema_version: 1
+    surface: SURFACE_KIND_ENTITY
+    max_serialized_bytes: 131072
+  };
+  string kind = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 128
+  }];
+  uint32 schema_version = 2 [(field_rules) = {
+    required: true
+    has_numeric_range: true
+    minimum: 1
+    maximum: 4294967295
+  }];
+  bytes payload = 3 [(field_rules) = { max_length: 65536 }];
+}

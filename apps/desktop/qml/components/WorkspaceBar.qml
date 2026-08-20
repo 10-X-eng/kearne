@@ -7,11 +7,11 @@ Rectangle {
     id: root
 
     function unitIndex(unitId) {
-        return Math.max(0, uiSession.lengthUnits.findIndex(unit => unit.id === unitId))
+        return Math.max(0, App.ui.lengthUnits.findIndex(unit => unit.id === unitId))
     }
 
     function unitSymbols() {
-        return uiSession.lengthUnits.map(unit => unit.symbol)
+        return App.ui.lengthUnits.map(unit => unit.symbol)
     }
 
     property string semanticId: "region.workspace_bar"
@@ -28,7 +28,7 @@ Rectangle {
         spacing: 0
 
         Repeater {
-            model: uiSession.workspaces
+            model: App.ui.workspaces
 
             KButton {
                 required property var modelData
@@ -39,9 +39,9 @@ Rectangle {
                 text: modelData.label
                 quiet: true
                 checkable: true
-                checked: uiSession.activeWorkspaceId === modelData.id
+                checked: App.ui.activeWorkspaceId === modelData.id
                 Layout.preferredHeight: Theme.workspaceBarHeight - 1
-                onClicked: uiSession.selectWorkspace(modelData.id)
+                onClicked: App.ui.selectWorkspace(modelData.id)
             }
         }
 
@@ -52,10 +52,12 @@ Rectangle {
             semanticId: "project.length_unit"
             semanticName: "Current project length unit"
             model: root.unitSymbols()
-            currentIndex: root.unitIndex(uiSession.projectLengthUnitId)
+            semanticOptions: App.ui.lengthUnits.map(unit => unit.id)
+            currentIndex: root.unitIndex(App.ui.projectLengthUnitId)
             Layout.preferredWidth: 68
             Layout.rightMargin: Theme.space3
-            onActivated: index => uiSession.setProjectLengthUnit(uiSession.lengthUnits[index].id)
+            onActivated: index => App.ui.setPreference(
+                             "project-length-unit", App.ui.lengthUnits[index].id)
 
             ToolTip.visible: hovered
             ToolTip.delay: 700
@@ -67,7 +69,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 1
+        height: Theme.separatorWidth
         color: Theme.border
     }
 }

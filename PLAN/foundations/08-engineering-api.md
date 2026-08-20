@@ -1,6 +1,6 @@
 # Engineering API and Schemas
 
-- **Status:** Proposed; schema-tooling prototype required
+- **Status:** Proposed; schema tooling selected by [ADR-0011](../adr/0011-protobuf-engineering-api.md)
 - **Requirement prefix:** `API`
 - **Depends on:** [Document model](01-document-model.md), [commands and revisions](02-commands-transactions-revisions.md), [units](05-units-expressions-numerics.md)
 - **Unblocks:** QML, CLI, Python, AI, plugins, workers, tests
@@ -154,8 +154,7 @@ The same semantic scenario corpus runs through in-process C++, local IPC, Python
 
 ## 10. Open decisions
 
-- **API-OPEN-001:** Confirm Protobuf or select another IDL after measuring schema evolution, C++/Python generation, JSON Schema quality, binary size, and fuzzability.
-- **API-OPEN-002:** In-process API exposure: generated wire calls versus direct typed facade backed by the same descriptors.
+- In-process API exposure is defined by [ADR-0016](../adr/0016-in-process-engineering-api.md).
 - **API-OPEN-003:** Public remote API timing and authentication; not required for MVP.
 - **API-OPEN-004:** Stable Python typing and documentation generation toolchain.
 

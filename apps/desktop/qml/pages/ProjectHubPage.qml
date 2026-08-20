@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -45,7 +47,8 @@ Rectangle {
                         semanticName: "Open project"
                         iconName: "folder"
                         text: "Open"
-                        onClicked: uiSession.requestCommand("project.open")
+                        enabled: App.ui.backendConnected
+                        onClicked: App.ui.requestCommand("project.open")
                     }
 
                     KButton {
@@ -54,10 +57,8 @@ Rectangle {
                         iconName: "add"
                         text: "New design"
                         primary: true
-                        onClicked: {
-                            uiSession.requestCommand("project.create")
-                            uiSession.navigateTo("editor")
-                        }
+                        onClicked: App.ui.openProject(
+                                       "model", "project.create.part")
                     }
                 }
 
@@ -76,7 +77,7 @@ Rectangle {
                         Layout.minimumHeight: 250
 
                         Repeater {
-                            model: uiSession.recentProjects
+                            model: App.ui.recentProjects
 
                             KButton {
                                 required property var modelData
@@ -87,12 +88,14 @@ Rectangle {
                                 text: modelData.name + "  ·  " + modelData.modified
                                 quiet: true
                                 Layout.fillWidth: true
-                                onClicked: uiSession.navigateTo("editor")
+                                onClicked: App.ui.openProject(
+                                               modelData.workspaceId,
+                                               "project.open." + modelData.id)
                             }
                         }
 
                         Text {
-                            visible: uiSession.recentProjects.length === 0
+                            visible: App.ui.recentProjects.length === 0
                             Layout.fillWidth: true
                             text: "No recent projects"
                             color: Theme.textMuted
@@ -137,7 +140,7 @@ Rectangle {
                             text: "Recovery"
                             quiet: true
                             Layout.alignment: Qt.AlignLeft
-                            onClicked: uiSession.navigateTo("recovery")
+                            onClicked: App.ui.navigateTo("recovery")
                         }
                     }
                 }
@@ -150,8 +153,8 @@ Rectangle {
                         text: "START"
                         color: Theme.textFaint
                         font.pixelSize: Theme.fontSmall
-                        font.weight: Font.DemiBold
-                        font.letterSpacing: 0.8
+                        font.weight: Theme.fontWeightStrong
+                        font.letterSpacing: Theme.letterSpacing
                     }
 
                     GridLayout {
@@ -161,13 +164,13 @@ Rectangle {
                         rowSpacing: Theme.space3
 
                         Repeater {
-                            model: uiSession.projectTemplates
+                            model: App.ui.projectTemplates
 
                             KPanel {
+                                id: templateCard
                                 required property var modelData
                                 semanticId: "template." + modelData.id
                                 semanticName: modelData.name
-                                semanticActions: ["invoke"]
                                 title: modelData.name
                                 detail: modelData.detail
                                 iconName: modelData.icon
@@ -175,16 +178,15 @@ Rectangle {
                                 Layout.minimumHeight: 130
 
                                 KButton {
-                                    semanticId: "template." + modelData.id + ".create"
-                                    semanticName: "Create " + modelData.name
+                                    semanticId: "template." + templateCard.modelData.id + ".create"
+                                    semanticName: "Create " + templateCard.modelData.name
                                     iconName: "add"
                                     text: "Create"
                                     quiet: true
                                     Layout.alignment: Qt.AlignLeft
-                                    onClicked: {
-                                        uiSession.requestCommand("project.create." + modelData.id)
-                                        uiSession.navigateTo("editor")
-                                    }
+                                    onClicked: App.ui.openProject(
+                                                   templateCard.modelData.workspaceId,
+                                                   "project.create." + templateCard.modelData.id)
                                 }
                             }
                         }

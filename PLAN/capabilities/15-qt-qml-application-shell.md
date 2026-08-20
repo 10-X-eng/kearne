@@ -109,6 +109,10 @@ Every interactive control and transient surface MUST expose stable semantic iden
 
 Kearne-owned windows, dialogs, menus, popups, tooltips, and viewport overlays MUST register with the application session so complete capture can include them. A new windowing mechanism is incomplete until it passes observation conformance.
 
+### UI-012 — No decorative production workspace
+
+A release build exposes a workspace or action only when its owning acceptance workflow reaches real Engineering API commands, jobs, results, diagnostics, history, and recovery through production adapters. Development providers may exercise unfinished states only in identified development builds; packaging checks reject them. Registry-generated traversal verifies every visible action's route and availability.
+
 ## 8. Verification strategy
 
 UI assurance favors semantic and model-level checks:

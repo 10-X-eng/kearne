@@ -12,7 +12,12 @@ Production code lives outside [`prototype/`](prototype/README.md). Prototypes ar
 Desktop work is accepted only when the agent harness can launch the build, inspect semantic UI state, and return a lossless capture of the complete visible Kearne session.
 
 ```sh
-cmake --preset dev
-cmake --build --preset dev
+# Debian-family development host: install native prerequisites once.
+tools/install-dev-deps-debian.sh
+
+# Existing provisioned host:
+python3 tools/bootstrap.py
 ctest --preset dev
 ```
+
+The host installer installs the compiler, Qt, yaml-cpp, SpaceMouse headers, and build tools, then runs the bootstrap. The bootstrap creates `.venv`, installs pinned Python tooling, and invokes the selected CMake preset. CMake resolves checksum-pinned native dependencies. The installer refuses a distribution whose Qt is older than 6.8.

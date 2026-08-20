@@ -61,6 +61,26 @@ Recognition records the source digest, matched structure, editable fields, confi
 
 If a structural edit cannot preserve semantics, Kearne refuses it and opens the function source or offers an explicit generated alternative. It never rewrites with regular expressions or substitutes BREP.
 
+### MOD-006 — Versioned support profiles
+
+Graphical support is declared by operation-descriptor version and cumulative profile. A release advertises only rows whose complete descriptor passes the definition of done.
+
+| Profile | Required operation families |
+|---|---|
+| `MODEL-MVP-B-1` | origin datums; construction planes; sketch/profile; extrude in new/add/subtract modes |
+| `MODEL-MVP-C-1` | revolve; union/subtract/intersect; constant fillet; equal-distance chamfer; simple and standards-backed clearance holes; linear/circular patterns |
+| `MODEL-PRO-1` | construction points/axes/frames; typed primitives; sweep; loft; helix; shell; draft; rib/web; split body/face; mirror; path pattern; scale/transform; derived body; counterbore/countersink/tapped/tapered holes |
+
+Direct face edits and surface bodies remain owned by the [direct/surface plan](14-direct-and-surface-modeling.md). A row missing its source editor, topology policy, diagnostic mapper, generated domain, or headless parity is unavailable, not partially supported.
+
+### MOD-007 — Extent and target semantics
+
+Material-creating/removing descriptors declare result mode (`NewBody`, `Add`, `Subtract`, or `Intersect`) and explicit targets. Extrude/cut declare direction and termination; revolve declares axis and angular extent; sweep declares path and orientation; loft declares ordered sections and continuity. `MODEL-MVP-B-1` requires blind one-sided and symmetric extrude/cut extents. `MODEL-PRO-1` adds two-sided, through-all, up-to-face/body, offset-from-reference, and supported thin-feature extents. Reversal and offsets are typed inputs; the evaluator never chooses a target or side from mutable UI state.
+
+### MOD-008 — Engineering hole contract
+
+Hole descriptors distinguish simple, counterbore, countersink, tapped, clearance, and tapered forms. They record axis, start reference, termination, diameter/depth, point and countersink angles where applicable, thread/fit standard identity and edition, tolerance class, hand, and thread representation. Unsupported standard rows or incompatible geometry refuse with allowed alternatives; they are never rounded to a nearby catalog value.
+
 ## 4. Evaluation and diagnostics
 
 The worker validates finite inputs, output types, dimensionality, body count, shape health, bounds, and declared topology before publication. Safe normalization is part of the evaluator fingerprint. Healing that changes intent, topology, or tolerance beyond policy requires explicit source or parameter change.
@@ -83,21 +103,33 @@ Geometry oracles combine shape validity, analytic relations, containment/interse
 
 The suite also generates unrecognized but valid algebra, builder, and mixed-mode functions to prove that evaluation does not depend on recognition.
 
-## 8. Acceptance scenarios
+Each support-profile row supplies valid/invalid parameter generators and relations for every termination and result mode. Hole domains include metric/inch boundaries, through/blind termination, fit incompatibility, thread representation changes, and missing catalog versions.
+
+## 8. Performance and cancellation
+
+### MOD-009 — Interactive modeling budget
+
+Descriptor validation, source transformation, and invalidation planning contain no kernel work and meet the `MODEL-EDIT-100` budget in the performance plan. Preview jobs are generation-tagged; superseding or cancelling one is acknowledged within the shared interactive cancellation budget. Kernel calls run under declared worker time/memory limits, and an uninterruptible call is terminated through the worker supervisor without blocking input or publishing partial geometry.
+
+Evaluation, topology publication, and artifact memory scale with the affected function subgraph. A local edit cannot recompute unrelated functions or retain an unbounded sequence of preview BREPs.
+
+## 9. Acceptance scenarios
 
 - A generated mounting plate is edited graphically, refactored by AI, then remains source- and parameter-editable even if specialized recognition is lost.
 - A revolved shaft retains labeled cylindrical and planar selections across supported edits.
+- A `MODEL-PRO-1` housing combines loft/sweep, shell, draft, ribs, and path patterns; an infeasible shell preserves the prior accepted body and source-linked failure.
+- Changing a standard clearance hole to a tapped/countersunk form resolves one exact fit/thread row and updates semantic thread, drawing, and BOM data without requiring modeled threads.
 - Boolean movement transitions success → no intersection → success without losing source.
 - An oversized fillet fails with source-linked diagnostics and recovers after source or parameter repair.
 - Pattern count changes preserve declared unaffected member labels.
 
-## 9. Open decisions
+## 10. Open decisions
 
 - **MOD-OPEN-001:** Source shape generated for initial operation functions.
 - **MOD-OPEN-002:** Structural recognizer and concrete-syntax technology.
 - **MOD-OPEN-003:** Multi-body and variable-output contract.
 - **MOD-OPEN-004:** OCCT boolean and tolerance policy.
 
-## 10. Definition of done
+## 11. Definition of done
 
 An operation is supported graphically only when its generator, recognizer, structural edits, output/topology contract, generated domains, diagnostics, and headless documentation pass the shared suite. Any valid declared build123d function remains evaluable without such support.

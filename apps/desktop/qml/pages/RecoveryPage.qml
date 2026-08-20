@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -44,7 +46,7 @@ Rectangle {
                         semanticName: "Back to projects"
                         iconName: "home"
                         text: "Projects"
-                        onClicked: uiSession.navigateTo("projects")
+                        onClicked: App.ui.navigateTo("projects")
                     }
                 }
 
@@ -56,21 +58,39 @@ Rectangle {
                     Layout.fillWidth: true
 
                     Repeater {
-                        model: uiSession.recoveryItems
+                        model: App.ui.recoveryItems
 
                         RowLayout {
+                            id: recoveryRow
                             required property var modelData
-                            property string semanticId: "recovery." + modelData.id
-                            property string semanticName: modelData.name
+                            property string semanticId: "recovery." + recoveryRow.modelData.id
+                            property string semanticName: recoveryRow.modelData.name
                             property string semanticRole: "listitem"
-                            property var semanticActions: modelData.available ? ["inspect"] : []
-                            property string semanticValue: modelData.state
+                            property var semanticActions: recoveryRow.modelData.available
+                                                          ? ["inspect"] : []
+                            property string semanticValue: recoveryRow.modelData.state
+
+                            Accessible.name: semanticName
+                            Accessible.id: semanticId
+                            Accessible.role: Accessible.ListItem
+
+                            function inspectRecovery() {
+                                if (!recoveryRow.modelData.available)
+                                    return false
+                                App.ui.requestCommand(
+                                            "recovery.inspect." + recoveryRow.modelData.id)
+                                return true
+                            }
+
+                            function performSemanticAction(action, value) {
+                                return action === "inspect" && inspectRecovery()
+                            }
                             Layout.fillWidth: true
                             spacing: Theme.space3
 
                             KIcon {
-                                name: modelData.available ? "recovery" : "check"
-                                color: modelData.available ? Theme.warning : Theme.success
+                                name: recoveryRow.modelData.available ? "recovery" : "check"
+                                color: recoveryRow.modelData.available ? Theme.warning : Theme.success
                                 Layout.preferredWidth: 24
                                 Layout.preferredHeight: 24
                             }
@@ -81,31 +101,31 @@ Rectangle {
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: modelData.name
+                                    text: recoveryRow.modelData.name
                                     color: Theme.text
                                     font.pixelSize: Theme.fontBody
-                                    font.weight: Font.DemiBold
+                                    font.weight: Theme.fontWeightStrong
                                 }
 
                                 Text {
                                     Layout.fillWidth: true
-                                    text: modelData.detail
+                                    text: recoveryRow.modelData.detail
                                     color: Theme.textMuted
                                     font.pixelSize: Theme.fontSmall
                                     wrapMode: Text.WordWrap
                                 }
                             }
 
-                            StateBadge { state: modelData.state }
+                            StateBadge { status: recoveryRow.modelData.state }
 
                             KButton {
-                                semanticId: "recovery." + modelData.id + ".inspect"
-                                semanticName: "Inspect " + modelData.name
+                                semanticId: "recovery." + recoveryRow.modelData.id + ".inspect"
+                                semanticName: "Inspect " + recoveryRow.modelData.name
                                 iconName: "inspect"
                                 text: "Inspect"
-                                visible: modelData.available
-                                enabled: modelData.available
-                                onClicked: uiSession.requestCommand("recovery.inspect." + modelData.id)
+                                visible: recoveryRow.modelData.available
+                                enabled: recoveryRow.modelData.available
+                                onClicked: recoveryRow.inspectRecovery()
                             }
                         }
                     }
@@ -126,12 +146,13 @@ Rectangle {
                         ]
 
                         RowLayout {
+                            id: policyRow
                             required property string modelData
                             Layout.fillWidth: true
                             KIcon { name: "check"; color: Theme.success }
                             Text {
                                 Layout.fillWidth: true
-                                text: modelData
+                                text: policyRow.modelData
                                 color: Theme.text
                                 font.pixelSize: Theme.fontBody
                                 wrapMode: Text.WordWrap

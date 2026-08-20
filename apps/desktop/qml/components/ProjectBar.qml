@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import Kearne.UI
 
@@ -28,7 +27,7 @@ Rectangle {
             text: root.width >= 930 ? "KEARNE" : ""
             quiet: true
             font.capitalization: Font.AllUppercase
-            onClicked: uiSession.navigateTo("projects")
+            onClicked: App.ui.navigateTo("projects")
         }
 
         Rectangle {
@@ -39,27 +38,27 @@ Rectangle {
 
         KButton {
             semanticId: "navigation.editor"
-            semanticName: "Open " + uiSession.projectName
+            semanticName: "Open " + App.ui.projectName
             iconName: "folder"
-            text: uiSession.projectName
+            text: App.ui.projectName
             quiet: true
             checkable: true
-            checked: uiSession.activeSurfaceId === "editor"
-            onClicked: uiSession.navigateTo("editor")
+            checked: App.ui.activeSurfaceId === "editor"
+            onClicked: App.ui.navigateTo("editor")
         }
 
         Rectangle {
             visible: root.width >= 1120
             Layout.preferredHeight: 24
             Layout.preferredWidth: visible ? branchText.implicitWidth + Theme.space4 : 0
-            radius: 12
+            radius: Theme.badgeRadius
             color: Theme.surfaceRaised
             border.color: Theme.border
 
             Text {
                 id: branchText
                 anchors.centerIn: parent
-                text: "●  " + uiSession.branchLabel
+                text: "●  " + App.ui.branchLabel
                 color: Theme.textMuted
                 font.pixelSize: Theme.fontSmall
             }
@@ -67,7 +66,7 @@ Rectangle {
 
         Text {
             visible: root.width >= 1280
-            text: uiSession.revisionLabel
+            text: App.ui.revisionLabel
             color: Theme.textFaint
             font.pixelSize: Theme.fontSmall
         }
@@ -91,8 +90,8 @@ Rectangle {
             text: root.width >= 1180 ? "Operations" : ""
             quiet: true
             checkable: true
-            checked: uiSession.activeSurfaceId === "operations"
-            onClicked: uiSession.navigateTo("operations")
+            checked: App.ui.activeSurfaceId === "operations"
+            onClicked: App.ui.navigateTo("operations")
         }
 
         KButton {
@@ -101,18 +100,21 @@ Rectangle {
             iconName: "settings"
             quiet: true
             checkable: true
-            checked: uiSession.activeSurfaceId === "settings"
-            onClicked: uiSession.navigateTo("settings")
+            checked: App.ui.activeSurfaceId === "settings"
+            onClicked: App.ui.navigateTo("settings")
         }
 
         KButton {
             semanticId: "project.save"
-            semanticName: "Save project"
+            semanticName: App.ui.backendConnected
+                          ? "Save project"
+                          : "Save project — engineering backend unavailable"
             iconName: "save"
             text: root.width >= 920 ? "Save" : ""
             primary: true
-            visible: uiSession.activeSurfaceId === "editor"
-            onClicked: uiSession.requestCommand("project.save")
+            visible: App.ui.activeSurfaceId === "editor"
+            enabled: App.ui.backendConnected
+            onClicked: App.ui.requestCommand("project.save")
         }
     }
 
@@ -120,7 +122,7 @@ Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: 1
+        height: Theme.separatorWidth
         color: Theme.border
     }
 }

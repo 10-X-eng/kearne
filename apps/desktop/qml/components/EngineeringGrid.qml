@@ -8,14 +8,33 @@ Item {
     property string semanticName: "Modeling grid"
     property string semanticRole: "grid"
     property var semanticActions: []
-    property string semanticValue: uiSession.gridPlaneLabel + ":" + uiSession.gridSpacingLabel
-    property bool sketchView: uiSession.activeWorkspaceId === "sketch"
-    property real minorPixelSpacing: sketchView ? 24 : 28
+    property string semanticValue: App.ui.gridPlaneLabel + ":" + App.ui.gridSpacingLabel
+    property bool sketchView: App.ui.activeWorkspaceId === "sketch"
+    property real minorPixelSpacing: 28
     property int majorInterval: 5
+
+    EngineeringGridItem {
+        anchors.fill: parent
+        visible: root.sketchView
+        viewCenterMetres: App.sketchCamera.centerMetres
+        gridOriginMetres: Qt.point(0, 0)
+        pixelsPerMetre: App.sketchCamera.pixelsPerMetre
+        rotationRadians: App.sketchCamera.rotationRadians
+        minorSpacingMetres: App.ui.gridSpacingMillimeters / 1000
+        majorInterval: root.majorInterval
+        minorLineWidthPixels: Theme.gridLineWidthMinor
+        majorLineWidthPixels: Theme.gridLineWidthMajor
+        axisLineWidthPixels: Theme.axisLineWidth
+        minorColor: Theme.canvasGridMinor
+        majorColor: Theme.canvasGridMajor
+        axisXColor: Theme.axisX
+        axisYColor: Theme.axisY
+    }
 
     Canvas {
         id: gridCanvas
         anchors.fill: parent
+        visible: !root.sketchView
         antialiasing: true
 
         onWidthChanged: requestPaint()
@@ -28,37 +47,6 @@ Item {
             context.moveTo(x1, y1)
             context.lineTo(x2, y2)
             context.stroke()
-        }
-
-        function paintSketchGrid(context) {
-            const originX = Math.round(width / 2) + 0.5
-            const originY = Math.round(height / 2) + 0.5
-            const step = root.minorPixelSpacing
-            const xCount = Math.ceil(width / step / 2) + 1
-            const yCount = Math.ceil(height / step / 2) + 1
-
-            for (let index = -xCount; index <= xCount; ++index) {
-                if (index === 0)
-                    continue
-                const x = originX + index * step
-                stroke(context,
-                       index % root.majorInterval === 0 ? Theme.canvasGridMajor
-                                                        : Theme.canvasGridMinor,
-                       index % root.majorInterval === 0 ? 1.15 : 0.65,
-                       x, 0, x, height)
-            }
-            for (let index = -yCount; index <= yCount; ++index) {
-                if (index === 0)
-                    continue
-                const y = originY + index * step
-                stroke(context,
-                       index % root.majorInterval === 0 ? Theme.canvasGridMajor
-                                                        : Theme.canvasGridMinor,
-                       index % root.majorInterval === 0 ? 1.15 : 0.65,
-                       0, y, width, y)
-            }
-            stroke(context, Theme.axisX, 1.35, 0, originY, width, originY)
-            stroke(context, Theme.axisY, 1.35, originX, 0, originX, height)
         }
 
         function paintModelGrid(context) {
@@ -76,7 +64,8 @@ Item {
                     continue
                 const major = index % root.majorInterval === 0
                 const color = major ? Theme.canvasGridMajor : Theme.canvasGridMinor
-                const lineWidth = major ? 1.05 : 0.6
+                const lineWidth = major ? Theme.gridLineWidthMajor
+                                        : Theme.gridLineWidthMinor
                 stroke(context, color, lineWidth,
                        originX + index * ux - extent * vx,
                        originY + index * uy - extent * vy,
@@ -88,21 +77,25 @@ Item {
                        originX + index * vx + extent * ux,
                        originY + index * vy + extent * uy)
             }
-            stroke(context, Theme.axisX, 1.4, originX - extent * ux,
+            stroke(context, Theme.axisX, Theme.axisLineWidth, originX - extent * ux,
                    originY - extent * uy, originX + extent * ux, originY + extent * uy)
-            stroke(context, Theme.axisY, 1.4, originX - extent * vx,
+            stroke(context, Theme.axisY, Theme.axisLineWidth, originX - extent * vx,
                    originY - extent * vy, originX + extent * vx, originY + extent * vy)
-            stroke(context, Theme.axisZ, 1.4, originX, originY, originX, originY - step * 7)
+            stroke(context, Theme.axisZ, Theme.axisLineWidth,
+                   originX, originY, originX, originY - step * 7)
         }
 
         onPaint: {
             const context = getContext("2d")
             context.reset()
-            if (root.sketchView)
-                paintSketchGrid(context)
-            else
-                paintModelGrid(context)
+            paintModelGrid(context)
         }
+
+        Connections {
+            target: App.camera
+            function onCameraChanged() { gridCanvas.requestPaint() }
+        }
+
     }
 
     Rectangle {
@@ -119,7 +112,7 @@ Item {
         Text {
             id: gridReadout
             anchors.centerIn: parent
-            text: uiSession.gridPlaneLabel + " plane  ·  Grid " + uiSession.gridSpacingLabel
+            text: App.ui.gridPlaneLabel + " plane  ·  Grid " + App.ui.gridSpacingLabel
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
         }

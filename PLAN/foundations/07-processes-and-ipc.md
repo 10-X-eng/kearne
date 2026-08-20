@@ -156,7 +156,7 @@ Required properties:
 
 ## 10. Open decisions
 
-- **IPC-OPEN-001:** Local transport/IDL selection; Protobuf over local sockets/pipes is the proposed baseline.
+- Protobuf is selected by [ADR-0011](../adr/0011-protobuf-engineering-api.md); the local socket/pipe framing remains open.
 - **IPC-OPEN-002:** Exact BREP serialization and compatibility guarantees for pinned OCCT/OCP builds.
 - **IPC-OPEN-003:** Geometry pool topology: one job per process, warm shared workers, or risk-based hybrid.
 - **IPC-OPEN-004:** Cross-platform sandbox primitives and degraded guarantees on Windows/Linux.

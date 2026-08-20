@@ -80,6 +80,8 @@ Use an independent implementation or mathematically equivalent construction wher
 
 Failures record seed, generator profile, command/event log, evaluator fingerprints, platform, and fault schedule. A replay tool reconstructs the case through the public API. Reproducers remain small data, not new bespoke test programs.
 
+Native properties replay one reported case with `KEARNE_TEST_CASE_SEED` and `KEARNE_TEST_CASE_INDEX`; sharding and profile size are bypassed for that replay.
+
 ### Fault injection
 
 Inject allocation/resource limits, disk/full/I/O boundaries, worker crash/hang, cancellation races, process restart, stale messages, device loss, schema skew, unavailable plugin, network partition, provider failure, and corrupted cache. Fault hooks are compiled/test-only ports, not scattered production conditionals.
@@ -148,6 +150,8 @@ The preset records its time budget; dependency analysis selects affected suites.
 
 - larger seeds and operation sequences;
 - sanitizer builds and thread/concurrency schedules;
+- UI-thread instrumentation that fails on forbidden engineering work or blocking waits;
+- CPU scaling and GPU/CPU equivalence profiles for accelerable evaluators;
 - persistent fuzzing budget;
 - fault matrices;
 - migration/compatibility fixtures;

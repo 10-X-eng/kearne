@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -23,6 +25,8 @@ Rectangle {
     property string semanticRole: "panel"
     property var semanticActions: []
     property int activePage: 0
+    property bool closable: false
+    signal closeRequested()
 
     color: Theme.surface
     border.color: Theme.border
@@ -61,13 +65,19 @@ Rectangle {
             }
 
             Item { Layout.fillWidth: true }
+
+            KButton {
+                semanticId: visible ? "structure.collapse" : ""
+                semanticName: "Collapse structure panel"
+                iconName: "collapse-left"
+                quiet: true
+                compact: true
+                visible: root.closable
+                onClicked: root.closeRequested()
+            }
         }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 1
-            color: Theme.border
-        }
+        KSeparator { }
 
         ListView {
             id: entityList
@@ -79,41 +89,57 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
-            model: root.activePage === 0 ? uiSession.structure : uiSession.revisions
+            model: root.activePage === 0 ? App.ui.structure : App.ui.revisions
 
-            delegate: Rectangle {
+            delegate: ItemDelegate {
                 id: row
                 required property var modelData
                 property string semanticId: root.activePage === 0
-                                                ? "entity." + modelData.id
-                                                : "revision." + modelData.id
-                property string semanticName: modelData.label
+                                                ? "entity." + row.modelData.id
+                                                : "revision." + row.modelData.id
+                property string semanticName: row.modelData.label
                 property string semanticRole: "listitem"
-                property var semanticActions: ["select"]
+                property var semanticActions: root.activePage === 0 ? ["select"] : []
                 property string semanticValue: root.activePage === 0
-                                                   ? modelData.kind
-                                                   : modelData.detail
+                                                   ? row.modelData.kind
+                                                   : row.modelData.detail
+
+                function selectEntity() {
+                    if (root.activePage !== 0)
+                        return false
+                    App.ui.selectEntity(row.modelData.id)
+                    return true
+                }
+
+                function performSemanticAction(action, value) {
+                    return action === "select" && selectEntity()
+                }
 
                 width: entityList.width
                 height: 32
-                color: pointer.containsMouse ? Theme.surfaceMuted : Theme.surface
+                hoverEnabled: true
+                Accessible.name: semanticName
+                Accessible.id: semanticId
+                Accessible.role: Accessible.ListItem
+                Accessible.focusable: enabled && visible
+                onClicked: selectEntity()
 
-                RowLayout {
+                contentItem: RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: Theme.space2 + (modelData.depth ?? 0) * Theme.space4
+                    anchors.leftMargin: Theme.space2 + (row.modelData.depth ?? 0) * Theme.space4
                     anchors.rightMargin: Theme.space2
                     spacing: Theme.space2
 
                     KIcon {
-                        Layout.preferredWidth: 14
-                        Layout.preferredHeight: 14
-                        name: root.iconFor(modelData)
+                        Layout.preferredWidth: Theme.iconSizeSmall
+                        Layout.preferredHeight: Theme.iconSizeSmall
+                        name: root.iconFor(row.modelData)
                         color: root.activePage === 0 ? Theme.accent : Theme.textFaint
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: modelData.label
+                        text: row.modelData.label
                         color: Theme.text
                         font.pixelSize: Theme.fontBody
                         elide: Text.ElideRight
@@ -121,18 +147,17 @@ Rectangle {
 
                     Text {
                         visible: root.activePage === 1
-                        text: modelData.detail ?? ""
+                        text: row.modelData.detail ?? ""
                         color: Theme.textFaint
                         font.pixelSize: Theme.fontSmall
                     }
                 }
 
-                HoverHandler { id: pointer }
-                TapHandler {
-                    onTapped: {
-                        if (root.activePage === 0)
-                            uiSession.selectEntity(row.modelData.id)
-                    }
+                background: Rectangle {
+                    color: row.hovered || row.visualFocus
+                           ? Theme.surfaceMuted : Theme.surface
+                    border.width: row.visualFocus ? Theme.focusRingWidth : 0
+                    border.color: Theme.focus
                 }
             }
         }
@@ -160,7 +185,7 @@ Rectangle {
                     spacing: Theme.space1
 
                     Repeater {
-                        model: uiSession.historyCommands
+                        model: App.ui.historyCommands
 
                         KButton {
                             required property var modelData
@@ -169,9 +194,10 @@ Rectangle {
                             semanticValue: modelData.shortcut
                             iconName: modelData.icon
                             shortcut: modelData.shortcut
+                            enabled: modelData.available
                             compact: true
                             quiet: true
-                            onClicked: uiSession.requestCommand(modelData.id)
+                            onClicked: App.ui.requestCommand(modelData.id)
                         }
                     }
                 }

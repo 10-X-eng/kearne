@@ -38,6 +38,8 @@ Function bodies may use ordinary Python, helpers, classes, loops, conditionals, 
 
 Inputs are typed values or immutable named outputs. Publication requires returned values matching declared output slots. Module globals, printed values, and interpreter-resident objects are not outputs.
 
+Generated sketch helpers use typed SI quantities and identity-bound plane inputs under [ADR-0018](../adr/0018-typed-si-sketch-boundary.md). This does not change native build123d's conventions outside that helper contract.
+
 ### PY-004 — One geometry authority
 
 GUI tools, AI, direct source editing, plugins, replay, and headless clients mutate the same source/function graph. Kearne MUST NOT persist a parallel native-feature graph for source-defined geometry.
@@ -133,10 +135,11 @@ Automatic source merge never implies geometric correctness. Conflicts retain bas
 ## 10. Open decisions
 
 - **PY-OPEN-001:** Manifest format and optional decorator API.
-- **PY-OPEN-002:** Concrete-syntax tooling and source transformation protocol.
 - **PY-OPEN-003:** Environment distribution and build123d/OCP/OCCT version matrix.
 - **PY-OPEN-004:** Explicit topology-label and ancestry helper API.
 - **PY-OPEN-005:** Platform isolation mechanisms and product wording.
+
+`PY-OPEN-002` is resolved by [ADR-0017](../adr/0017-python-ast-source-editing.md).
 
 ## 11. Definition of done
 

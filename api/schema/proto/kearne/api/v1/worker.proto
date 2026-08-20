@@ -1,0 +1,196 @@
+edition = "2024";
+
+package kearne.api.v1;
+
+import "kearne/api/v1/engineering.proto";
+import "kearne/api/v1/options.proto";
+import "kearne/api/v1/sketch.proto";
+
+enum SketchSourceEditAction {
+  SKETCH_SOURCE_EDIT_ACTION_UNSPECIFIED = 0;
+  SKETCH_SOURCE_EDIT_ACTION_APPEND = 1;
+  SKETCH_SOURCE_EDIT_ACTION_REPLACE = 2;
+  SKETCH_SOURCE_EDIT_ACTION_DELETE = 3;
+}
+
+enum SketchSourceSection {
+  SKETCH_SOURCE_SECTION_UNSPECIFIED = 0;
+  SKETCH_SOURCE_SECTION_ENTITIES = 1;
+  SKETCH_SOURCE_SECTION_CONSTRAINTS = 2;
+}
+
+message ValidateCommandJob {
+  option (message_rules) = {
+    stable_name: "worker.command.validate"
+    schema_version: 1
+    surface: SURFACE_KIND_WORKER_JOB
+    max_serialized_bytes: 8192
+  };
+  bytes command = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 4096
+  }];
+}
+
+message CreateSketchSource {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.create"
+    schema_version: 1
+    surface: SURFACE_KIND_WORKER_JOB
+    max_serialized_bytes: 320
+  };
+  string function_name = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 255
+  }];
+}
+
+message SketchSourceEdit {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.edit"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 80
+  };
+  SketchSourceEditAction action = 1 [(field_rules) = {
+    required: true
+    disallow_default: true
+  }];
+  SketchSourceSection section = 2 [(field_rules) = {
+    required: true
+    disallow_default: true
+  }];
+  UuidV7 target_id = 3 [(field_rules) = { required: true }];
+}
+
+message EditSketchSource {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.edit_batch"
+    schema_version: 1
+    surface: SURFACE_KIND_WORKER_JOB
+    max_serialized_bytes: 131072
+  };
+  bytes source_utf8 = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 65536
+  }];
+  string function_name = 2 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 255
+  }];
+  Digest expected_prior = 3 [(field_rules) = {
+    required: true
+    semantic_type: "ContentDigest"
+  }];
+  SketchDefinition target = 4 [(field_rules) = { required: true }];
+  repeated SketchSourceEdit edits = 5 [(field_rules) = {
+    required: true
+    max_items: 32
+  }];
+}
+
+message SketchSourceTransformJob {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.transform"
+    schema_version: 1
+    surface: SURFACE_KIND_WORKER_JOB
+    max_serialized_bytes: 131328
+    required_oneof: "operation"
+  };
+  oneof operation {
+    CreateSketchSource create = 20;
+    EditSketchSource edit = 21;
+  }
+}
+
+message SketchSourceTransformSuccess {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.success"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 65792
+  };
+  bytes source_utf8 = 1 [(field_rules) = {
+    required: true
+    min_length: 1
+    max_length: 65536
+  }];
+  Digest source_digest = 2 [(field_rules) = {
+    required: true
+    semantic_type: "ContentDigest"
+  }];
+}
+
+message SketchSourceTransformFailure {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.failure"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 131072
+  };
+  repeated Diagnostic diagnostics = 1 [(field_rules) = {
+    required: true
+    max_items: 32
+  }];
+}
+
+message SketchSourceTransformResult {
+  option (message_rules) = {
+    stable_name: "worker.sketch.source.result"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 131328
+    required_oneof: "outcome"
+  };
+  oneof outcome {
+    SketchSourceTransformSuccess success = 20;
+    SketchSourceTransformFailure failure = 21;
+  }
+}
+
+message WorkerJobEnvelope {
+  option (message_rules) = {
+    stable_name: "worker.job.envelope"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 132096
+    required_oneof: "payload"
+  };
+  UuidV7 worker_instance_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "WorkerInstanceId"
+  }];
+  UuidV7 job_id = 2 [(field_rules) = {
+    required: true
+    semantic_type: "JobId"
+  }];
+  oneof payload {
+    ValidateCommandJob validate_command = 20;
+    SketchSourceTransformJob sketch_source_transform = 21;
+  }
+}
+
+message WorkerResultEnvelope {
+  option (message_rules) = {
+    stable_name: "worker.result.envelope"
+    schema_version: 1
+    surface: SURFACE_KIND_WIRE
+    max_serialized_bytes: 132096
+    required_oneof: "payload"
+  };
+  UuidV7 worker_instance_id = 1 [(field_rules) = {
+    required: true
+    semantic_type: "WorkerInstanceId"
+  }];
+  UuidV7 job_id = 2 [(field_rules) = {
+    required: true
+    semantic_type: "JobId"
+  }];
+  oneof payload {
+    SketchSourceTransformResult sketch_source_transform = 20;
+  }
+}

@@ -34,8 +34,8 @@ Rectangle {
                 visible: root.iconName.length > 0
                 name: root.iconName
                 color: Theme.accent
-                Layout.preferredWidth: 22
-                Layout.preferredHeight: 22
+                Layout.preferredWidth: Theme.iconSizeLarge
+                Layout.preferredHeight: Theme.iconSizeLarge
             }
 
             ColumnLayout {
@@ -47,7 +47,7 @@ Rectangle {
                     text: root.title
                     color: Theme.text
                     font.pixelSize: Theme.fontTitle
-                    font.weight: Font.DemiBold
+                    font.weight: Theme.fontWeightStrong
                     elide: Text.ElideRight
                 }
 

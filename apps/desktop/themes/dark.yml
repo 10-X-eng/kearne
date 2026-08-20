@@ -1,0 +1,30 @@
+schema: kearne.theme/v1
+id: dark
+name: Kearne Dark
+appearance: dark
+extends: light
+tokens:
+  surface: "#151b20"
+  surfaceRaised: "#1b232a"
+  surfaceMuted: "#232d35"
+  canvas: "#11181d"
+  canvasGridMinor: "#26343d"
+  canvasGridMajor: "#3c505c"
+  axisX: "#e06b6b"
+  axisY: "#62b981"
+  axisZ: "#56a4d4"
+  border: "#34434d"
+  borderStrong: "#526773"
+  text: "#e7eef2"
+  textMuted: "#b6c3cb"
+  textFaint: "#91a2ad"
+  accent: "#43a7c7"
+  accentHover: "#55b7d4"
+  accentSoft: "#173c48"
+  focus: "#5bc0e0"
+  selection: "#244b59"
+  success: "#68c08c"
+  warning: "#e2a44d"
+  error: "#ef7878"
+  stale: "#af8ee3"
+  agent: "#56b6d5"

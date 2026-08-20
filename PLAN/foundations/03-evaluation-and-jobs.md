@@ -1,6 +1,6 @@
 # Dependency Evaluation and Jobs
 
-- **Status:** Proposed
+- **Status:** In progress; scheduler policy gate accepted
 - **Requirement prefix:** `EVAL`
 - **Depends on:** [Document model](01-document-model.md), [commands and revisions](02-commands-transactions-revisions.md)
 - **Unblocks:** modeling, rendering, imports, Python, simulation
@@ -107,7 +107,7 @@ Sustained interactive edits MUST NOT permanently starve explicit exports, saves,
 
 ### EVAL-012 — Bounded multithreading
 
-In-process work uses configured pools and resource classes rather than a thread per job. The same dependency scheduler dispatches isolated process work; CPU, memory, and third-party thread use count against one resource budget.
+In-process work uses configured pools and resource classes rather than a thread per job. The same dependency scheduler dispatches isolated process work; CPU, GPU, memory, and third-party thread use count against resource budgets. Independent ready jobs run concurrently. A GPU executor may accelerate a declared evaluator, but ordinary CAD evaluators retain multithreaded CPU execution.
 
 ## 6. Cancellation and failure
 
@@ -168,9 +168,11 @@ The same scheduler conformance suite runs against deterministic single-thread, p
 
 Exact fixtures and hardware are defined in the performance plan.
 
+The production scheduler and generated conformance model satisfy the policy boundary of EVAL-008–EVAL-011. Native thread-pool and process adapters, cancellation timing, worker containment, and retry classification remain open under EVAL-012, EVAL-013, EVAL-015, and EVAL-016.
+
 ## 11. Open decisions
 
-- **EVAL-OPEN-001:** Scheduler implementation: custom dependency scheduler over a standard executor versus a task-graph library.
+- Executor adapters must pass the scheduler conformance suite selected by [ADR-0019](../adr/0019-deterministic-evaluation-scheduler.md).
 - **EVAL-OPEN-002:** Cache storage tiers and eviction policy.
 - **EVAL-OPEN-003:** Which OCCT calls are safe in parallel within one process for the pinned version.
 - **EVAL-OPEN-004:** Whether mass properties are function-result metadata or a separately keyed derived evaluator.

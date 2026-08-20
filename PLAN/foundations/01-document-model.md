@@ -190,10 +190,10 @@ The same generators run at small pull-request and large nightly sizes. Adding a 
 
 ## 10. Open decisions
 
-- **DOC-OPEN-001:** External ID representation and content-tree encoding.
+- Content-tree encoding is defined by [ADR-0013](../adr/0013-canonical-content-encoding.md). External semantic IDs are defined by [ADR-0010](../adr/0010-uuidv7-semantic-identities.md).
 - **DOC-OPEN-002:** Manifest/decorator precedence and conflict diagnostics.
 - **DOC-OPEN-003:** Model-call representation for multi-body and variable-cardinality outputs.
-- **DOC-OPEN-004:** Opaque payload encoding and persistent-map implementation.
+- Opaque payloads and persistent maps are defined by [ADR-0013](../adr/0013-canonical-content-encoding.md) and [ADR-0014](../adr/0014-persistent-project-state.md).
 
 ## 11. Definition of done
 

@@ -21,6 +21,10 @@ Every merged change leaves supported presets buildable and required suites passi
 
 Each implementation change names requirement IDs, updates applicable descriptors/generators, and records verification. Requirements are closed by evidence, not percentage estimates.
 
+### SEQ-004 — Workspace completion
+
+Each production workspace ships as a complete vertical capability, not a menu of placeholders. Its owning plan defines the minimum workflow, real adapters, failure states, performance profile, and UI/headless/Python/AI conformance. Release packaging rejects development providers and visible actions without registered handlers.
+
 ## 2. Stage 0 — Production repository and UI foundation
 
 Establish the root production build, module boundaries, design tokens, reusable controls, typed frontend ports, deterministic UI data provider, application lifecycle, semantic observation, and complete-session capture. The root build excludes `prototype/`.
@@ -124,14 +128,12 @@ Exit gate: all MVP requirements have linked evidence; no unresolved critical ris
 
 The order minimizes core rewrites:
 
-1. Configurations, direct editing, surfacing, materials, and drawing foundations.
-2. Component references, assemblies, solver, LOD, BOM, motion, interference.
-3. User-facing versions, branches, semantic merge, AI alternatives.
-4. Simulation and validated result visualization.
-5. Professional drawings, standards, revision/release workflow.
-6. Optional cloud synchronization and collaboration.
-
-Sheet metal, weldments, manufacturing analysis, and CAM receive separate plans after their prerequisite body/topology/configuration contracts are proven.
+1. Materials/standard components, configurations, direct editing, surfacing, and rule-driven sheet metal.
+2. Component references, assemblies, solver, LOD, BOM, motion, and interference.
+3. Structural/modal simulation and validated result visualization.
+4. CAM setup, core 3-axis strategies, removal simulation, and postprocessing.
+5. Professional drawings, standards, revision/release workflow, branches, semantic merge, and AI alternatives.
+6. Weldments, broader analysis/manufacturing profiles, and optional collaboration.
 
 ## 11. Work-package rule
 

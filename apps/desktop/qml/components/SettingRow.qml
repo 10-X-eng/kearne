@@ -1,5 +1,6 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import Kearne.UI
 
@@ -13,6 +14,8 @@ RowLayout {
     property var semanticActions: []
     signal valueEdited(string settingId, var value)
 
+    enabled: descriptor.enabled
+    opacity: enabled ? 1 : Theme.disabledOpacity
     Layout.fillWidth: true
     Layout.minimumHeight: 52
     spacing: Theme.space4
@@ -31,7 +34,8 @@ RowLayout {
         Text {
             visible: (root.descriptor.detail ?? "").length > 0
             Layout.fillWidth: true
-            text: root.descriptor.detail ?? ""
+            text: (root.descriptor.detail ?? "")
+                  + (root.enabled ? "" : " · Unavailable")
             color: Theme.textMuted
             font.pixelSize: Theme.fontSmall
             wrapMode: Text.WordWrap
@@ -42,7 +46,6 @@ RowLayout {
         Layout.preferredWidth: root.descriptor.kind === "toggle" ? 52 : 190
         sourceComponent: root.descriptor.kind === "toggle" ? toggleEditor
                          : (root.descriptor.kind === "text" ? textEditor : choiceEditor)
-        property var setting: root.descriptor
     }
 
     Component {
@@ -50,8 +53,8 @@ RowLayout {
         KToggle {
             semanticId: root.semanticId + ".control"
             semanticName: root.semanticName
-            checked: setting.value
-            onToggled: root.valueEdited(setting.id, checked)
+            checked: root.descriptor.value
+            onToggled: root.valueEdited(root.descriptor.id, checked)
         }
     }
 
@@ -60,26 +63,23 @@ RowLayout {
         KChoice {
             semanticId: root.semanticId + ".control"
             semanticName: root.semanticName
-            model: setting.options
-            currentIndex: Math.max(0, setting.options.indexOf(setting.value))
+            model: root.descriptor.options
+            semanticOptions: root.descriptor.optionIds
+            currentIndex: Math.max(0, root.descriptor.optionIds.indexOf(root.descriptor.value))
             onActivated: index => root.valueEdited(
-                             setting.id,
-                             setting.optionIds ? setting.optionIds[index] : setting.options[index])
+                             root.descriptor.id,
+                             root.descriptor.optionIds ? root.descriptor.optionIds[index]
+                                                       : root.descriptor.options[index])
         }
     }
 
     Component {
         id: textEditor
-        TextField {
-            property string semanticId: root.semanticId + ".control"
-            property string semanticName: root.semanticName
-            property string semanticRole: "textbox"
-            property var semanticActions: ["setValue", "focus"]
-            property string semanticValue: text
-            text: setting.value
-            selectByMouse: true
-            Accessible.name: semanticName
-            onEditingFinished: root.valueEdited(setting.id, text)
+        KTextField {
+            semanticId: root.semanticId + ".control"
+            semanticName: root.semanticName
+            text: root.descriptor.value
+            onEditingFinished: root.valueEdited(root.descriptor.id, text)
         }
     }
 }

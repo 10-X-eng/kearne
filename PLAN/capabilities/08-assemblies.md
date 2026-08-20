@@ -60,6 +60,8 @@ Each joint contains two connector frames derived from datums or topology referen
 
 Primitive constraints are supported through the same normalized equation model for advanced use.
 
+Coupled relationships—gear, rack-and-pinion, screw, belt/chain, and equation-driven coordinates—reference existing joint coordinates with ratio, phase, direction, limits, and units. They do not infer tooth or thread semantics from tessellation.
+
 ### ASM-005 — Connector frames are semantic
 
 Joints reference stable connector frames, not transient closest points. Automatic connector inference is a proposal whose accepted result is stored explicitly.
@@ -126,9 +128,13 @@ Assembly evaluation publishes bounds and available representation manifests befo
 ## 7. Motion, interference, exploded states, and BOM
 
 - Dragging applies a temporary target and solves the joint system interactively.
-- Interference uses broad-phase bounds/meshes then exact narrow-phase geometry, reporting revision/configuration.
+- Motion studies store drivers, initial state, time domain, sampling/error policy, requested outputs, and exact component revisions; playback state is derived.
+- Interference uses broad-phase bounds/meshes then exact narrow-phase geometry, reporting revision/configuration, tolerance, witness geometry, and whether the result is exact or only a candidate.
+- Clearance and minimum-distance checks distinguish pass, fail, and indeterminate. Sampled motion cannot claim continuous clearance unless an accepted conservative bound proves it.
 - Exploded states store semantic instance displacement rules, not baked duplicate geometry.
 - BOM is a query/projection over effective occurrences, configurations, suppression, and overrides; quantities are generated rather than hand-maintained.
+
+Replacing or suppressing a component runs explicit connector/reference reconciliation. Unresolved joints remain visible and disabled; Kearne never reattaches them to nearest geometry silently.
 
 ## 8. Verification strategy
 
@@ -153,6 +159,10 @@ Mechanism generators cover chains, loops, symmetric linkages, under/over-constra
 - **ASM-OPEN-004:** Rigid/flexible subassembly evaluation strategy.
 - **ASM-OPEN-005:** Exact interference backend and tolerance semantics.
 
-## 10. Definition of done
+## 10. Performance
+
+Reference profiles measure interactive drag solve, initial/follow-up motion solve, broad/exact interference, minimum distance, and representation loading across generated chains, loops, nesting, repeated definitions, and contact candidates. Budgets are accepted with the solver/renderer gates; UI waits remain asynchronous regardless of size.
+
+## 11. Definition of done
 
 Assembly v1 is implemented when generated mechanisms pass solver conformance, occurrence identity is stable through nested/repeated structures, lightweight navigation does not load unnecessary BREP, and BOM/interference/motion results state exact effective revisions and approximation levels.

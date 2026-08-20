@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.kearne.dev/desktop/observation/v1",
+  "title": "Kearne desktop observation protocol",
+  "$defs": {
+    "bounds": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "items": false
+    },
+    "actionReceipt": {
+      "type": "object",
+      "required": ["semantic_id", "action", "generation_before", "generation_after"],
+      "properties": {
+        "semantic_id": { "type": "string", "minLength": 1 },
+        "action": { "type": "string", "minLength": 1 },
+        "value": true,
+        "generation_before": { "type": "integer", "minimum": 0 },
+        "generation_after": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "accessibilityState": {
+      "type": "object",
+      "required": [
+        "disabled", "selected", "focusable", "focused", "pressed", "checkable",
+        "checked", "read_only", "invisible", "offscreen", "selectable", "editable",
+        "has_popup"
+      ],
+      "additionalProperties": { "type": "boolean" }
+    },
+    "accessibility": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["present"],
+          "properties": { "present": { "const": false } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "present", "identifier", "name", "description", "role", "actions", "state"
+          ],
+          "properties": {
+            "present": { "const": true },
+            "identifier": { "type": "string" },
+            "name": { "type": "string" },
+            "description": { "type": "string" },
+            "role": { "type": "string", "minLength": 1 },
+            "actions": { "type": "array", "items": { "type": "string" } },
+            "state": { "$ref": "#/$defs/accessibilityState" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "semanticNode": {
+      "type": "object",
+      "required": [
+        "id", "name", "role", "parent_id", "enabled", "visible", "focused", "actions",
+        "action_handler", "accessibility", "logical_bounds", "physical_bounds", "screen_bounds"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "parent_id": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "visible": { "type": "boolean" },
+        "focused": { "type": "boolean" },
+        "actions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "action_handler": { "type": "boolean" },
+        "accessibility": { "$ref": "#/$defs/accessibility" },
+        "logical_bounds": { "$ref": "#/$defs/bounds" },
+        "physical_bounds": { "$ref": "#/$defs/bounds" },
+        "screen_bounds": { "$ref": "#/$defs/bounds" },
+        "value": true
+      },
+      "additionalProperties": false
+    },
+    "semanticUi": {
+      "type": "object",
+      "required": [
+        "schema", "surface_id", "workspace_id", "project_revision", "theme_id",
+        "ui_generation", "actions", "nodes"
+      ],
+      "properties": {
+        "schema": { "const": "kearne.semantic-ui/v1" },
+        "surface_id": { "type": "string", "minLength": 1 },
+        "workspace_id": { "type": "string", "minLength": 1 },
+        "project_revision": { "type": "string", "minLength": 1 },
+        "theme_id": { "type": "string", "minLength": 1 },
+        "ui_generation": { "type": "integer", "minimum": 0 },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/actionReceipt" } },
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/semanticNode" } }
+      },
+      "additionalProperties": false
+    },
+    "imageStatistics": {
+      "type": "object",
+      "required": [
+        "sampled_unique_colors", "sampled_alpha_min", "sampled_alpha_max",
+        "sampled_luminance_min", "sampled_luminance_max"
+      ],
+      "additionalProperties": { "type": "integer" }
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "path", "pixel_width", "pixel_height", "logical_width", "logical_height",
+        "device_pixel_ratio", "format", "color_space", "sha256", "statistics"
+      ],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "pixel_width": { "type": "integer", "minimum": 1 },
+        "pixel_height": { "type": "integer", "minimum": 1 },
+        "logical_width": { "type": "integer", "minimum": 1 },
+        "logical_height": { "type": "integer", "minimum": 1 },
+        "device_pixel_ratio": { "type": "number", "exclusiveMinimum": 0 },
+        "format": { "const": "PNG" },
+        "color_space": { "const": "sRGB" },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "statistics": { "$ref": "#/$defs/imageStatistics" }
+      },
+      "additionalProperties": false
+    },
+    "applicationSessionCapture": {
+      "type": "object",
+      "required": [
+        "schema", "application_version", "build_type", "session_id", "qt_version", "platform",
+        "locale", "theme_id", "theme_selection", "captured_at", "capture_method", "target",
+        "scope", "surface_count", "ui_generation", "project_revision",
+        "presented_frames", "actions", "image", "semantic_snapshot"
+      ],
+      "properties": {
+        "schema": { "const": "kearne.application-session-capture/v1" },
+        "application_version": { "type": "string", "minLength": 1 },
+        "build_type": { "type": "string" },
+        "session_id": { "type": "string", "minLength": 1 },
+        "qt_version": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "locale": { "type": "string", "minLength": 1 },
+        "theme_id": { "type": "string", "minLength": 1 },
+        "theme_selection": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "capture_method": { "type": "string", "minLength": 1 },
+        "target": { "const": "ApplicationSession" },
+        "scope": { "type": "string", "minLength": 1 },
+        "surface_count": { "type": "integer", "minimum": 1 },
+        "ui_generation": { "type": "integer", "minimum": 0 },
+        "project_revision": { "type": "string", "minLength": 1 },
+        "presented_frames": { "type": "integer", "minimum": 1 },
+        "actions": { "type": "array", "items": { "$ref": "#/$defs/actionReceipt" } },
+        "image": { "$ref": "#/$defs/image" },
+        "semantic_snapshot": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

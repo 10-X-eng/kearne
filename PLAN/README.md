@@ -75,6 +75,10 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 - [Visual design system](capabilities/16-visual-design-system.md)
 - [Codex app-server harness](capabilities/17-codex-app-server-harness.md)
 - [Agent-observable desktop](capabilities/18-agent-observable-desktop.md)
+- [Materials and standard components](capabilities/19-materials-and-standard-components.md)
+- [Sheet metal](capabilities/20-sheet-metal.md)
+- [CAM](capabilities/21-cam.md)
+- [Bill of materials](capabilities/22-bill-of-materials.md)
 
 ### Delivery and assurance
 
@@ -110,7 +114,7 @@ The terms have these meanings:
 | Product goal | Owning plans |
 |---|---|
 | Parametric CAD, direct modeling, surfacing | [Sketch](capabilities/02-sketch.md), [solid modeling](capabilities/03-solid-modeling.md), [direct/surface modeling](capabilities/14-direct-and-surface-modeling.md) |
-| Assemblies, motion, interference, BOM | [Assemblies](capabilities/08-assemblies.md) |
+| Assemblies, motion, interference | [Assemblies](capabilities/08-assemblies.md) |
 | FEA, modal, thermal, optimization | [Simulation](capabilities/10-simulation.md), [AI](capabilities/06-ai-system.md) |
 | AI inspection, modification, generation, simulation, iteration | [AI](capabilities/06-ai-system.md), [Codex harness](capabilities/17-codex-app-server-harness.md) |
 | build123d and Python | [Python/build123d](capabilities/05-python-and-build123d.md) |
@@ -119,11 +123,15 @@ The terms have these meanings:
 | Asynchronous geometry, meshing, simulation, AI, and imports | [Evaluation/jobs](foundations/03-evaluation-and-jobs.md), [processes/IPC](foundations/07-processes-and-ipc.md) |
 | History, branches, merges, alternatives | [Commands/revisions](foundations/02-commands-transactions-revisions.md), [versioning/merge](capabilities/09-versioning-and-merge.md) |
 | Configurations and variants | [Configurations](capabilities/13-configurations.md) |
-| Drawings, dimensions, GD&T, BOM | [Drawings/release](capabilities/11-drawings-and-release.md) |
+| Drawings, dimensions, GD&T | [Drawings/release](capabilities/11-drawings-and-release.md) |
 | STEP, STL, DXF, 3MF, and later formats | [Import/export](capabilities/04-import-export.md) |
 | Plugins, Python SDK, headless/API access | [Plugins](capabilities/07-plugins.md), [Engineering API](foundations/08-engineering-api.md) |
 | Large assemblies, instancing, LOD, caching, background loading | [Assemblies](capabilities/08-assemblies.md), [rendering](capabilities/01-rendering-and-selection.md), [performance](delivery/04-performance.md) |
 | One source/function and command model for all actors | [Project/function model](foundations/01-document-model.md), [Commands/revisions](foundations/02-commands-transactions-revisions.md), [Engineering API](foundations/08-engineering-api.md) |
+| Materials and standard fasteners | [Materials/standard components](capabilities/19-materials-and-standard-components.md), [assemblies](capabilities/08-assemblies.md) |
+| Rule-driven sheet metal and flat patterns | [Sheet metal](capabilities/20-sheet-metal.md) |
+| Toolpaths, removal simulation, and NC export | [CAM](capabilities/21-cam.md) |
+| Structured, associative BOMs | [Bill of materials](capabilities/22-bill-of-materials.md) |
 
 ## 5. Definition of an implementable plan
 

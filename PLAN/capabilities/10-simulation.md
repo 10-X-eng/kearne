@@ -60,6 +60,8 @@ Solver adapters can share meshers; result visualization remains backend-independ
 
 Backends declare supported analysis types, element families, material models, contact/load/constraint kinds, units, limits, restart behavior, and determinism. Unsupported study constructs fail before expensive execution.
 
+Study execution policy is explicit: manual, on-commit, or idle-debounced. Automatic policies create cancellable generation-tagged jobs and cannot consume unbounded resources or publish an older solve over a newer setup.
+
 ### SIM-005 — Neutral validated handoff
 
 Each stage publishes a versioned intermediate manifest with input/output digests and diagnostics. The solver adapter cannot reinterpret an unsupported load or material silently.
@@ -105,6 +107,8 @@ Kearne may automate refinement studies, but a single solved mesh is never labele
 Solver jobs use isolated workers with bounded files/resources and explicit cancellation. Result fields are chunked, content-addressed artifacts associated with mesh entity IDs and semantic regions.
 
 Visualization reports deformed-scale factor, component/averaging mode, units, min/max location, clipping, and stale status. Probes reference semantic topology plus nearest mesh evidence rather than persistent node indices alone.
+
+Modal animation is a view of normalized eigenvectors with mode, frequency, phase, scale, and undeformed reference shown. It is not physical time response. Result data streams by bounded field/region chunks so first inspection does not require loading every result value.
 
 ### SIM-009 — Partial results
 

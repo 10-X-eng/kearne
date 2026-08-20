@@ -14,8 +14,8 @@ ColumnLayout {
         Layout.fillWidth: true
         text: root.title
         color: Theme.text
-        font.pixelSize: 28
-        font.weight: Font.DemiBold
+        font.pixelSize: Theme.fontHeading
+        font.weight: Theme.fontWeightStrong
     }
 
     Text {

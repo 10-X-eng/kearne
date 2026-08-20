@@ -19,6 +19,8 @@ Build one command, query, event stream, unknown entity, and worker job in candid
 
 **Exit:** select the toolchain and record API evolution rules, or reject schema generation scope. Demonstrate one semantic scenario through C++, local IPC, Python, CLI, and AI-tool schema with one validator.
 
+**Result (2026-08-19):** Protobuf 35.1 was selected by [ADR-0011](../adr/0011-protobuf-engineering-api.md). The retained [TECH-001 evidence](../../prototype/001-schema-binding-pipeline/README.md) covers C++, local binary IPC, generated Python, CLI JSON, AI metadata, evolution, limits, and fuzzing. Production schemas and conformance live under `api/schema`; supported-platform closure remains part of `TECH-009`.
+
 ## 3. TECH-002 — Durable project store
 
 **Question:** Does SQLite in a `.kearne` file meet commit, crash, migration, large-source-artifact, and Windows/Linux filesystem behavior?
@@ -60,6 +62,10 @@ Prototype scene publication, shaded edges, selection mapping, overlays, high-DPI
 Run the same generated systems and edits through candidates. Measure residuals, DOF/rank results, conflict sets, seed continuity, degeneracies, order sensitivity, cancellation, 100/1,000-entity latency, API integration effort, maintenance activity, and redistribution terms.
 
 **Exit:** choose solver and supported MVP constraint subset with documented limitations, or budget a Kearne solver effort explicitly.
+
+**Provisional result (2026-08-19):** Ceres 2.2.0 with Eigen 3.4.1 implements the production solver port; it is not selected. The generated [`sketch-solver-properties`](../../modules/adapters/sketch_ceres/tests/solver_properties.cpp) suite covers every MVP residual equation, nonlinear circle tangency, scale and declaration-order metamorphisms, rank-deficient fallback, contradiction reporting, drag refusal, concurrent cancellation, and degenerate source/seed/result geometry. Debug passed in 3.04 s, Release in 0.23 s, the Release 100k profile passed in 2.11 s at 9,724 KiB peak RSS, and the adapter/domain ASan+UBSan run passed in 9.74 s. Ceres itself did not inherit Kearne's target-scoped sanitizer flags.
+
+The connected-chain benchmark and measurement boundary are recorded under [performance](04-performance.md#sketch-solver-candidate). Release p95 was 3.260 ms for 100 entities and 37.050 ms for 1,000. Ceres contributes 115 object files; its archive is 7,718,938 bytes in Release and 475,862,536 bytes in Debug, while its build tree is 15,045,430 and 929,875,962 bytes respectively. The Kearne adapter archive is 481,298 bytes in Release. Candidate comparison, full supported-platform evidence, conflict minimality, redistribution closure, and the build/debug footprint remain open; `TECH-006` does not pass.
 
 ## 8. TECH-007 — Numerical envelope
 
@@ -110,6 +116,8 @@ Launch a packaged Qt/QML prototype through the observation driver. Exercise mult
 Implement the production source/function boundary for one generated sketch/extrude module. Exercise algebra, builder, and mixed-mode refactors; helpers, loops, and classes; parse without execution; manifest/decorator declarations; source moves; invalid syntax; expected-digest edits; dependency invalidation; topology capability changes; and concurrent three-way source merges.
 
 **Exit:** select the contract declaration and concrete-syntax tooling; define recognized-editor capability and honest fallback; prove source/function identity survives moves and revisions; prove unrecognized valid source evaluates unchanged; and fail the gate if any hidden sketch/feature graph becomes geometry authority.
+
+**Partial result (2026-08-19):** [ADR-0017](../adr/0017-python-ast-source-editing.md) selects standard-library AST and token spans for the recognized generated-source editor after LibCST missed the latency budget and Tree-sitter crashed at scale. The parameterized benchmark and generated preservation suite pass. Function contracts, evaluation isolation, topology publication, moves, and merge remain open; `TECH-012` is not closed.
 
 ## 14. Prototype completion record
 

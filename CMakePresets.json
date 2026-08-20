@@ -23,6 +23,25 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "sanitize",
+      "displayName": "Kearne foundation sanitizers",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/sanitize",
+      "cacheVariables": {
+        "KEARNE_BUILD_DESKTOP": "OFF",
+        "KEARNE_ENABLE_SANITIZERS": "ON"
+      }
+    },
+    {
+      "name": "sanitize-desktop",
+      "displayName": "Kearne desktop sanitizers",
+      "inherits": "dev",
+      "binaryDir": "${sourceDir}/build/sanitize-desktop",
+      "cacheVariables": {
+        "KEARNE_ENABLE_SANITIZERS": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -33,6 +52,14 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize"
+    },
+    {
+      "name": "sanitize-desktop",
+      "configurePreset": "sanitize-desktop"
     }
   ],
   "testPresets": [
@@ -46,6 +73,20 @@
     {
       "name": "release",
       "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitize",
+      "configurePreset": "sanitize",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "sanitize-desktop",
+      "configurePreset": "sanitize-desktop",
       "output": {
         "outputOnFailure": true
       }

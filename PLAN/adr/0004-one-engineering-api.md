@@ -1,6 +1,6 @@
 # ADR-0004: One Engineering API for All Actors
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-19
 - **Related:** [Engineering API](../foundations/08-engineering-api.md), `PLAN-001`, `PLAN-002`
 
@@ -18,4 +18,4 @@ Adapters translate presentation and transport only. Public writes cannot patch s
 
 ## Evidence required
 
-One command/query scenario must traverse every MVP adapter with equivalent semantic results and no duplicate validator before acceptance.
+[`TECH-001`](../../prototype/001-schema-binding-pipeline) runs one command/query scenario through C++, Qt, local IPC, generated Python, CLI JSON, and generated AI metadata with one validator. [ADR-0011](0011-protobuf-engineering-api.md) fixes the schema boundary.

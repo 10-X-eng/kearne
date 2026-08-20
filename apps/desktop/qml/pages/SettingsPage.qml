@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -11,66 +13,21 @@ Rectangle {
     property string semanticName: "Settings"
     property string semanticRole: "main"
     property var semanticActions: []
-    property string activeCategory: uiSession.settingsCategoryId
-    property var categories: [
-        { id: "appearance", label: "Appearance", icon: "view" },
-        { id: "units", label: "Units", icon: "measure" },
-        { id: "input", label: "Input", icon: "pan" },
-        { id: "files", label: "Files", icon: "folder" },
-        { id: "compute", label: "Compute", icon: "operations" },
-        { id: "agent", label: "AI and privacy", icon: "agent" }
-    ]
+    property string activeCategory: App.ui.settingsCategoryId
 
-    function unitLabels() {
-        return uiSession.lengthUnits.map(unit => unit.label)
+    function activeCategoryDescriptor() {
+        return App.ui.preferenceCategories.find(
+                    category => category.id === root.activeCategory)
     }
 
-    function unitIds() {
-        return uiSession.lengthUnits.map(unit => unit.id)
+    function navigationProfile() {
+        const descriptor = App.ui.preferences.find(
+                    preference => preference.id === "navigation-profile")
+        return descriptor ? descriptor.value : "solidworks"
     }
 
-    function unitLabel(unitId) {
-        const unit = uiSession.lengthUnits.find(candidate => candidate.id === unitId)
-        return unit ? unit.label : unitId
-    }
-
-    function editSetting(settingId, value) {
-        if (settingId === "default-length-unit")
-            uiSession.setDefaultLengthUnit(value)
-        else if (settingId === "project-length-unit")
-            uiSession.setProjectLengthUnit(value)
-    }
-
-    function settingsFor(category) {
-        if (category === "appearance") return [
-            { id: "theme", label: "Theme", detail: "Application color scheme", kind: "choice", value: "Light", options: ["System", "Light", "Dark"] },
-            { id: "density", label: "Density", detail: "Control and panel spacing", kind: "choice", value: "Compact", options: ["Compact", "Comfortable"] },
-            { id: "motion", label: "Reduced motion", detail: "Disable nonessential transitions", kind: "toggle", value: false }
-        ]
-        if (category === "units") return [
-            { id: "default-length-unit", label: "New project length unit", detail: "Seeds new projects; existing projects keep their own unit", kind: "choice", value: unitLabel(uiSession.defaultLengthUnitId), options: unitLabels(), optionIds: unitIds() },
-            { id: "project-length-unit", label: "Current project length unit", detail: "Controls display, input, and grid labels without rescaling geometry", kind: "choice", value: unitLabel(uiSession.projectLengthUnitId), options: unitLabels(), optionIds: unitIds() }
-        ]
-        if (category === "input") return [
-            { id: "orbit", label: "Orbit behavior", detail: "Pointer mapping for 3D navigation", kind: "choice", value: "CAD", options: ["CAD", "Turntable", "Trackball"] },
-            { id: "zoom", label: "Wheel direction", detail: "Scroll direction for viewport zoom", kind: "choice", value: "Natural", options: ["Natural", "Reversed"] },
-            { id: "selection", label: "Selection cycling", detail: "Cycle overlapping selectable entities", kind: "toggle", value: true }
-        ]
-        if (category === "files") return [
-            { id: "autosave", label: "Recovery interval", detail: "Minutes between recoverable journal checkpoints", kind: "text", value: "5" },
-            { id: "backup", label: "Backup before migration", detail: "Keep the original project before format migration", kind: "toggle", value: true },
-            { id: "cache", label: "Cache limit", detail: "Disposable geometry and mesh artifacts", kind: "text", value: "20 GB" }
-        ]
-        if (category === "compute") return [
-            { id: "workers", label: "Worker limit", detail: "Maximum concurrent local workers", kind: "text", value: "Automatic" },
-            { id: "gpu", label: "Graphics backend", detail: "Restart required after a persistent change", kind: "choice", value: "Automatic", options: ["Automatic", "Vulkan", "Direct3D 11", "OpenGL"] },
-            { id: "background", label: "Background evaluation", detail: "Continue noninteractive work while editing", kind: "toggle", value: true }
-        ]
-        return [
-            { id: "codex", label: "Codex harness", detail: "Supervised app-server access; currently disconnected", kind: "toggle", value: false },
-            { id: "capture", label: "Application capture", detail: "Allow lossless capture of Kearne-owned surfaces", kind: "choice", value: "Ask each session", options: ["Disabled", "Ask each session", "Developer profile"] },
-            { id: "network", label: "Provider network access", detail: "Separate from local engineering commands", kind: "toggle", value: false }
-        ]
+    ThemeImportDialog {
+        id: themeFileDialog
     }
 
     color: Theme.surfaceMuted
@@ -94,12 +51,12 @@ Rectangle {
                     text: "SETTINGS"
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall
-                    font.weight: Font.DemiBold
+                    font.weight: Theme.fontWeightStrong
                     Layout.bottomMargin: Theme.space2
                 }
 
                 Repeater {
-                    model: root.categories
+                    model: App.ui.preferenceCategories
                     KButton {
                         required property var modelData
                         semanticId: "settings.category." + modelData.id
@@ -111,7 +68,7 @@ Rectangle {
                         checkable: true
                         checked: root.activeCategory === modelData.id
                         Layout.fillWidth: true
-                        onClicked: uiSession.selectSettingsCategory(modelData.id)
+                        onClicked: App.ui.selectSettingsCategory(modelData.id)
                     }
                 }
 
@@ -119,7 +76,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Frontend contract mode\nPreferences are session-only"
+                    text: "User defaults are stored locally\nProject settings stay with the project"
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall
                     wrapMode: Text.WordWrap
@@ -146,25 +103,105 @@ Rectangle {
 
                     PageHeading {
                         Layout.fillWidth: true
-                        title: root.categories.find(category => category.id === root.activeCategory).label
-                        detail: root.activeCategory === "units"
+                        title: root.activeCategoryDescriptor().label
+                        detail: root.activeCategory === "appearance"
+                                ? "Built-in and imported YAML themes use one validated token contract."
+                                : (root.activeCategory === "units"
                                 ? "Defaults seed new projects; display units never alter geometry."
-                                : "User-level settings; project semantics are unchanged."
+                                : "User-level settings; project semantics are unchanged.")
                     }
 
                     KPanel {
                         semanticId: "settings." + root.activeCategory
                         title: "Preferences"
-                        iconName: root.categories.find(category => category.id === root.activeCategory).icon
+                        iconName: root.activeCategoryDescriptor().icon
                         Layout.fillWidth: true
 
                         Repeater {
-                            model: root.settingsFor(root.activeCategory)
+                            model: App.ui.preferences.filter(
+                                       setting => setting.categoryId === root.activeCategory)
                             SettingRow {
                                 required property var modelData
                                 descriptor: modelData
-                                onValueEdited: (settingId, value) => root.editSetting(settingId, value)
+                                onValueEdited: (settingId, value) =>
+                                                   App.ui.setPreference(settingId, value)
                             }
+                        }
+
+                        RowLayout {
+                            visible: root.activeCategory === "input"
+                            Layout.fillWidth: true
+                            Layout.topMargin: Theme.space2
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: "3D controller"
+                                color: Theme.text
+                                font.pixelSize: Theme.fontBody
+                            }
+
+                            StateBadge {
+                                semanticId: "settings.input.space_mouse"
+                                semanticName: "3D controller status"
+                                status: App.navigationDevice.connected ? "current"
+                                                                        : "unavailable"
+                                label: App.navigationDevice.connected ? "Connected"
+                                                                      : "Not detected"
+                            }
+                        }
+
+                        Text {
+                            visible: root.activeCategory === "input"
+                            Layout.fillWidth: true
+                            text: App.navigationDevice.status
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontSmall
+                            wrapMode: Text.WordWrap
+                        }
+
+                        Text {
+                            visible: root.activeCategory === "input"
+                            Layout.fillWidth: true
+                            text: root.navigationProfile() === "solidworks"
+                                  ? "Middle drag orbit · Ctrl + middle drag pan · Wheel zoom"
+                                  : (root.navigationProfile() === "onshape"
+                                     ? "Right drag orbit · Middle drag pan · Wheel zoom"
+                                     : "Shift + middle drag orbit · Middle drag pan · Wheel zoom")
+                            color: Theme.textMuted
+                            font.pixelSize: Theme.fontSmall
+                            wrapMode: Text.WordWrap
+                        }
+
+
+                        RowLayout {
+                            visible: root.activeCategory === "appearance"
+                            Layout.fillWidth: true
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: App.themes.activeThemeName
+                                      + " · " + App.themes.appearance
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontSmall
+                            }
+
+                            KButton {
+                                semanticId: "settings.theme.import"
+                                semanticName: "Import YAML theme"
+                                iconName: "folder"
+                                text: "Import YAML"
+                                onClicked: themeFileDialog.begin()
+                            }
+                        }
+
+                        Text {
+                            visible: root.activeCategory === "appearance"
+                                     && App.themes.lastError.length > 0
+                            Layout.fillWidth: true
+                            text: App.themes.lastError
+                            color: Theme.error
+                            font.pixelSize: Theme.fontSmall
+                            wrapMode: Text.WordWrap
                         }
                     }
                 }

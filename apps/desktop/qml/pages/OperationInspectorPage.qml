@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
@@ -12,6 +14,7 @@ Rectangle {
     property string semanticRole: "main"
     property var semanticActions: []
     property string activePage: "operations"
+    property var selectedOperation: null
 
     color: Theme.surfaceMuted
 
@@ -34,7 +37,7 @@ Rectangle {
                     text: "INSPECT"
                     color: Theme.textFaint
                     font.pixelSize: Theme.fontSmall
-                    font.weight: Font.DemiBold
+                    font.weight: Theme.fontWeightStrong
                     Layout.bottomMargin: Theme.space2
                 }
 
@@ -70,7 +73,7 @@ Rectangle {
                     text: "Editor"
                     quiet: true
                     Layout.fillWidth: true
-                    onClicked: uiSession.navigateTo("editor")
+                    onClicked: App.ui.navigateTo("editor")
                 }
             }
         }
@@ -109,40 +112,119 @@ Rectangle {
                         Layout.fillWidth: true
 
                         Repeater {
-                            model: uiSession.operations
+                            model: App.ui.operations
 
-                            RowLayout {
+                            ItemDelegate {
+                                id: operationRow
                                 required property var modelData
-                                property string semanticId: "operation." + modelData.id
-                                property string semanticName: modelData.name
+                                property string semanticId: "operation." + operationRow.modelData.id
+                                property string semanticName: operationRow.modelData.name
                                 property string semanticRole: "listitem"
                                 property var semanticActions: ["inspect"]
-                                property string semanticValue: modelData.state
-                                Layout.fillWidth: true
-                                spacing: Theme.space3
+                                property string semanticValue: operationRow.modelData.state
 
-                                KIcon {
-                                    name: modelData.kind === "service" ? "operations" : "view"
-                                    color: modelData.state === "current" ? Theme.success : Theme.warning
+                                function inspectOperation() {
+                                    root.selectedOperation = operationRow.modelData
+                                    return true
                                 }
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.space1
-                                    Text {
-                                        text: modelData.name
-                                        color: Theme.text
-                                        font.pixelSize: Theme.fontBody
-                                        font.weight: Font.DemiBold
+
+                                function performSemanticAction(action, value) {
+                                    return action === "inspect" && inspectOperation()
+                                }
+
+                                Layout.fillWidth: true
+                                hoverEnabled: true
+                                Accessible.name: semanticName
+                                Accessible.id: semanticId
+                                Accessible.role: Accessible.ListItem
+                                Accessible.focusable: enabled && visible
+                                onClicked: inspectOperation()
+
+                                contentItem: RowLayout {
+                                    spacing: Theme.space3
+
+                                    KIcon {
+                                        name: operationRow.modelData.kind === "service"
+                                              ? "operations" : "view"
+                                        color: operationRow.modelData.state === "current"
+                                               ? Theme.success : Theme.warning
                                     }
+
                                     Text {
                                         Layout.fillWidth: true
-                                        text: modelData.detail
-                                        color: Theme.textMuted
-                                        font.pixelSize: Theme.fontSmall
-                                        wrapMode: Text.WordWrap
+                                        text: operationRow.modelData.name
+                                        color: Theme.text
+                                        font.pixelSize: Theme.fontBody
+                                        font.weight: Theme.fontWeightStrong
                                     }
+
+                                    StateBadge { status: operationRow.modelData.state }
                                 }
-                                StateBadge { state: modelData.state }
+
+                                background: Rectangle {
+                                    radius: Theme.radiusSmall
+                                    color: operationRow.hovered || operationRow.visualFocus
+                                           ? Theme.surfaceMuted : Theme.transparent
+                                    border.width: operationRow.visualFocus
+                                                  ? Theme.focusRingWidth : 0
+                                    border.color: Theme.focus
+                                }
+                            }
+                        }
+
+                        KSeparator { visible: root.selectedOperation !== null }
+
+                        ColumnLayout {
+                            visible: root.selectedOperation !== null
+                            property string semanticId: visible
+                                                        ? "operation.detail" : ""
+                            property string semanticName: "Selected operation detail"
+                            property string semanticRole: "group"
+                            property var semanticActions: []
+                            property string semanticValue: visible
+                                                           ? root.selectedOperation.id : ""
+                            Layout.fillWidth: true
+                            spacing: Theme.space2
+
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: root.selectedOperation !== null
+                                          ? root.selectedOperation.name : ""
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontTitle
+                                    font.weight: Theme.fontWeightStrong
+                                }
+
+                                StateBadge {
+                                    status: root.selectedOperation !== null
+                                            ? root.selectedOperation.state
+                                            : "unavailable"
+                                }
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.selectedOperation !== null
+                                      ? root.selectedOperation.detail : ""
+                                color: Theme.textMuted
+                                font.pixelSize: Theme.fontBody
+                                wrapMode: Text.WordWrap
+                            }
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: root.selectedOperation !== null
+                                      ? root.selectedOperation.id
+                                        + (root.selectedOperation.progress >= 0
+                                           ? " · " + root.selectedOperation.progress + "%"
+                                           : " · progress unavailable")
+                                      : ""
+                                color: Theme.textFaint
+                                font.pixelSize: Theme.fontSmall
+                                font.family: Theme.fontDataFamily
                             }
                         }
                     }
@@ -155,20 +237,22 @@ Rectangle {
                         Layout.fillWidth: true
 
                         Repeater {
-                            model: uiSession.jobs
+                            model: App.ui.jobs
                             RowLayout {
+                                id: jobRow
                                 required property var modelData
-                                property string semanticId: "job." + modelData.id
-                                property string semanticName: modelData.label
+                                property string semanticId: "job." + jobRow.modelData.id
+                                property string semanticName: jobRow.modelData.label
                                 property string semanticRole: "listitem"
                                 property var semanticActions: []
-                                property string semanticValue: modelData.state
+                                property string semanticValue: jobRow.modelData.state
                                 Layout.fillWidth: true
                                 KIcon { name: "clock"; color: Theme.textMuted }
-                                Text { Layout.fillWidth: true; text: modelData.label; color: Theme.text; font.pixelSize: Theme.fontBody }
-                                StateBadge { state: modelData.state.toLowerCase() }
+                                Text { Layout.fillWidth: true; text: jobRow.modelData.label; color: Theme.text; font.pixelSize: Theme.fontBody }
+                                StateBadge { status: jobRow.modelData.state.toLowerCase() }
                             }
                         }
+
                     }
 
                     KPanel {
@@ -179,24 +263,28 @@ Rectangle {
                         Layout.fillWidth: true
 
                         Repeater {
-                            model: uiSession.diagnostics
+                            model: App.ui.diagnostics
                             RowLayout {
+                                id: diagnosticRow
                                 required property var modelData
-                                property string semanticId: "diagnostic." + modelData.id
-                                property string semanticName: modelData.summary
+                                property string semanticId: "diagnostic." + diagnosticRow.modelData.id
+                                property string semanticName: diagnosticRow.modelData.summary
                                 property string semanticRole: "listitem"
                                 property var semanticActions: []
-                                property string semanticValue: modelData.severity
+                                property string semanticValue: diagnosticRow.modelData.severity
                                 Layout.fillWidth: true
                                 KIcon { name: "inspect"; color: Theme.accent }
                                 Text {
                                     Layout.fillWidth: true
-                                    text: modelData.summary
+                                    text: diagnosticRow.modelData.summary
                                     color: Theme.text
                                     font.pixelSize: Theme.fontBody
                                     wrapMode: Text.WordWrap
                                 }
-                                StateBadge { state: modelData.severity; label: modelData.severity }
+                                StateBadge {
+                                    status: diagnosticRow.modelData.severity
+                                    label: diagnosticRow.modelData.severity
+                                }
                             }
                         }
                     }
@@ -209,7 +297,7 @@ Rectangle {
                         rowSpacing: Theme.space3
 
                         Repeater {
-                            model: uiSession.interfaceStates
+                            model: App.ui.interfaceStates
 
                             KButton {
                                 required property var modelData
@@ -218,12 +306,12 @@ Rectangle {
                                 semanticValue: modelData.id
                                 iconName: modelData.icon
                                 text: modelData.label
-                                primary: uiSession.viewportState === modelData.id
+                                primary: App.ui.viewportState === modelData.id
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 48
                                 onClicked: {
-                                    uiSession.requestCommand("development.state." + modelData.id)
-                                    uiSession.navigateTo("editor")
+                                    App.ui.requestCommand("development.state." + modelData.id)
+                                    App.ui.navigateTo("editor")
                                 }
                             }
                         }

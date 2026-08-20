@@ -16,12 +16,19 @@ Button {
     property bool selected: checked
     property string iconName: ""
     property bool iconAbove: false
-    property int iconSize: iconAbove ? 20 : 16
+    property int iconSize: iconAbove ? Theme.iconSizeLarge : Theme.iconSize
     property string shortcut: ""
     property bool compact: false
     property int textPixelSize: compact ? Theme.fontSmall : Theme.fontBody
 
-    implicitHeight: compact ? 28 : Theme.controlHeight
+    function performSemanticAction(action, value) {
+        if (action !== "invoke")
+            return false
+        click()
+        return true
+    }
+
+    implicitHeight: compact ? Theme.controlHeightCompact : Theme.controlHeight
     implicitWidth: Math.max(iconAbove ? 52 : 36,
                             contentItem.implicitWidth + leftPadding + rightPadding)
     hoverEnabled: true
@@ -30,7 +37,11 @@ Button {
     rightPadding: compact ? Theme.space2 : Theme.space3
 
     Accessible.name: semanticName
+    Accessible.id: semanticId
     Accessible.role: semanticRole === "tab" ? Accessible.PageTab : Accessible.Button
+    Accessible.checkable: checkable
+    Accessible.checked: checked
+    Accessible.focusable: enabled && visible
 
     contentItem: GridLayout {
         columns: control.iconAbove ? 1 : 2
@@ -58,7 +69,8 @@ Button {
             text: control.text
             color: control.primary ? Theme.surface : Theme.text
             font.pixelSize: control.textPixelSize
-            font.weight: control.primary || control.selected ? Font.DemiBold : Font.Normal
+            font.weight: control.primary || control.selected
+                         ? Theme.fontWeightStrong : Theme.fontWeightNormal
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
@@ -82,7 +94,9 @@ Button {
                 return Theme.surfaceMuted
             return control.quiet ? Theme.transparent : Theme.surface
         }
-        border.width: control.visualFocus ? 2 : (control.quiet && !control.selected ? 0 : 1)
+        border.width: control.visualFocus ? Theme.focusRingWidth
+                                         : (control.quiet && !control.selected
+                                            ? 0 : Theme.separatorWidth)
         border.color: control.visualFocus ? Theme.focus : Theme.border
     }
 }

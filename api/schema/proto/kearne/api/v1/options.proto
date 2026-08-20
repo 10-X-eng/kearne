@@ -1,0 +1,46 @@
+edition = "2024";
+
+package kearne.api.v1;
+
+import "google/protobuf/descriptor.proto";
+
+enum SurfaceKind {
+  SURFACE_KIND_UNSPECIFIED = 0;
+  SURFACE_KIND_VALUE = 1;
+  SURFACE_KIND_COMMAND = 2;
+  SURFACE_KIND_QUERY = 3;
+  SURFACE_KIND_EVENT = 4;
+  SURFACE_KIND_ENTITY = 5;
+  SURFACE_KIND_WORKER_JOB = 6;
+  SURFACE_KIND_WIRE = 7;
+}
+
+message MessageRules {
+  string stable_name = 1;
+  uint32 schema_version = 2;
+  SurfaceKind surface = 3;
+  uint32 max_serialized_bytes = 4;
+  string permission = 5;
+  repeated string required_oneof = 6;
+}
+
+message FieldRules {
+  bool required = 1;
+  uint32 min_length = 2;
+  uint32 max_length = 3;
+  uint32 max_items = 4;
+  string semantic_type = 5;
+  string dimension = 6;
+  bool has_numeric_range = 7;
+  double minimum = 8;
+  double maximum = 9;
+  bool disallow_default = 10;
+}
+
+extend google.protobuf.MessageOptions {
+  MessageRules message_rules = 51000;
+}
+
+extend google.protobuf.FieldOptions {
+  FieldRules field_rules = 51001;
+}

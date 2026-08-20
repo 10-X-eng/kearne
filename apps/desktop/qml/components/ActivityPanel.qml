@@ -1,5 +1,6 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import Kearne.UI
 
@@ -33,8 +34,8 @@ Rectangle {
             KIcon {
                 name: root.pages[root.activePage].icon
                 color: Theme.accent
-                Layout.preferredWidth: 16
-                Layout.preferredHeight: 16
+                Layout.preferredWidth: Theme.iconSizeSmall
+                Layout.preferredHeight: Theme.iconSizeSmall
             }
 
             Text {
@@ -42,19 +43,19 @@ Rectangle {
                 text: root.pages[root.activePage].label
                 color: Theme.text
                 font.pixelSize: Theme.fontBody
-                font.weight: Font.DemiBold
+                font.weight: Theme.fontWeightStrong
             }
 
             Text {
                 visible: root.activePage === 0
-                text: uiSession.agentStatus
+                text: App.ui.agentStatus
                 color: Theme.textFaint
                 font.pixelSize: Theme.fontSmall
                 elide: Text.ElideRight
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        KSeparator { }
 
         ListView {
             id: activityList
@@ -67,30 +68,34 @@ Rectangle {
             Layout.fillHeight: true
             Layout.margins: Theme.space2
             clip: true
-            model: root.activePage === 0 ? uiSession.proposals
-                                         : (root.activePage === 1 ? uiSession.jobs
-                                                                  : uiSession.diagnostics)
+            model: root.activePage === 0 ? App.ui.proposals
+                                         : (root.activePage === 1 ? App.ui.jobs
+                                                                  : App.ui.diagnostics)
             spacing: Theme.space2
 
             delegate: Rectangle {
+                id: activityRow
                 required property var modelData
-                property string semanticId: "activity." + modelData.id
-                property string semanticName: modelData.summary ?? modelData.label
+                property string semanticId: "activity." + activityRow.modelData.id
+                property string semanticName: activityRow.modelData.summary ?? activityRow.modelData.label
                 property string semanticRole: "listitem"
                 property var semanticActions: []
-                property string semanticValue: modelData.state ?? modelData.severity
+                property string semanticValue: activityRow.modelData.state ?? activityRow.modelData.severity
 
                 width: activityList.width
                 height: Math.max(52, activityText.implicitHeight + Theme.space4)
                 radius: Theme.radiusSmall
                 color: Theme.surfaceRaised
                 border.color: Theme.border
+                Accessible.name: semanticName
+                Accessible.id: semanticId
+                Accessible.role: Accessible.ListItem
 
                 Text {
                     id: activityText
                     anchors.fill: parent
                     anchors.margins: Theme.space2
-                    text: modelData.summary ?? modelData.label
+                    text: activityRow.modelData.summary ?? activityRow.modelData.label
                     color: Theme.text
                     font.pixelSize: Theme.fontSmall
                     wrapMode: Text.WordWrap
@@ -120,10 +125,11 @@ Rectangle {
                 semanticName: "Send to Kearne"
                 iconName: "agent"
                 enabled: false
+                onClicked: App.ui.requestCommand("agent.ask")
             }
         }
 
-        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.border }
+        KSeparator { }
 
         RowLayout {
             Layout.fillWidth: true
@@ -136,6 +142,7 @@ Rectangle {
                 model: root.pages
 
                 KButton {
+                    id: pageButton
                     required property var modelData
                     required property int index
                     semanticId: "activity.tab." + modelData.id
@@ -146,9 +153,9 @@ Rectangle {
                     compact: true
                     quiet: true
                     checkable: true
-                    checked: root.activePage === index
+                    checked: root.activePage === pageButton.index
                     Layout.fillWidth: true
-                    onClicked: root.activePage = index
+                    onClicked: root.activePage = pageButton.index
                 }
             }
         }

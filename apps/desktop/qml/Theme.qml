@@ -3,48 +3,78 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property color surface: "#ffffff"
-    readonly property color surfaceRaised: "#f8fafc"
-    readonly property color surfaceMuted: "#f1f5f8"
-    readonly property color canvas: "#e8eef3"
-    readonly property color canvasGridMinor: "#dce5eb"
-    readonly property color canvasGridMajor: "#c2d0d9"
-    readonly property color axisX: "#c95a5a"
-    readonly property color axisY: "#4c9769"
-    readonly property color axisZ: "#397eaa"
-    readonly property color border: "#d7e0e7"
-    readonly property color borderStrong: "#b9c8d3"
-    readonly property color text: "#17232c"
-    readonly property color textMuted: "#687984"
-    readonly property color textFaint: "#8c9aa4"
-    readonly property color accent: "#187b99"
-    readonly property color accentHover: "#126983"
-    readonly property color accentSoft: "#e2f2f7"
-    readonly property color focus: "#1688b0"
-    readonly property color selection: "#dceff5"
-    readonly property color success: "#31845b"
-    readonly property color warning: "#a66a13"
-    readonly property color error: "#b54d4d"
-    readonly property color stale: "#7559a8"
-    readonly property color agent: "#146d8a"
-    readonly property color transparent: "transparent"
+    readonly property var values: App.themes.tokens
+    readonly property real densityScale: App.ui.interfaceDensityId === "comfortable"
+                                         ? 1.15 : 1.0
 
-    readonly property int space1: 4
-    readonly property int space2: 8
-    readonly property int space3: 12
-    readonly property int space4: 16
-    readonly property int space6: 24
-    readonly property int radiusSmall: 3
-    readonly property int radius: 5
-    readonly property int controlHeight: 32
-    readonly property int projectBarHeight: 44
-    readonly property int workspaceBarHeight: 36
-    readonly property int commandBarHeight: 56
-    readonly property int statusBarHeight: 28
-    readonly property int leftPanelWidth: 256
-    readonly property int rightPanelWidth: 336
-    readonly property int fontSmall: 11
-    readonly property int fontBody: 12
-    readonly property int fontTitle: 14
-    readonly property int fontDisplay: 18
+    function scaled(value) {
+        return Math.round(Number(value) * densityScale)
+    }
+
+    readonly property color surface: values.surface
+    readonly property color surfaceRaised: values.surfaceRaised
+    readonly property color surfaceMuted: values.surfaceMuted
+    readonly property color canvas: values.canvas
+    readonly property color canvasGridMinor: values.canvasGridMinor
+    readonly property color canvasGridMajor: values.canvasGridMajor
+    readonly property color axisX: values.axisX
+    readonly property color axisY: values.axisY
+    readonly property color axisZ: values.axisZ
+    readonly property color border: values.border
+    readonly property color borderStrong: values.borderStrong
+    readonly property color text: values.text
+    readonly property color textMuted: values.textMuted
+    readonly property color textFaint: values.textFaint
+    readonly property color accent: values.accent
+    readonly property color accentHover: values.accentHover
+    readonly property color accentSoft: values.accentSoft
+    readonly property color focus: values.focus
+    readonly property color selection: values.selection
+    readonly property color success: values.success
+    readonly property color warning: values.warning
+    readonly property color error: values.error
+    readonly property color stale: values.stale
+    readonly property color agent: values.agent
+    readonly property color transparent: values.transparent
+
+    readonly property int space1: scaled(values.space1)
+    readonly property int space2: scaled(values.space2)
+    readonly property int space3: scaled(values.space3)
+    readonly property int space4: scaled(values.space4)
+    readonly property int space6: scaled(values.space6)
+    readonly property int radiusSmall: values.radiusSmall
+    readonly property int radius: values.radius
+    readonly property int badgeRadius: values.badgeRadius
+    readonly property int separatorWidth: values.separatorWidth
+    readonly property int focusRingWidth: values.focusRingWidth
+    readonly property int iconSizeSmall: scaled(values.iconSizeSmall)
+    readonly property int iconSize: scaled(values.iconSize)
+    readonly property int iconSizeLarge: scaled(values.iconSizeLarge)
+    readonly property real iconStrokeWidth: values.iconStrokeWidth
+    readonly property real gridLineWidthMinor: values.gridLineWidthMinor
+    readonly property real gridLineWidthMajor: values.gridLineWidthMajor
+    readonly property real axisLineWidth: values.axisLineWidth
+    readonly property real disabledOpacity: values.disabledOpacity
+    readonly property int controlHeightCompact: scaled(values.controlHeightCompact)
+    readonly property int controlHeight: scaled(values.controlHeight)
+    readonly property int viewportControlHeight: scaled(values.viewportControlHeight)
+    readonly property int projectBarHeight: scaled(values.projectBarHeight)
+    readonly property int workspaceBarHeight: scaled(values.workspaceBarHeight)
+    readonly property int commandBarHeight: scaled(values.commandBarHeight)
+    readonly property int statusBarHeight: scaled(values.statusBarHeight)
+    readonly property int leftPanelWidth: scaled(values.leftPanelWidth)
+    readonly property int rightPanelWidth: scaled(values.rightPanelWidth)
+    readonly property int switchWidth: scaled(values.switchWidth)
+    readonly property int switchHeight: scaled(values.switchHeight)
+    readonly property int switchKnobSize: scaled(values.switchKnobSize)
+    readonly property string fontUiFamily: values.fontUiFamily
+    readonly property string fontDataFamily: values.fontDataFamily
+    readonly property int fontSmall: scaled(values.fontSmall)
+    readonly property int fontBody: scaled(values.fontBody)
+    readonly property int fontTitle: scaled(values.fontTitle)
+    readonly property int fontDisplay: scaled(values.fontDisplay)
+    readonly property int fontHeading: scaled(values.fontHeading)
+    readonly property int fontWeightNormal: values.fontWeightNormal
+    readonly property int fontWeightStrong: values.fontWeightStrong
+    readonly property real letterSpacing: values.letterSpacing
 }

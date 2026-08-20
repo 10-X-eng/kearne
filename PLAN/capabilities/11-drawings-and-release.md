@@ -51,6 +51,17 @@ OCCT hidden-line removal or another implementation sits behind a drawing-view po
 
 View geometry generation, annotation measurement, and sheet layout are separate evaluators. Moving a view or note does not rerun exact HLR unnecessarily.
 
+### DRW-010 — Versioned documentation profiles
+
+Graphical support is advertised by descriptor version and cumulative profile:
+
+| Profile | Required workflow |
+|---|---|
+| `DRAWING-BASE-1` | sheet/template/title block; base/projected/section/detail/auxiliary/exploded views; hidden-line policy; center marks/lines; linear, horizontal/vertical, radius, diameter, and angle dimensions; tolerances and accepted GD&T subset; hole/thread notes; hatch; weld/surface-finish symbols; balloons/BOM table; PDF/DXF export |
+| `DRAWING-PRO-1` | broken/cropped views; chain, baseline, ordinate, chamfer, arc-length, and extent dimensions; geometric hatch; cosmetic geometry; view/annotation alignment and stacking |
+
+Each row declares accepted source kinds, projection and visibility policy, semantic attachments, standard-profile forms, layout controls, export support, repair behavior, and generated domains. Missing cells are unavailable rather than emitted as approximate production documentation.
+
 ## 4. Standards
 
 ISO and ANSI profiles define versioned defaults and permitted forms for projection, units, line styles, dimensions/tolerances, symbols, text, sheet sizes, title blocks, and GD&T syntax.
@@ -68,6 +79,14 @@ Kearne validates syntax and referential completeness; it does not claim manufact
 ## 5. Dimensions and automatic drawing assistance
 
 Driving model dimensions and measured drawing dimensions are distinct but may be associated. Editing a driving dimension through a drawing uses an ordinary parameter command with revision conflict handling.
+
+### DRW-011 — Dimension and notation intent
+
+A dimension records kind, referenced semantic entities, measurement plane/direction, nominal or measured value source, unit/display policy, tolerance, format, and optional driving-parameter link. Center marks/lines, hatches, cosmetic threads, hole notes, welds, and surface-finish symbols are typed semantic annotations; generated strokes are not their identity.
+
+### DRW-012 — Explicit repair
+
+Broken or ambiguous view and annotation attachments expose candidates with topology evidence and resulting measurement differences. Repair requires confirmation and creates a revision. Batch repair cannot accept a candidate outside declared confidence and tolerance policy.
 
 Automatic/AI view selection and dimensioning produce editable proposals. They must identify omitted assumptions and never mark a drawing production-ready automatically.
 
@@ -103,7 +122,21 @@ Release policy can require no broken references, no stale views/BOM, pinned exte
 - Keep a small raster/perceptual smoke suite for rendering integration.
 - Model-based release workflows generate roles, approvals, revisions, stale results, and dependency states to prove invalid transitions cannot occur.
 
-## 9. Open decisions
+Every documentation-profile row joins the generated view/annotation suite. It varies hidden-line policy, section/detail bounds, scale, units, projection standard, dimension arrangement, attachment breakage/repair, text expansion, font substitution, and sheet overflow.
+
+## 9. Performance and cancellation
+
+### DRW-013 — Incremental drawing work
+
+`DRAWING-REF-1` measures exact view generation, incremental source-driven regeneration, annotation measurement, layout edits, preview publication, and PDF/DXF export separately. It records source edge count, view count/type, annotation count, sheet count, worker peak memory, artifact bytes, and cancellation time.
+
+Layout-only edits meet the shared local-command/frame budgets and do not run HLR. Unchanged view-geometry artifacts are reused across layout and export. HLR/export run as cancellable jobs; cancellation retains the prior current sheet and no partial export.
+
+## 10. Acceptance
+
+Create a templated multi-view drawing with section/detail views, associative dimensions, an accepted GD&T form, hole/surface notes, balloons, and BOM. Edit the model, repair one deliberately broken attachment from topology evidence, structurally validate PDF/DXF exports, and release the immutable drawing without stale content.
+
+## 11. Open decisions
 
 - **DRW-OPEN-001:** HLR implementation and artifact format.
 - **DRW-OPEN-002:** Standards content source and licensing.
@@ -111,6 +144,6 @@ Release policy can require no broken references, no stale views/BOM, pinned exte
 - **DRW-OPEN-004:** Exact ISO/ANSI/GD&T subset and qualified review.
 - **DRW-OPEN-005:** Organization-configurable release policy language.
 
-## 10. Definition of done
+## 12. Definition of done
 
 A drawing/release capability is implemented when associations survive its declared topology matrix, generated standards/workflow suites pass, exported artifacts are structurally validated on both platforms, and released records remain reproducible and immutable.

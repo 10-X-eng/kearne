@@ -1,0 +1,2 @@
+# NVIDIA OpenGL retains its process-global DBus reply through process exit.
+leak:_dbus_message_loader_queue_messages
