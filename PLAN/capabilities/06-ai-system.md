@@ -82,7 +82,7 @@ result summarization policy
 
 ### AI-006 — No AI-only mutation
 
-An AI mutation tool must correspond to an ordinary source/function or typed-record command. AI may replace native model source through an expected-digest transaction; it cannot write database rows, BREP, or hidden UI state directly.
+An AI mutation tool must correspond to an ordinary source/function or typed-record command. AI may replace native model source through an expected-digest transaction; it cannot write Git objects/refs, BREP, or hidden UI state directly.
 
 ### AI-007 — Bounded tool loops
 

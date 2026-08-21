@@ -27,14 +27,19 @@ fi
     clang-tidy-19 \
     cmake \
     libspnav-dev \
+    libvulkan-dev \
     libyaml-cpp-dev \
+    mesa-vulkan-drivers \
     ninja-build \
     pkg-config \
     python3 \
     python3-venv \
     qt6-base-dev \
     qt6-base-private-dev \
-    qt6-declarative-dev
+    qt6-declarative-dev \
+    vulkan-tools \
+    xauth \
+    xvfb
 
 if ! pkg-config --atleast-version=6.8 Qt6Core; then
     echo "Kearne requires Qt 6.8 or newer; this distribution supplied an older Qt." >&2

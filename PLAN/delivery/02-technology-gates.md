@@ -21,13 +21,13 @@ Build one command, query, event stream, unknown entity, and worker job in candid
 
 **Result (2026-08-19):** Protobuf 35.1 was selected by [ADR-0011](../adr/0011-protobuf-engineering-api.md). The retained [TECH-001 evidence](../../prototype/001-schema-binding-pipeline/README.md) covers C++, local binary IPC, generated Python, CLI JSON, AI metadata, evolution, limits, and fuzzing. Production schemas and conformance live under `api/schema`; supported-platform closure remains part of `TECH-009`.
 
-## 3. TECH-002 — Durable project store
+## 3. TECH-002 — Git project package
 
-**Question:** Does SQLite in a `.kearne` file meet commit, crash, migration, large-source-artifact, and Windows/Linux filesystem behavior?
+**Question:** Can one local Git repository and one portable `.kearne` package preserve exact project bytes, retained history, safe Save, recovery, and optional remotes on Windows and Linux?
 
-Generate revision DAGs and chunked artifacts; inject failures through VFS and process termination; test WAL/checkpoint, antivirus-like contention, copy/save-as, compaction, 1/10/100 GB cache separation, schema migration, and read-only recovery.
+Generate commit DAGs, refs, source trees, typed records, and binary artifacts. Inject failures during object writes, ref compare-and-swap, bundle creation, ZIP64 publication, flush, replacement, reopen, migration, and shared-file conflict. Measure command commits, full and incremental packaging, copy/Save As, Git interoperability, antivirus contention, and 1/10/100 GB cache separation.
 
-**Exit:** meet `PST` atomicity/open/commit thresholds or select a different physical model. Record network/cloud-folder support policy.
+**Exit:** meet `PST` integrity, portability, atomicity, open, commit, and package thresholds with no second history graph. Select the embedded Git and package libraries and record shared/cloud-folder behavior before Save/Open is enabled.
 
 ## 4. TECH-003 — OCCT process and artifact boundary
 
@@ -85,7 +85,7 @@ Exercise infinite loops, memory/process bombs, file probes, network probes, inhe
 
 ## 10. TECH-009 — Dependency and license closure
 
-**Question:** Can the selected Qt, OCCT, sketch solver, SQLite, IDL, Python, build123d/OCP, compression, and packaging stack be built, redistributed, updated, and supported together?
+**Question:** Can the selected Qt, OCCT, sketch solver, Git, IDL, Python, build123d/OCP, compression, and packaging stack be built, redistributed, updated, and supported together?
 
 Produce a license/SBOM prototype, binary-size/build-time data, patch/update process, supported compiler matrix, source-offer obligations, and replacement boundary for each dependency.
 

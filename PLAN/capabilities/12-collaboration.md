@@ -11,18 +11,16 @@ Add optional synchronization and teamwork without weakening local ownership, imm
 
 ## 2. Synchronization model
 
-Initial collaboration synchronizes immutable objects:
+Initial collaboration uses ordinary Git repositories and transports to synchronize:
 
 ```text
-revision records and mutation batches
-branch/version/reference updates
-required source artifacts
-approved derived artifacts
-comments/review records
-access-control metadata
+commits, trees, and blobs
+branches, versions, releases, and tags
+embedded inputs and retained artifacts
+Kearne transaction records
 ```
 
-Content is addressed by stable IDs/digests. Upload and download are resumable, idempotent, and integrity-checked.
+No remote is required. A remote may be a local directory, shared bare repository, or hosted service. Hosted-only access control, presence, comments, and policy metadata remain service data rather than pretending to be portable Git history.
 
 ### COL-001 — Local-first remains valid
 
@@ -34,13 +32,13 @@ A local project becomes synchronized only through explicit project/user/organiza
 
 ### COL-003 — Revision synchronization
 
-Synchronization transfers immutable revision DAG nodes and updates mutable branch references through compare-and-swap. It does not repeatedly upload a monolithic project file or replay untrusted commands with new semantics.
+Synchronization fetches and pushes Git objects and refs. It does not upload the monolithic `.kearne` package or replay untrusted commands with new semantics. Non-fast-forward changes require the normal Kearne merge workflow unless an explicit protected-ref policy allows otherwise.
 
 ## 3. Concurrent editing strategy
 
 The first collaborative editing model is branch/revision based:
 
-- each client commits immutable revisions against an observed remote head;
+- each client commits against an observed remote ref;
 - fast-forward updates are automatic;
 - independent semantic changes may auto-merge through the normal merge engine;
 - conflicts produce a merge workspace;
@@ -62,11 +60,11 @@ Comments/review items are durable semantic entities or associated service record
 
 ## 5. Server boundary
 
-The server provides authenticated project membership, immutable object storage, branch/version compare-and-swap, event notification, policy enforcement, quotas, audit, and optional compute dispatch.
+A basic remote needs only Git object and ref transport. A Kearne service may add authenticated membership, protected refs, event notification, policy, quotas, audit, presence, review, and optional compute dispatch. Local and third-party Git remotes remain valid without those services.
 
 ### COL-006 — Server does not redefine documents
 
-Shared server libraries validate schemas/digests/permissions, but authoritative engineering semantics remain the headless Kearne core. Server and desktop negotiate evaluator/schema compatibility.
+Git transport never defines engineering validity. Kearne validates fetched heads before publication. A Kearne server may enforce schema, digest, permission, and protected-ref policy but does not replace the headless core.
 
 ### COL-007 — Zero-trust artifact handling
 
@@ -90,7 +88,7 @@ A client distinguishes local durable, uploaded, server-accepted, and visible-to-
 
 ## 8. Verification strategy
 
-A deterministic network simulator runs multiple client/server state machines with generated edits, partitions, retries, duplicate messages, reordering, dropped events, expired credentials, permission changes, server failover, and offline compaction.
+A deterministic network simulator runs multiple local and hosted Git remotes through generated edits, partitions, retries, duplicate transfers, reordered fetch/push, expired credentials, permission changes, server failover, and repacking.
 
 Properties include:
 

@@ -32,7 +32,7 @@ Named release toolchains include:
 - MSVC on Windows;
 - Clang and/or GCC baseline selected for Linux;
 - one Clang-based sanitizer/static-analysis build;
-- pinned Qt, OCCT, Python, OCP/build123d, solver, IDL, database, and packaging versions.
+- pinned Qt, OCCT, Python, OCP/build123d, solver, IDL, Git, and packaging versions.
 
 Warnings are centrally configured. Third-party warnings remain isolated. Compiler-specific behavior cannot enter persisted semantics without evaluator fingerprint/version policy.
 

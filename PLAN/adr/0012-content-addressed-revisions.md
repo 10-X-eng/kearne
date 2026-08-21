@@ -1,6 +1,6 @@
 # ADR-0012: Content-Addressed Revisions
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0021](0021-git-project-packages.md)
 - **Date:** 2026-08-19
 - **Related:** `CMD-005`, `CMD-009`, `CMD-011`, `CMD-OPEN-001`
 

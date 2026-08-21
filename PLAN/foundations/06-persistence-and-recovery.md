@@ -1,153 +1,156 @@
-# Persistence, History, and Recovery
+# Git Project Storage and Recovery
 
-- **Status:** In progress; physical storage acceptance gates remain open
+- **Status:** Accepted architecture; implementation pending
 - **Requirement prefix:** `PST`
 - **Depends on:** [Document model](01-document-model.md), [commands and revisions](02-commands-transactions-revisions.md)
+- **Decision:** [ADR-0021](../adr/0021-git-project-packages.md)
 - **Unblocks:** distributable MVP, versioning, collaboration
 
 ## 1. Purpose
 
-Persist the source tree, function graph, typed engineering records, and immutable revision history atomically while keeping reproducible geometry and render products disposable. Saving and crash recovery are defined behavior, not incidental database effects.
+Make one `.kearne` file carry a complete project and its retained history without requiring a server, sidecar, or database. Git owns durable history. Kearne owns engineering commands, validation, semantic diff, merge, packaging, and recovery.
 
-## 2. Proposed physical model
+## 2. Human contract
 
-The baseline to validate is:
+### PST-001 — One portable file
 
-- one SQLite-backed `.kearne` project file for the content-addressed source tree, function contracts and calls, typed records, schemas, revisions, mutation batches, workspace pointers, and chunked artifacts;
-- a content-addressed per-user cache outside the portable project for reproducible BREP, meshes, thumbnails, and other derived artifacts;
-- optional packaged derived artifacts for fast transfer, each independently validated and discardable;
-- SQLite WAL only while the project is open, checkpointed through supported copy/export operations.
+A saved project is one regular `.kearne` file. Copying it to a compatible Kearne installation MUST retain every branch, version, retained revision, canonical source byte, typed record, embedded input, and explicitly retained result.
 
-This provides transactional durability and a portable primary file without rewriting a ZIP container on every edit. The storage prototype must validate large-project behavior before acceptance.
+### PST-002 — Exact bytes
 
-Implemented: bounded canonical mutation, revision, and project-checkpoint decoders plus a pinned SQLite adapter. One transaction stores source bytes, a content-addressed revision, the verified head checkpoint, and the head pointer. Loading verifies database references, checkpoint integrity, project Merkle roots, revision identity, and source digests before publication. Desktop Save/Open stays disabled until Engineering Service commits can be journaled atomically through this adapter.
+Native source, imports, templates, and other irreplaceable inputs are stored as exact Git blobs. Package entries record byte length and a cryptographic digest. Open rejects or recovers corruption; it never silently substitutes content.
 
-## 3. Data classification
+### PST-003 — No hidden dependency
 
-### PST-001 — Canonical project data
+A saved project MUST NOT require a working directory, recovery directory, cache, remote, or absolute local path. Imported files are embedded by default. An explicitly linked file remains external and makes the portability status visibly incomplete.
 
-The project MUST retain source trees, function contracts and calls, typed records, revision parents, normalized mutations, schema identities, durable workspace/branch heads, actor provenance, and migrations needed to reconstruct any retained revision.
+### PST-004 — Local first
 
-### PST-002 — Irreplaceable artifacts
+Creating, editing, saving, branching, merging, and restoring a project require no remote. A remote is optional and may be a local path, shared Git repository, or network service. Credentials remain outside the project.
 
-Imported source bytes, native model source, embedded standards/templates, and other irreplaceable inputs are durable artifacts. Native model source participates directly in the canonical content tree. None may be labeled a cache.
+## 3. Git repository
 
-### PST-003 — Reproducible caches
+Kearne maintains an application-controlled local Git repository while a project is open.
 
-Function-output BREP, tessellation, mass properties, parsed-source indices, recognition metadata, thumbnails, and solver outputs are caches only when their inputs and compatible evaluator are available. Removing caches MUST preserve user intent and produce at most recomputation or an unavailable-evaluator diagnostic.
+### PST-005 — One history graph
 
-### PST-004 — Retained fallback
+Each accepted engineering transaction creates one Git commit. Its tree is the complete materialized project state; its parents are the revision parents. `RevisionId` identifies that Git commit. Kearne MUST NOT persist a parallel revision graph.
 
-Model functions, plugins, imports, and legacy records MAY retain last-known-good BREP as a fallback artifact. It is marked with source revision, evaluator fingerprint, and stale/read-only state; it does not prove that current source evaluated.
+### PST-006 — Canonical commit tree
 
-## 4. Transactional durability
+The tree contains native build123d/Python source, function declarations, typed engineering records, project metadata, embedded inputs, and retained project artifacts. A fixed transaction record contains the command types, normalized mutations, actor, origin, schema set, and project-root digest for that commit. Disposable caches and user preferences are excluded.
 
-### PST-005 — Commit acknowledgement
+### PST-007 — Git references
 
-A transaction is acknowledged as durable only after its revision record, mutation batch, referenced new source-artifact chunks, request-id outcome, and head update satisfy the configured durable database commit. UI may optimistically preview pending state but MUST distinguish it from acknowledged state.
+Branches use `refs/heads/*`. Immutable versions and releases use protected tags or Kearne refs. Workspaces, saved heads, redo futures, and retention roots use reserved `refs/kearne/*` names. Every revision promised to the user is reachable from a packaged ref; reflogs alone do not satisfy retention.
 
-### PST-006 — Atomic crash result
+### PST-008 — Durable acknowledgement
 
-After process termination or power-failure simulation, recovery observes either the prior acknowledged head or the complete next acknowledged head. A revision never points to partial mutations or missing required source chunks.
+Kearne acknowledges a transaction only after its blobs, tree, commit, and compare-and-swap reference update meet the durable-write policy. Failed reference updates may leave unreachable objects but MUST NOT move a visible head.
 
-### PST-007 — Save semantics
+### PST-009 — No history noise
 
-Because accepted edits are journaled, `Save` marks a user-visible save point and requests a WAL checkpoint/flush; it is not the only durability event. `Save As` creates a transactionally consistent copy with a new project identity only when requested by the copy semantics.
+One completed gesture or command transaction creates one commit. Preview samples do not. Save packages the current committed state and moves the saved ref; it does not create an empty commit.
 
-### PST-008 — Single writer
+## 4. `.kearne` package
 
-An open project has one coordinator holding the writer lease. Additional local opens are read-only or connect to that coordinator. Filesystem locks are advisory evidence, not the sole corruption defense.
+The initial package format is ZIP64 with fixed entries:
 
-## 5. Revision storage and materialization
+```text
+manifest.json       bounded format, project, active-ref, and compatibility data
+repository.bundle   complete Git bundle with no external prerequisites
+preview.png         optional disposable preview
+```
 
-The system stores immutable mutation batches plus periodic materialized content-tree and record-table checkpoints.
+The manifest records each package entry's byte length and cryptographic digest.
 
-### PST-009 — Bounded open cost
+The Git bundle is stored without redundant archive compression. Canonical and retained project data lives inside the repository, not beside it in the outer package.
 
-Opening a project MUST require replay from a bounded recent checkpoint, not the entire lifetime history. Checkpoint frequency is selected by measured size/open-time policy.
+### PST-010 — Complete bundle
 
-### PST-010 — Verify before publish
+The bundle includes every retained branch, version, release, workspace recovery root, and object reachable from them. A partial or prerequisite-dependent Git bundle is not a valid `.kearne` project.
 
-Loaded records are checksummed/digested and structurally validated before publishing a snapshot. Derived indices are rebuilt when their source revision or digest does not match.
+### PST-011 — Verify before publish
 
-### PST-011 — History-preserving compaction
+Before reporting Save complete, Kearne verifies package limits and digests, verifies the Git bundle, imports it into a clean repository, checks object reachability, checks the active ref and project identity, and validates the materialized head through the document model.
 
-Compaction may repack tables and deduplicate chunks but MUST NOT change revision IDs, semantic digests, parent relationships, or retained version reachability. Destructive history pruning is an explicit user/admin operation outside MVP.
+### PST-012 — Platform-neutral paths
 
-## 6. Artifact store
+Repository paths use a canonical separator and reject traversal, absolute paths, case-fold collisions, Windows reserved names, and names that cannot round-trip on a supported platform. Project semantics do not depend on file times, host permissions, or symlinks.
 
-Artifacts use digest-addressed immutable chunks with type, byte length, creator/evaluator fingerprint, compression, and integrity metadata.
+## 5. Save and shared storage
 
-### PST-012 — Atomic artifact publication
+### PST-013 — Safe Save
 
-Writers create temporary private content, finalize and verify its digest, then publish atomically. Partial content is never discoverable by the durable artifact index.
+Save builds a complete package at a private temporary path, verifies it, flushes it under the platform durability policy, confirms the destination has not changed since open or the last Save, and replaces the destination through the supported atomic path. Failure leaves the prior file and local repository recoverable.
 
-### PST-013 — Leases and garbage collection
+### PST-014 — Shared-file conflict
 
-Running jobs and open snapshots hold leases. Garbage collection removes only unreferenced cache artifacts older than a safety window. Source artifacts are collected only through an explicit semantic mutation and revision-retention policy.
+Projects opened from shared, removable, or cloud-synchronized storage edit through a local repository. If the source file changes, Kearne MUST NOT overwrite it. The user receives a merge workflow or Save Copy. A `.kearne` file is a portable package, not a multi-writer database.
 
-### PST-014 — Untrusted cache
+### PST-015 — Save As and copies
 
-Externally copied cache content is treated as untrusted bytes. Type-specific validators and size limits run before decoding or mapping it into a worker.
+Save As changes location while preserving project identity and full history. Duplicate/Fork creates a new project identity through an explicit command and retains ancestry according to the chosen workflow. Export Snapshot is the only ordinary operation that discards history.
 
-## 7. Schema migration
+### PST-016 — Honest completion
 
-### PST-015 — Forward migration
+The UI distinguishes locally committed, packaged, published to the chosen file, and synchronized to a remote. It MUST NOT display Saved or Synced before the corresponding verification succeeds.
 
-Opening an older supported project creates a backup/recovery point, migrates through registered monotonic steps inside a database transaction or new-file copy, validates the result, and only then makes it writable.
+## 6. Recovery and migration
 
-### PST-016 — No in-place unknown rewrite
+### PST-017 — Continuous local recovery
 
-Unknown entity payloads are preserved. A migration MUST NOT parse and reserialize data it does not own merely to update the surrounding container.
+Accepted transactions are durable in the local repository before package Save. Reserved refs retain unsaved heads and redo futures. After abnormal termination, Kearne compares the packaged saved ref with local recovery refs and offers recovery without modifying the package.
 
-### PST-017 — Format compatibility manifest
+### PST-018 — Non-destructive migration
 
-The project header records container version, schema set, minimum reader, feature/plugin requirements, numerical profile, and creation/last-write application builds.
+Opening an older supported format preserves the original file, imports it into a new local repository, applies monotonic migration commits, validates unknown data, and writes a replacement only after explicit Save. Unsupported required features open read-only when possible.
 
-Downgrade export, if offered later, is explicit and reports lost capabilities before writing.
+### PST-019 — No execution during inspection
 
-## 8. Recovery and salvage
+Package and repository validation parse bounded data without executing project Python, loading native plugins, or decoding derived geometry in the UI process.
 
-On abnormal termination Kearne:
+## 7. Remote Git
 
-1. validates SQLite/WAL state through the supported database recovery path;
-2. finds the last complete durable head;
-3. validates revision reachability and required source artifacts;
-4. quarantines invalid records rather than loading unsafe payloads;
-5. offers read-only recovery/export when full restoration is impossible;
-6. retains the original file until the user confirms a repaired copy.
+### PST-020 — Optional remotes
 
-Recovery MUST NOT overwrite the only copy of a corrupt project.
+Remote configuration is optional. Kearne may fetch and push through local filesystem, SSH, HTTPS, or later supported transports. The `.kearne` package itself is not a push target; the local repository exchanges Git objects and refs.
 
-## 9. Verification strategy
+### PST-021 — Engineering merge
 
-- Run the command state machine through an instrumented persistence port.
-- Inject I/O errors, full disk, permission changes, truncation, checksum mismatch, worker death, application death, and termination at every defined commit stage.
-- Use a fault-injecting SQLite VFS in dedicated test builds rather than wall-clock kill scripts alone.
-- Generate long revision DAGs, checkpoints, migrations, compaction, save-as, and cache deletion.
-- Open every retained schema fixture with the newest reader; use versioned schema builders for every representable fixture.
-- Fuzz project headers, message lengths, compressed chunks, and source-artifact decoders under strict resource limits.
+Git supplies commit ancestry, merge bases, objects, and reference transport. Kearne performs source-aware and schema-aware three-way merge, validates the staged project, and creates the two-parent merge commit. A clean textual merge does not prove valid geometry.
 
-Properties assert atomic heads, reachability, idempotent reopen, preservation of unknown data, source/cache classification, and semantic equivalence after checkpoint/compaction.
+## 8. Derived data
 
-## 10. Performance budgets
+BREP, tessellation, parsed-source indices, thumbnails, and solver outputs are disposable only when their inputs and compatible evaluator are available. User-retained results and last-known-good fallback geometry are project artifacts and travel in Git history. Per-user caches remain outside `.kearne` and may be deleted without losing intent.
 
-- Acknowledged small semantic transaction: p95 target below 30 ms on recommended local SSD with the durability profile enabled.
-- Opening the MVP benchmark project from a valid checkpoint: p95 below 500 ms excluding geometry recomputation.
-- Project metadata memory should grow approximately with live paths, functions, calls, records, and the loaded revision window, not total historical payload.
+## 9. Verification
 
-These are provisional until the storage prototype records filesystem-specific results.
+One generated state machine drives the reference model and Git implementation through commands, undo, redo, branches, tags, merges, Save, Save As, reopen, remote fetch/push, and recovery. Profiles scale history, tree size, binary size, branch count, fault point, and concurrent readers.
+
+Fault tests interrupt object writes, ref updates, bundle creation, archive writes, flush, rename, shared-file comparison, and reopen. Portability tests move packages between supported Windows and Linux filesystems and retain format fixtures for future macOS validation. External Git verifies repository interoperability.
+
+Properties assert one-to-one transaction/commit correspondence, immutable ancestors, exact blob bytes, complete retained reachability, deterministic semantic state, no silent overwrite, and preservation of the previous valid package after every failed Save stage.
+
+## 10. Performance gates
+
+- A small accepted transaction targets p95 below 30 ms on a recommended local SSD.
+- Editing and recovery never wait for shared-storage latency.
+- Package creation runs outside the UI thread and reports measured progress.
+- Open cost depends on the current tree and required validation, not replay of the full history.
+- Package size tracks reachable unique Git objects plus bounded envelope overhead.
+
+Full-bundle rewrite, large binary history, antivirus contention, and network publication require measured Windows/Linux budgets before Save/Open is enabled. If full ZIP rewrite misses the budget, the package envelope may adopt verified incremental bundle segments without changing Git history or the one-file contract.
 
 ## 11. Open decisions
 
-- **PST-OPEN-001:** Accept or reject SQLite single-file baseline after WAL, large BLOB, antivirus, network-folder, and crash tests.
-- **PST-OPEN-002:** Chunking/compression algorithms and maximum embedded source size.
-- **PST-OPEN-003:** Project encryption and OS key-storage policy.
-- **PST-OPEN-004:** Exact checkpoint and history-retention policy.
-- **PST-OPEN-005:** Behavior on unsupported network filesystems and cloud-synced folders.
-
-Current evidence covers generated create/commit/retry/head-move/save-point/reopen behavior, read-only enforcement, stale-head rollback, and rejection of altered checkpoints and source bytes. It does not yet cover process/power interruption at each commit stage, disk-full and permission faults, large BLOB and long-history budgets, Windows filesystems, antivirus interference, network/cloud folders, migrations, salvage, or desktop integration. SQLite is therefore not yet accepted by `PST-OPEN-001`.
+- **PST-OPEN-001:** Embedded Git implementation and redistribution choice.
+- **PST-OPEN-002:** ZIP64 library, deterministic encoding, and size limits.
+- **PST-OPEN-003:** Git object format and remote compatibility policy.
+- **PST-OPEN-004:** Retention, pruning, and package compaction policy.
+- **PST-OPEN-005:** Embedded native-plugin and cross-platform dependency policy.
+- **PST-OPEN-006:** Encryption and signing.
 
 ## 12. Definition of done
 
-Persistence is implemented when fault injection cannot produce a hybrid acknowledged head, generated histories reopen identically, migrations preserve unknown source and payloads, deleting all caches preserves intent, and recovery passes on supported Windows and Linux filesystems.
+Save/Open remains disabled until generated history and fault suites prove exact portable reconstruction, full retained reachability, safe shared-file conflict behavior, bounded performance, and recovery on supported Windows and Linux filesystems.

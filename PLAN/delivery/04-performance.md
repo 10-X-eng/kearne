@@ -48,7 +48,7 @@ DIRECT        selected faces, propagation/healing policy, topology growth
 SURFACE       boundaries/guides, degree, continuity, sampling, topology growth
 SHEET         bends, reliefs, rules, folded/flat complexity
 IMPORT        source size/entity count/format complexity
-HISTORY       revisions, branches, checkpoints, artifact ratio
+HISTORY       commits, branches, retained refs, artifact ratio
 VIEW          unique meshes, instances, triangles, topology ranges, styles
 ASSEMBLY      occurrences, nesting, unique definitions, loaded BREP ratio
 SIM           elements, result fields, iterations/backend
@@ -85,7 +85,7 @@ On recommended hardware and release builds:
 | Analytic direct-edit preview | `DIRECT-100`, first valid coarse preview | < 100 ms p95 |
 | Surface preview | `SURFACE-100`, first valid coarse preview | < 500 ms p95 |
 | Superseded preview acknowledgement | outside uninterruptible call | < 50 ms p95 |
-| Project open | MVP metadata/checkpoint, caches excluded | < 500 ms p95 |
+| Project open | current Git tree and package verification, caches excluded | < 500 ms p95 |
 | 10k assembly navigation | defined `VIEW-10K` profile | 60 FPS p95 frame target |
 | CAM path generation | `CAM-REF-1`, complete current paths | < 2 s p95 |
 | CAM removal simulation | `CAM-REF-1`, first update / complete at reference resolution | < 500 ms / < 10 s p95 |
@@ -234,7 +234,7 @@ Track peak and steady:
 - file descriptors/handles;
 - threads/processes;
 - queue depth and abandoned work;
-- project database amplification;
+- Git/package amplification;
 - network/token/cost for optional AI/cloud.
 
 ### PERF-006 — Proportionality

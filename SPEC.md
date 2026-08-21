@@ -266,7 +266,7 @@ QML shall be a presentation layer over application models.
 
 # 7. Project Architecture
 
-The project is one immutable revision graph containing a content-addressed source tree, model-function contracts and calls, and typed engineering records. OCCT shapes are evaluated artifacts.
+The project is one Git commit graph containing a content-addressed source tree, model-function contracts and calls, and typed engineering records. OCCT shapes are evaluated artifacts.
 
 Example:
 
@@ -1242,7 +1242,7 @@ Onshape currently integrates release state and revision management directly with
 
 # 39. File and Project Storage
 
-Project storage should use a structured container.
+Project storage shall use one portable structured container backed by a complete local Git history. A project requires no remote.
 
 Example:
 
@@ -1254,13 +1254,22 @@ internally containing:
 
 ```text
 manifest
-content-addressed source tree
+complete prerequisite-free Git bundle
+integrity metadata
+preview
+```
+
+The Git repository contains:
+
+```text
+native source tree
 function contracts and calls
 typed engineering records
 parameters
 materials
-history
 configuration definitions
+embedded imports and templates
+branches, versions, releases, and retained history
 BREP cache
 mesh cache
 thumbnails
@@ -1270,15 +1279,19 @@ drawing metadata
 
 Native build123d source is authoritative for part geometry. Typed records are authoritative for product semantics outside build123d.
 
-BREPs and meshes are caches where practical.
+Every accepted engineering transaction is one Git commit. Git parents and refs are the durable history, branch, version, rollback, and merge graph. Kearne shall not persist a second revision graph. Save packages every retained ref and reachable object; it does not create an empty commit or commit the package into itself.
+
+BREPs and meshes are caches where practical. Irreplaceable inputs and explicitly retained outputs travel with the project. External links are explicit and make portability visibly incomplete.
+
+Save writes and verifies a complete replacement before publishing it. A changed shared-storage destination shall produce merge or Save Copy behavior, never silent overwrite.
 
 ---
 
 # 40. Crash Recovery
 
-The command journal shall permit recovery after unexpected termination.
+Durable local Git commits and reserved recovery refs shall permit recovery after unexpected termination.
 
-The system should periodically checkpoint state without forcing the user to manually save.
+Accepted engineering transactions should become recoverable commits without forcing the user to manually save.
 
 A crash must not normally destroy work completed since the previous explicit save.
 
@@ -3368,7 +3381,7 @@ BREP is an evaluated geometry result.
 
 ## AI writing storage internals
 
-AI may author unrestricted project source but changes durable state through validated source/function and engineering-record commands, never database internals.
+AI may author unrestricted project source but changes durable state through validated source/function and engineering-record commands, never Git internals.
 
 ## Simulation on the UI thread
 

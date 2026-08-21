@@ -66,7 +66,7 @@ Exit gate: `MVP-A-001` passes in memory at PR and nightly scales. Architecture t
 
 Implement:
 
-- selected project store, content trees, checkpoints, migrations, and artifacts;
+- Git repository/package adapter, content trees, migrations, and artifacts;
 - durable request idempotency and workspace heads;
 - fault-injecting storage adapter;
 - process supervisor and fake worker transport;

@@ -7,25 +7,25 @@
 
 ## 1. Purpose
 
-Expose the immutable revision DAG as understandable versions and branches, merge source and typed engineering state, and show geometry as evaluated evidence rather than pretending to merge shapes.
+Expose Git commits and refs as understandable versions and branches, merge source and typed engineering state, and show geometry as evaluated evidence rather than pretending to merge shapes.
 
 ## 2. References
 
 ```text
-Workspace  local editing context with mutable head
-Branch     named mutable reference to a revision
-Version    named immutable reference to a revision
-Tag        optional immutable metadata reference
-Release    controlled immutable version plus lifecycle evidence
+Workspace  reserved local Git ref
+Branch     named mutable Git ref
+Version    protected immutable ref to a commit
+Tag        immutable Git tag plus metadata
+Release    controlled immutable tag plus lifecycle evidence
 ```
 
 ### VER-001 — Immutable revisions and versions
 
-Revision content and version targets never move. Branch/workspace heads move through explicit, durable reference updates governed by optimistic concurrency.
+Commit content and version targets never move. Branch/workspace refs move through explicit compare-and-swap updates.
 
 ### VER-002 — Reachability
 
-Deleting a branch name does not immediately delete revisions or artifacts. Retention and garbage collection operate from versions, releases, active heads, undo windows, external references, and policy roots.
+Deleting a branch name does not immediately delete commits or artifacts. Reserved retention refs protect versions, releases, active heads, undo windows, and external references until policy permits pruning.
 
 ### VER-003 — Branch-safe IDs
 
@@ -64,7 +64,7 @@ Merge uses base `B`, ours `O`, and theirs `T`:
 4. merge concurrent source through syntax-aware or text three-way merge;
 5. retain base, ours, and theirs when source or typed values conflict;
 6. validate the staged content tree and typed graph;
-7. create one revision with parents `O` and `T` after resolution;
+7. create one Git merge commit with parents `O` and `T` after resolution;
 8. evaluate geometry and other consequences asynchronously.
 
 ### VER-006 — No last-writer-wins default
@@ -108,7 +108,7 @@ AI agent workspaces are ordinary branches or private workspace heads with budget
 
 ## 8. Verification strategy
 
-Generate revision DAGs and schema-aware mutations. Verify algebraic and model properties where applicable:
+Generate Git commit DAGs, refs, and schema-aware mutations. Verify algebraic and model properties where applicable:
 
 - diff of a revision with itself is empty;
 - applying a generated non-conflicting diff reconstructs the target content tree and records;
@@ -116,7 +116,7 @@ Generate revision DAGs and schema-aware mutations. Verify algebraic and model pr
 - merge preserves both independent creations and disjoint field edits;
 - conflicts are deterministic under entity storage reordering;
 - revision ancestors remain immutable;
-- save/reload/compaction preserves DAG and reference targets;
+- save/reload/repack preserves commits and ref targets;
 - unknown source types and plugin records survive and conflict conservatively;
 - generated merge results pass project invariants before commit;
 - automatic text merge never implies successful parse or geometry evaluation.
@@ -125,7 +125,7 @@ The suite runs on all registered entity schemas through descriptor-provided gene
 
 ## 9. Open decisions
 
-- **VER-OPEN-001:** Revision and semantic digest construction.
+- **VER-OPEN-001:** Git object-format and remote-compatibility policy.
 - **VER-OPEN-002:** Sequence merge algorithm and move representation.
 - **VER-OPEN-003:** User-facing unresolved merge workspace persistence.
 - **VER-OPEN-004:** Retention and pruning policy.
@@ -133,4 +133,4 @@ The suite runs on all registered entity schemas through descriptor-provided gene
 
 ## 10. Definition of done
 
-Versioning/merge v1 is implemented when generated multi-branch source and record histories merge deterministically, registered schemas join the generic suite, immutable references survive persistence and compaction, and every automatic resolution explains what it combined without claiming geometric correctness.
+Versioning/merge v1 is implemented when generated multi-branch source and record histories merge deterministically, registered schemas join the generic suite, immutable references survive package/repack cycles, and every automatic resolution explains what it combined without claiming geometric correctness.

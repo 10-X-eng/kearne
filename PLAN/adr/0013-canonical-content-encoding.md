@@ -1,6 +1,6 @@
 # ADR-0013: Canonical Content Encoding
 
-- **Status:** Accepted
+- **Status:** Accepted; revision-identity clauses superseded by [ADR-0021](0021-git-project-packages.md)
 - **Date:** 2026-08-19
 - **Related:** `DOC-001`, `DOC-004`, `DOC-OPEN-001`, `CMD-005`, [ADR-0012](0012-content-addressed-revisions.md)
 

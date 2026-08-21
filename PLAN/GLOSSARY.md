@@ -30,9 +30,9 @@
 | Mutation | Normalized atomic change to source, function contracts/calls, records, or artifacts after command validation. |
 | Named output | Stable output slot of a model call; downstream geometry references use call identity plus output key. |
 | Observation point | Correlated semantic-UI, frame, render, revision, and job generations used to await and capture a known desktop state without sleeping. |
-| Project | Persisted revision graph containing a content tree, model functions/calls, typed engineering records, artifacts, metadata, and workspace state. |
+| Project | Git commit/ref graph containing canonical source, model functions/calls, typed engineering records, retained artifacts, and metadata; one `.kearne` package carries the retained graph. |
 | Project snapshot | Immutable content tree and typed graph at one `RevisionId`. |
-| Revision | Immutable node with parent revision IDs and one committed mutation batch. A revision is not necessarily a named version. |
+| Revision | Git commit containing one complete project tree and one normalized transaction record. A revision is not necessarily a named version. |
 | Semantic reference | Typed persistent reference to a record, parameter, named output, datum, or topology label; never a pointer, array index, render ID, source line, or raw OCCT subshape index. |
 | Semantic UI snapshot | Immutable observation of control identities, roles, states, bounds, actions, and application generations; it contains no engineering mutation authority. |
 | Topology label | Producer-published identity for a face, edge, or vertex plus ancestry, resolution evidence, and confidence. |

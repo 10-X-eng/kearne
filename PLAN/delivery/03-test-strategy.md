@@ -46,7 +46,7 @@ One test definition runs with PR, nightly, and release profiles that vary seed c
 
 ### Contract suites
 
-A port publishes one behavioral suite run against all implementations: memory and SQLite stores, fake and process workers, null and GPU renderers, solver adapters, provider adapters, and format adapters. This prevents mocks from describing behavior that production does not share.
+A port publishes one behavioral suite run against all implementations: memory and Git repositories, fake and process workers, null and GPU renderers, solver adapters, provider adapters, and format adapters. This prevents mocks from describing behavior that production does not share.
 
 ### Property-based tests
 
@@ -111,7 +111,7 @@ An adapter claiming a command subset runs the same scenario semantics. Adapter-s
 
 ### Document and history
 
-Generated state machines check source-tree and record immutability, function/reference/ownership invariants, atomic transactions, idempotency, undo/redo divergence, merge, save/reload, checkpoint, migration, and unknown-source/payload preservation.
+Generated state machines check source-tree and record immutability, function/reference/ownership invariants, atomic transactions, idempotency, undo/redo divergence, merge, package/reopen, migration, and unknown-source/payload preservation.
 
 ### Geometry and topology
 

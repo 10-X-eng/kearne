@@ -23,7 +23,7 @@ The Engineering API owns source/function state, typed engineering records, comma
 
 ### UI-001 — Read-only projections
 
-QML receives read-only revision/generation-tagged models. It cannot own canonical source/contracts, mutable engineering records, `TopoDS_Shape`, database handles, or normalized mutations.
+QML receives read-only revision/generation-tagged models. It cannot own canonical source/contracts, mutable engineering records, `TopoDS_Shape`, repository handles, or normalized mutations.
 
 ### UI-002 — Controller boundary
 
@@ -132,7 +132,7 @@ UI assurance favors semantic and model-level checks:
 - UI-thread frame work: p95 below 8 ms in the reference workspace, leaving render budget.
 - Opening command palette: p95 below 100 ms with the full registered command set.
 - Incremental source/tree/property updates scale with changed projection nodes, not total project size.
-- No synchronous UI wait above 50 ms on a worker/database/network operation.
+- No synchronous UI wait above 50 ms on a worker/repository/network operation.
 
 ## 10. Open decisions
 

@@ -1,6 +1,6 @@
 # ADR-0015: Command Audit Retention
 
-- **Status:** Accepted
+- **Status:** Accepted; parent-storage clause superseded by [ADR-0021](0021-git-project-packages.md)
 - **Date:** 2026-08-19
 - **Related:** `CMD-003`, `CMD-012`, `CMD-OPEN-002`
 

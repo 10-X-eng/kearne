@@ -120,7 +120,6 @@ Operation count, source line count, and AI demo quality are secondary measures.
 
 - **PROD-OPEN-001:** Licensing and business model. This affects Qt distribution, solver choices, plugin policy, and update infrastructure.
 - **PROD-OPEN-002:** Exact Linux baselines and package formats.
-- **PROD-OPEN-003:** Whether `.kearne` is a single-file container, a directory project, or both. The persistence prototype must decide.
 - **PROD-OPEN-004:** Accessibility and localization release targets.
 
 ## 9. Definition of done

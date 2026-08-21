@@ -2,7 +2,6 @@ kearne_require_document_dependencies()
 
 add_library(kearne_document STATIC
     src/canonical.cpp
-    src/checkpoint.cpp
     src/content_store.cpp
     src/document.cpp)
 add_library(Kearne::Document ALIAS kearne_document)

@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Provide one mutation path for source, function bindings, and typed engineering records while making undo, recovery, replay, branching, audit, and synchronization consequences of one immutable revision model.
+Provide one mutation path for source, function bindings, and typed engineering records while mapping undo, recovery, replay, branching, audit, and synchronization onto one Git commit/ref graph.
 
 Kearne does not use command objects that hold hidden mutable state and implement bespoke inverse methods. Such objects are difficult to serialize, retry, merge, or recover after a crash.
 
@@ -97,32 +97,34 @@ A command that requires evaluated geometry includes the expected evaluation key 
 ## 5. Revisions and history
 
 ```text
-RevisionRecord
-  id: RevisionId
+GitCommit
+  oid: RevisionId
   parents: [RevisionId]       // one normally, two for merge
-  transaction_id: TransactionId
-  mutations: MutationBatch
-  actor and provenance
-  schema_set
-  committed_at
-  project_root_digest
+  tree: complete canonical project state
+  transaction_record:
+    transaction_id
+    normalized mutations
+    actor and provenance
+    schema_set
+    committed_at
+    project_root_digest
 ```
 
-### CMD-009 — Immutable revision DAG
+### CMD-009 — Immutable Git revision
 
-Every successful transaction creates one immutable revision node. Existing revision contents and parent links never change.
+Every successful transaction creates one Git commit. Existing commits, trees, blobs, and parent links never change. Kearne persists no parallel revision node.
 
 ### CMD-010 — Workspace head
 
-A workspace stores a mutable head pointer separately from revision content. Undo moves the head to a parent. Redo selects a known child. A new edit after undo creates another child; it does not erase the abandoned future.
+A workspace is a reserved Git ref. Undo moves it to a parent. Redo selects a retained child. A new edit after undo creates another commit; a retention ref preserves the abandoned future until policy permits pruning.
 
 ### CMD-011 — Public history foundation
 
-The revision DAG and identity semantics exist in the first persisted format even though named branches, merge UI, and release workflows arrive later.
+The Git commit/ref graph exists in the first persisted format even though named branch, merge, and release UI arrives later.
 
 ### CMD-012 — Audit completeness
 
-Each revision records actor, origin, command descriptions or securely retained request references, normalized mutations, and causal transaction metadata. Secrets, raw AI prompts, and access tokens MUST NOT enter history by default.
+Each commit's transaction record stores actor, origin, command descriptions or securely retained request references, normalized mutations, and causal metadata. Secrets, raw AI prompts, and access tokens MUST NOT enter history by default.
 
 ## 6. Optimistic concurrency
 
@@ -166,7 +168,7 @@ Project validity and source/geometric evaluability are distinct:
 
 ### CMD-019 — No silent rollback after publication
 
-Once a revision is durably acknowledged, later evaluation failure MUST NOT remove or rewrite it. Repair is another command or movement of the workspace head.
+Once a commit is durably acknowledged, later evaluation failure MUST NOT remove or rewrite it. Repair is another command or movement of the workspace ref.
 
 ## 9. Verification strategy
 
@@ -186,7 +188,7 @@ Every command descriptor joins a shared conformance suite that checks schema rej
 
 ## 10. Open decisions
 
-- Revision ID construction is defined by [ADR-0012](../adr/0012-content-addressed-revisions.md).
+- Revision identity and durable graph storage are defined by [ADR-0021](../adr/0021-git-project-packages.md).
 - Command audit retention is defined by [ADR-0015](../adr/0015-command-audit-retention.md).
 - **CMD-OPEN-003:** Durable semantics of local uncommitted UI workspace settings versus project revisions.
 - **CMD-OPEN-004:** Safe initial set of automatically rebasable commands.

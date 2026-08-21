@@ -422,6 +422,7 @@ if(BUILD_TESTING)
         list(APPEND KEARNE_NATIVE_RENDER_BACKENDS metal)
     elseif(UNIX)
         list(APPEND KEARNE_NATIVE_RENDER_BACKENDS vulkan)
+        find_program(KEARNE_XVFB_RUN xvfb-run REQUIRED)
     endif()
     function(kearne_add_native_render_tests target prefix)
         foreach(backend IN LISTS KEARNE_NATIVE_RENDER_BACKENDS)
@@ -430,19 +431,32 @@ if(BUILD_TESTING)
                 QT_QUICK_BACKEND=rhi
                 QT_SCALE_FACTOR=1
             )
+            set(command ${target} --backend ${backend})
+            if(UNIX AND NOT APPLE AND backend STREQUAL "vulkan")
+                set(environment
+                    QT_QPA_PLATFORM=xcb
+                    QT_QUICK_BACKEND=rhi
+                    QT_SCALE_FACTOR=1
+                )
+                set(command
+                    ${KEARNE_XVFB_RUN} -a
+                    $<TARGET_FILE:${target}> --backend ${backend})
+            endif()
             if(KEARNE_ENABLE_SANITIZERS AND UNIX AND NOT APPLE AND
                backend STREQUAL "opengl")
                 list(APPEND environment
                     "LSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tests/nvidia-opengl-lsan.supp")
             endif()
-            add_test(NAME ${prefix}-${backend}
-                COMMAND ${target} --backend ${backend})
+            add_test(NAME ${prefix}-${backend} COMMAND ${command})
             set_tests_properties(${prefix}-${backend} PROPERTIES
                 ENVIRONMENT "${environment}"
                 LABELS "render;native;contract"
-                SKIP_RETURN_CODE 77
                 TIMEOUT 60
             )
+            if(NOT (UNIX AND NOT APPLE AND backend STREQUAL "vulkan"))
+                set_tests_properties(${prefix}-${backend} PROPERTIES
+                    SKIP_RETURN_CODE 77)
+            endif()
         endforeach()
     endfunction()
 

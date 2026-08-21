@@ -48,9 +48,9 @@ kearne_document
     ^
 kearne_engine  <- commands, revisions, queries, evaluation planning
     ^
-ports: geometry | sketch | artifacts | persistence | render | automation
+ports: geometry | sketch | artifacts | repository | package | render | automation
     ^
-adapters: OCCT | solver | SQLite/container | Qt | Python | AI | CLI
+adapters: OCCT | solver | Git | ZIP64 | Qt | Python | AI | CLI
 ```
 
 An adapter may depend on its port and third-party technology. A port MUST NOT depend on an adapter.
@@ -74,7 +74,7 @@ Objects crossing threads or processes MUST be immutable values, immutable artifa
 
 ### ARCH-005 — No presentation backdoors
 
-QML and UI controllers MUST NOT call OCCT, mutate source/contracts/records, write the project database, or construct normalized mutations. They submit command requests and render projections.
+QML and UI controllers MUST NOT call OCCT, mutate source/contracts/records, write the project repository or package, or construct normalized mutations. They submit command requests and render projections.
 
 ### ARCH-006 — No automation backdoors
 
@@ -154,7 +154,7 @@ An evaluator that is internally serial or unsafe to invoke concurrently MUST sti
 
 ### ARCH-011 — Operational state separation
 
-Job queues, process IDs, open database handles, selections, hover state, and GPU resources are operational state and MUST NOT appear in canonical document schemas.
+Job queues, process IDs, open repository handles, selections, hover state, and GPU resources are operational state and MUST NOT appear in canonical document schemas.
 
 ## 6. Error and diagnostic model
 

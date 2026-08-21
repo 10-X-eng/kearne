@@ -42,7 +42,7 @@ The MVP UI may expose only one active component definition and a limited set of 
 
 ### Acceptance
 
-`MVP-A-001`: A generated sequence of at least 10,000 valid and invalid source, function, binding, and record commands can be applied, undone/redone, saved/reloaded at generated checkpoints, and replayed to an identical project root without an invariant violation.
+`MVP-A-001`: A generated sequence of at least 10,000 valid and invalid source, function, binding, and record commands can be applied, undone/redone, packaged/reopened at generated commits, and replayed to an identical project root without an invariant violation.
 
 `MVP-A-002`: Killing the application at injected persistence boundaries yields either the previous durable revision or the next complete durable revision, never a hybrid.
 

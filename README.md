@@ -20,4 +20,4 @@ python3 tools/bootstrap.py
 ctest --preset dev
 ```
 
-The host installer installs the compiler, Qt, yaml-cpp, SpaceMouse headers, and build tools, then runs the bootstrap. The bootstrap creates `.venv`, installs pinned Python tooling, and invokes the selected CMake preset. CMake resolves checksum-pinned native dependencies. The installer refuses a distribution whose Qt is older than 6.8.
+The host installer installs the compiler, Qt, Vulkan software/hardware test support, yaml-cpp, SpaceMouse headers, and build tools, then runs the bootstrap. The bootstrap creates `.venv`, installs pinned Python tooling, and invokes the selected CMake preset. CMake resolves checksum-pinned native dependencies. The installer refuses a distribution whose Qt is older than 6.8.

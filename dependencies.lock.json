@@ -13,12 +13,6 @@
       "sha256": "b18b92ba60ec3186dc36ef671d3c2ae542cbb63eb6dc0e258476c6111a67c971",
       "license": "BSL-1.0"
     },
-    "sqlite": {
-      "version": "3.53.4",
-      "url": "https://www.sqlite.org/2026/sqlite-amalgamation-3530400.zip",
-      "sha256": "1e71ddf93849c6a6ecf58b827c0692073d2dd7ee40196158068f7b29f422e87d",
-      "license": "blessing"
-    },
     "eigen": {
       "version": "3.4.1",
       "url": "https://gitlab.com/libeigen/eigen/-/archive/3.4.1/eigen-3.4.1.tar.gz",
