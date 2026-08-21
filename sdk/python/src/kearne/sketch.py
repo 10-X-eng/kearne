@@ -4,49 +4,98 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from math import degrees
+from math import cos, degrees, sin
 from typing import TypeAlias
 
-from build123d import Edge, Face, Plane, Sketch, Wire
+from build123d import AngularDirection, Edge, Face, Plane, Sketch, Wire
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+from OCP.GC import GC_MakeArcOfHyperbola, GC_MakeArcOfParabola
+from OCP.gp import gp_Hypr, gp_Parab
 
 from kearne._sketch_schema import WIRE_JOIN_TOLERANCE_MILLIMETRES
 from kearne.sketch_values import (
     ArcEntity as ArcEntity,
 )
 from kearne.sketch_values import (
+    BSplineEntity,
     CircleEntity,
     Constraint,
     Entity,
     LineEntity,
     PointEntity,
     SketchDefinitionError,
+    SketchObject,
     angle,
     arc,
+    arc_object,
+    arc_slot,
     at,
+    block,
+    bspline,
+    bspline_object,
     center,
+    chamfer_object,
     circle,
+    circle_object,
     coincident,
     collinear,
     concentric,
     diameter,
     distance,
+    ellipse,
+    ellipse_object,
+    elliptical_arc,
+    elliptical_arc_object,
     end,
     equal,
-    fixed,
+    fillet_object,
+    focus,
+    group,
     horizontal,
     horizontal_distance,
+    hyperbolic_arc,
+    hyperbolic_arc_object,
+    joined_curve_object,
     line,
+    line_object,
+    lock,
+    major,
     midpoint,
+    minor,
+    oblong,
+    offset_object,
+    parabolic_arc,
+    parabolic_arc_object,
     parallel,
     perpendicular,
     point,
+    point_object,
+    point_on_object,
+    polyline,
     radius,
+    rectangle,
+    regular_polygon,
+    slot,
     start,
+    symmetric,
+    symmetric_about_point,
     tangent,
-    validate_definition_values,
+    validate_sketch_values,
     validate_stable_id,
     vertical,
     vertical_distance,
+)
+from kearne.sketch_values import (
+    EllipseEntity as EllipseEntity,
+)
+from kearne.sketch_values import (
+    EllipticalArcEntity as EllipticalArcEntity,
+)
+from kearne.sketch_values import (
+    HyperbolicArcEntity as HyperbolicArcEntity,
+)
+from kearne.sketch_values import (
+    ParabolicArcEntity as ParabolicArcEntity,
 )
 from kearne.sketch_values import (
     PointRef as PointRef,
@@ -154,13 +203,15 @@ class SketchDefinition:
     plane: SketchPlane
     entities: tuple[Entity, ...]
     constraints: tuple[Constraint, ...] = ()
+    objects: tuple[SketchObject, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.plane, SketchPlane):
             raise SketchDefinitionError("sketch plane has no stable attachment")
-        entities, constraints = validate_definition_values(
-            self.entities, self.constraints
+        objects, entities, constraints = validate_sketch_values(
+            self.objects, self.entities, self.constraints
         )
+        object.__setattr__(self, "objects", objects)
         object.__setattr__(self, "entities", entities)
         object.__setattr__(self, "constraints", constraints)
 
@@ -183,23 +234,93 @@ class SketchDefinition:
                         (*(_millimetres(value) for value in entity.end), 0.0)
                     ),
                 )
+            elif isinstance(entity, BSplineEntity):
+                edge = Edge.make_bspline(
+                    [
+                        self.plane.frame.from_local_coords(
+                            (*(_millimetres(value) for value in point), 0.0)
+                        )
+                        for point in entity.control_points
+                    ],
+                    entity.knots,
+                    entity.degree,
+                    entity.weights,
+                )
             else:
+                anchor = (
+                    entity.vertex
+                    if isinstance(entity, ParabolicArcEntity)
+                    else entity.center
+                )
                 curve_plane = Plane(
                     origin=self.plane.frame.from_local_coords(
-                        (*(_millimetres(value) for value in entity.center), 0.0)
+                        (*(_millimetres(value) for value in anchor), 0.0)
                     ),
                     x_dir=self.plane.frame.x_dir,
                     z_dir=self.plane.frame.z_dir,
                 )
                 if isinstance(entity, CircleEntity):
                     edge = Edge.make_circle(_millimetres(entity.radius), curve_plane)
-                else:
+                elif isinstance(entity, ArcEntity):
                     edge = Edge.make_circle(
                         _millimetres(entity.radius),
                         curve_plane,
                         degrees(entity.start_angle.radians),
                         degrees(entity.end_angle.radians),
                     )
+                else:
+                    rotation = entity.rotation.radians
+                    ellipse_plane = Plane(
+                        origin=curve_plane.origin,
+                        x_dir=(
+                            curve_plane.x_dir * cos(rotation)
+                            + curve_plane.y_dir * sin(rotation)
+                        ),
+                        z_dir=curve_plane.z_dir,
+                    )
+                    arguments: tuple[float, ...] = ()
+                    direction = AngularDirection.COUNTER_CLOCKWISE
+                    if isinstance(entity, EllipticalArcEntity):
+                        arguments = (
+                            degrees(entity.start_parameter.radians),
+                            degrees(entity.end_parameter.radians),
+                        )
+                        if (
+                            entity.end_parameter.radians
+                            < entity.start_parameter.radians
+                        ):
+                            direction = AngularDirection.CLOCKWISE
+                    if isinstance(entity, HyperbolicArcEntity):
+                        curve = GC_MakeArcOfHyperbola(
+                            gp_Hypr(
+                                ellipse_plane.to_gp_ax2(),
+                                _millimetres(entity.major_radius),
+                                _millimetres(entity.minor_radius),
+                            ),
+                            entity.start_parameter,
+                            entity.end_parameter,
+                            True,
+                        ).Value()
+                        edge = Edge(BRepBuilderAPI_MakeEdge(curve).Edge())
+                    elif isinstance(entity, ParabolicArcEntity):
+                        curve = GC_MakeArcOfParabola(
+                            gp_Parab(
+                                ellipse_plane.to_gp_ax2(),
+                                _millimetres(entity.focal_length),
+                            ),
+                            _millimetres(entity.start_parameter),
+                            _millimetres(entity.end_parameter),
+                            True,
+                        ).Value()
+                        edge = Edge(BRepBuilderAPI_MakeEdge(curve).Edge())
+                    else:
+                        edge = Edge.make_ellipse(
+                            _millimetres(entity.major_radius),
+                            _millimetres(entity.minor_radius),
+                            ellipse_plane,
+                            *arguments,
+                            angular_direction=direction,
+                        )
             edges.append(edge)
 
         edge_bounds = _bounds(edges)
@@ -272,29 +393,62 @@ class SketchDefinition:
 __all__ = [
     "SketchDefinition",
     "SketchDefinitionError",
+    "SketchObject",
     "SketchPlane",
     "angle",
     "arc",
+    "arc_object",
+    "arc_slot",
     "at",
+    "block",
+    "bspline",
+    "bspline_object",
     "center",
+    "chamfer_object",
     "circle",
+    "circle_object",
     "coincident",
     "collinear",
     "concentric",
     "diameter",
     "distance",
+    "ellipse",
+    "ellipse_object",
+    "elliptical_arc",
+    "elliptical_arc_object",
     "end",
     "equal",
-    "fixed",
+    "fillet_object",
+    "focus",
+    "group",
     "horizontal",
     "horizontal_distance",
+    "hyperbolic_arc",
+    "hyperbolic_arc_object",
+    "joined_curve_object",
     "line",
+    "line_object",
+    "lock",
+    "major",
     "midpoint",
+    "minor",
+    "oblong",
+    "offset_object",
+    "parabolic_arc",
+    "parabolic_arc_object",
     "parallel",
     "perpendicular",
     "point",
+    "point_object",
+    "point_on_object",
+    "polyline",
     "radius",
+    "rectangle",
+    "regular_polygon",
+    "slot",
     "start",
+    "symmetric",
+    "symmetric_about_point",
     "tangent",
     "vertical",
     "vertical_distance",

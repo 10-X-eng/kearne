@@ -110,6 +110,7 @@ public:
 
 sketch::RectangleToolIds rectangleIds(std::uint64_t seed) {
   return {
+      id<SketchObjectId>(seed),
       {id<SketchEntityId>(seed + 1U), id<SketchEntityId>(seed + 2U),
        id<SketchEntityId>(seed + 3U), id<SketchEntityId>(seed + 4U)},
       {id<SketchConstraintId>(seed + 10U), id<SketchConstraintId>(seed + 11U),
@@ -216,7 +217,8 @@ void verifyWorkflow(const testkit::PropertyProfile &profile) {
 
         auto stale = workflow.applyTool(
             *edited, operation(seed + 70U, genesis),
-            sketch::PointToolInput{id<SketchEntityId>(seed + 80U),
+            sketch::PointToolInput{{id<SketchObjectId>(seed + 81U),
+                                    id<SketchEntityId>(seed + 80U)},
                                    {length(x), length(y)}},
             evaluation(seed + 90U));
         ++completed;

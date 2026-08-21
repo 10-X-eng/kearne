@@ -1,4 +1,5 @@
 #include <kearne/render/sketch_scene.hpp>
+#include <kearne/sketch/nurbs.hpp>
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,7 @@ constexpr double fullTurn = 2.0 * std::numbers::pi;
 constexpr std::uint8_t knownPrimitiveFlags =
     static_cast<std::uint8_t>(SketchPrimitiveFlags::Visible) |
     static_cast<std::uint8_t>(SketchPrimitiveFlags::Selectable);
+constexpr std::uint32_t noSpline = std::numeric_limits<std::uint32_t>::max();
 
 struct PrimitiveHandleHash {
   std::size_t operator()(SketchPrimitiveHandle handle) const {
@@ -38,9 +40,15 @@ std::size_t requiredPointCount(SketchPrimitiveKind kind) {
   case SketchPrimitiveKind::Point:
   case SketchPrimitiveKind::Circle:
   case SketchPrimitiveKind::Arc:
+  case SketchPrimitiveKind::Ellipse:
+  case SketchPrimitiveKind::EllipticalArc:
+  case SketchPrimitiveKind::HyperbolicArc:
+  case SketchPrimitiveKind::ParabolicArc:
     return 1;
   case SketchPrimitiveKind::Line:
     return 2;
+  case SketchPrimitiveKind::BSpline:
+    return 0;
   }
   return 0;
 }
@@ -74,9 +82,12 @@ Result<void> validateBaseStyle(const SketchStyle &style) {
 
 Result<void> validatePrimitive(const PackedSketchPrimitive &primitive,
                                std::span<const Point2d> points,
+                               std::span<const PackedSketchSpline> splines,
                                std::optional<std::size_t> styleCount) {
   const std::size_t count = requiredPointCount(primitive.kind);
-  if (count == 0)
+  const auto kind = static_cast<std::uint8_t>(primitive.kind);
+  if (kind < static_cast<std::uint8_t>(SketchPrimitiveKind::Point) ||
+      kind > static_cast<std::uint8_t>(SketchPrimitiveKind::BSpline))
     return std::unexpected(diagnostic("render.sketch.invalid-kind",
                                       "sketch primitive kind is invalid"));
   if (static_cast<std::size_t>(primitive.firstPoint) > points.size() ||
@@ -102,25 +113,121 @@ Result<void> validatePrimitive(const PackedSketchPrimitive &primitive,
                                       "zero-length sketch line is invalid"));
   if (!std::isfinite(primitive.radius) ||
       !std::isfinite(primitive.startAngleRadians) ||
-      !std::isfinite(primitive.sweepAngleRadians))
+      !std::isfinite(primitive.sweepAngleRadians) ||
+      !std::isfinite(primitive.secondaryRadius) ||
+      !std::isfinite(primitive.rotationAngleRadians))
     return std::unexpected(diagnostic("render.sketch.non-finite-curve",
                                       "sketch primitive curve is not finite"));
   if (primitive.kind == SketchPrimitiveKind::Circle) {
     if (primitive.radius <= 0.0 || primitive.startAngleRadians != 0.0 ||
-        primitive.sweepAngleRadians != 0.0)
+        primitive.sweepAngleRadians != 0.0 ||
+        primitive.secondaryRadius != 0.0 ||
+        primitive.rotationAngleRadians != 0.0)
       return std::unexpected(
           diagnostic("render.sketch.invalid-circle",
                      "sketch circle parameters are invalid"));
   } else if (primitive.kind == SketchPrimitiveKind::Arc) {
     if (primitive.radius <= 0.0 || primitive.sweepAngleRadians == 0.0 ||
-        std::abs(primitive.sweepAngleRadians) > fullTurn)
+        std::abs(primitive.sweepAngleRadians) > fullTurn ||
+        primitive.secondaryRadius != 0.0 ||
+        primitive.rotationAngleRadians != 0.0)
       return std::unexpected(diagnostic("render.sketch.invalid-arc",
                                         "sketch arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::Ellipse) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+        primitive.secondaryRadius > primitive.radius ||
+        primitive.startAngleRadians != 0.0 ||
+        primitive.sweepAngleRadians != 0.0)
+      return std::unexpected(
+          diagnostic("render.sketch.invalid-ellipse",
+                     "sketch ellipse parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+        primitive.secondaryRadius > primitive.radius ||
+        primitive.sweepAngleRadians == 0.0 ||
+        std::abs(primitive.sweepAngleRadians) > fullTurn)
+      return std::unexpected(
+          diagnostic("render.sketch.invalid-elliptical-arc",
+                     "sketch elliptical arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+        primitive.sweepAngleRadians == 0.0)
+      return std::unexpected(
+          diagnostic("render.sketch.invalid-hyperbolic-arc",
+                     "sketch hyperbolic arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius != 0.0 ||
+        primitive.sweepAngleRadians == 0.0)
+      return std::unexpected(
+          diagnostic("render.sketch.invalid-parabolic-arc",
+                     "sketch parabolic arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::BSpline) {
+    if (primitive.spline >= splines.size() || primitive.radius != 0.0 ||
+        primitive.startAngleRadians != 0.0 ||
+        primitive.sweepAngleRadians != 0.0 ||
+        primitive.secondaryRadius != 0.0 ||
+        primitive.rotationAngleRadians != 0.0)
+      return std::unexpected(
+          diagnostic("render.sketch.invalid-bspline",
+                     "sketch B-spline parameters are invalid"));
   } else if (primitive.radius != 0.0 || primitive.startAngleRadians != 0.0 ||
-             primitive.sweepAngleRadians != 0.0) {
+             primitive.sweepAngleRadians != 0.0 ||
+             primitive.secondaryRadius != 0.0 ||
+             primitive.rotationAngleRadians != 0.0) {
     return std::unexpected(
         diagnostic("render.sketch.unused-curve-parameters",
                    "non-curve primitive has curve parameters"));
+  }
+  if (primitive.kind != SketchPrimitiveKind::BSpline &&
+      primitive.spline != noSpline)
+    return std::unexpected(
+        diagnostic("render.sketch.unused-spline",
+                   "non-B-spline primitive references B-spline data"));
+  return {};
+}
+
+Result<void> validateSpline(const PackedSketchSpline &spline,
+                            const SketchPrimitiveBatch &batch) {
+  const std::size_t count = spline.controlPointCount;
+  const std::size_t firstControlCoordinate =
+      static_cast<std::size_t>(spline.firstControlPoint) * 2U;
+  const std::size_t firstKnot = spline.firstKnot;
+  const std::size_t firstWeight = spline.firstWeight;
+  const std::size_t knotCount = count + spline.degree + 1U;
+  if (count < 2U || count > 1'024U || spline.degree == 0U ||
+      spline.degree > 25U || spline.degree >= count ||
+      firstControlCoordinate > batch.splineControlPointCoordinates.size() ||
+      count * 2U >
+          batch.splineControlPointCoordinates.size() - firstControlCoordinate ||
+      firstKnot > batch.splineKnots.size() ||
+      knotCount > batch.splineKnots.size() - firstKnot ||
+      firstWeight > batch.splineWeights.size() ||
+      count > batch.splineWeights.size() - firstWeight)
+    return std::unexpected(diagnostic("render.sketch.invalid-bspline-range",
+                                      "sketch B-spline data is invalid"));
+  const auto coordinates =
+      std::span{batch.splineControlPointCoordinates}.subspan(
+          firstControlCoordinate, count * 2U);
+  const auto knots = std::span{batch.splineKnots}.subspan(firstKnot, knotCount);
+  const auto weights =
+      std::span{batch.splineWeights}.subspan(firstWeight, count);
+  if (!std::ranges::all_of(coordinates,
+                           [](double value) { return std::isfinite(value); }) ||
+      !std::ranges::all_of(knots,
+                           [](double value) { return std::isfinite(value); }) ||
+      !std::ranges::is_sorted(knots) ||
+      !(knots[spline.degree] < knots[count]) ||
+      !std::ranges::all_of(weights, [](double value) {
+        return std::isfinite(value) && value >= 1.0e-12 && value <= 1.0e12;
+      }))
+    return std::unexpected(diagnostic("render.sketch.invalid-bspline-data",
+                                      "sketch B-spline data is invalid"));
+  if (spline.periodic) {
+    if (sketch::periodicNurbsTailCount(
+            {coordinates, knots, weights, spline.degree}, 0.0, 0.0) == 0U)
+      return std::unexpected(
+          diagnostic("render.sketch.invalid-periodic-bspline",
+                     "sketch periodic B-spline seam is invalid"));
   }
   return {};
 }
@@ -133,17 +240,41 @@ Result<void> validateBatch(const SketchPrimitiveBatch &batch,
   if (batch.primitives.size() > std::numeric_limits<std::uint32_t>::max())
     return std::unexpected(diagnostic("render.sketch.too-many-primitives",
                                       "sketch scene has too many primitives"));
+  if (batch.splines.size() > std::numeric_limits<std::uint32_t>::max())
+    return std::unexpected(diagnostic("render.sketch.too-many-splines",
+                                      "sketch scene has too many B-splines"));
+  std::size_t nextControlPoint = 0U;
+  std::size_t nextKnot = 0U;
+  std::size_t nextWeight = 0U;
+  for (const PackedSketchSpline &spline : batch.splines) {
+    if (spline.firstControlPoint != nextControlPoint ||
+        spline.firstKnot != nextKnot || spline.firstWeight != nextWeight)
+      return std::unexpected(diagnostic("render.sketch.non-packed-bspline",
+                                        "sketch B-spline data is not packed"));
+    if (auto valid = validateSpline(spline, batch); !valid)
+      return valid;
+    nextControlPoint += spline.controlPointCount;
+    nextKnot += spline.controlPointCount + spline.degree + 1U;
+    nextWeight += spline.controlPointCount;
+  }
+  if (nextControlPoint * 2U != batch.splineControlPointCoordinates.size() ||
+      nextKnot != batch.splineKnots.size() ||
+      nextWeight != batch.splineWeights.size())
+    return std::unexpected(diagnostic("render.sketch.unused-bspline-data",
+                                      "sketch scene has unused B-spline data"));
   std::size_t nextPoint = 0;
   std::unordered_set<SketchPrimitiveHandle, PrimitiveHandleHash> handles;
   std::unordered_set<SketchEntityId, TypedIdHash<SketchEntityIdTag>> entities;
   handles.reserve(batch.primitives.size());
   entities.reserve(batch.primitives.size());
+  std::vector<bool> usedSplines(batch.splines.size(), false);
   for (const PackedSketchPrimitive &primitive : batch.primitives) {
     if (primitive.firstPoint != nextPoint)
       return std::unexpected(
           diagnostic("render.sketch.non-packed-points",
                      "sketch primitive points are not packed"));
-    if (auto valid = validatePrimitive(primitive, batch.points, styleCount);
+    if (auto valid = validatePrimitive(primitive, batch.points, batch.splines,
+                                       styleCount);
         !valid)
       return valid;
     if (!handles.insert(primitive.handle).second)
@@ -153,11 +284,21 @@ Result<void> validateBatch(const SketchPrimitiveBatch &batch,
     if (!entities.insert(primitive.entity).second)
       return std::unexpected(diagnostic("render.sketch.duplicate-entity",
                                         "sketch entity is duplicated"));
+    if (primitive.kind == SketchPrimitiveKind::BSpline) {
+      if (usedSplines[primitive.spline])
+        return std::unexpected(
+            diagnostic("render.sketch.duplicate-bspline",
+                       "sketch B-spline data is referenced more than once"));
+      usedSplines[primitive.spline] = true;
+    }
     nextPoint += requiredPointCount(primitive.kind);
   }
   if (nextPoint != batch.points.size())
     return std::unexpected(diagnostic("render.sketch.unused-points",
                                       "sketch scene contains unused points"));
+  if (std::ranges::find(usedSplines, false) != usedSplines.end())
+    return std::unexpected(diagnostic("render.sketch.unused-bspline",
+                                      "sketch B-spline data is unreferenced"));
   return {};
 }
 
@@ -177,8 +318,89 @@ Point2d radialPoint(Point2d center, double radius, double angle) {
           center.y + radius * std::sin(angle)};
 }
 
+Point2d rotatedPoint(Point2d origin, double localX, double localY,
+                     double rotation) {
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  return {origin.x + cosine * localX - sine * localY,
+          origin.y + sine * localX + cosine * localY};
+}
+
+Point2d ellipsePoint(Point2d center, double majorRadius, double minorRadius,
+                     double rotation, double parameter) {
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  const double localX = majorRadius * std::cos(parameter);
+  const double localY = minorRadius * std::sin(parameter);
+  return {center.x + cosine * localX - sine * localY,
+          center.y + sine * localX + cosine * localY};
+}
+
+Point2d hyperbolaPoint(Point2d center, double majorRadius, double minorRadius,
+                       double rotation, double parameter) {
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  const double localX = majorRadius * std::cosh(parameter);
+  const double localY = minorRadius * std::sinh(parameter);
+  return {center.x + cosine * localX - sine * localY,
+          center.y + sine * localX + cosine * localY};
+}
+
+Point2d parabolaPoint(Point2d vertex, double focalLength, double rotation,
+                      double parameter) {
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  const double localX = parameter * parameter / (4.0 * focalLength);
+  return {vertex.x + cosine * localX - sine * parameter,
+          vertex.y + sine * localX + cosine * parameter};
+}
+
+bool parameterOnRange(double parameter, double start, double sweep) {
+  const double end = start + sweep;
+  return parameter >= std::min(start, end) && parameter <= std::max(start, end);
+}
+
+struct SplineArrays {
+  std::span<const double> controlPointCoordinates;
+  std::span<const double> knots;
+  std::span<const double> weights;
+  std::span<const PackedSketchSpline> splines;
+};
+
+SplineArrays splineArrays(const SketchSceneSnapshot &scene) {
+  return {scene.splineControlPointCoordinates(), scene.splineKnots(),
+          scene.splineWeights(), scene.splines()};
+}
+
+sketch::NurbsView splineView(SplineArrays arrays, std::uint32_t index) {
+  const PackedSketchSpline &spline = arrays.splines[index];
+  const std::size_t count = spline.controlPointCount;
+  return {
+      arrays.controlPointCoordinates.subspan(
+          static_cast<std::size_t>(spline.firstControlPoint) * 2U, count * 2U),
+      arrays.knots.subspan(spline.firstKnot, count + spline.degree + 1U),
+      arrays.weights.subspan(spline.firstWeight, count), spline.degree};
+}
+
 Bounds2d primitiveBounds(std::span<const Point2d> points,
-                         const PackedSketchPrimitive &primitive) {
+                         const PackedSketchPrimitive &primitive,
+                         SplineArrays splines = {}) {
+  if (primitive.kind == SketchPrimitiveKind::BSpline) {
+    const sketch::NurbsView curve = splineView(splines, primitive.spline);
+    Bounds2d bounds{
+        {curve.controlPointCoordinates[0], curve.controlPointCoordinates[1]},
+        {curve.controlPointCoordinates[0], curve.controlPointCoordinates[1]},
+        false};
+    for (std::size_t index = 1U; index < curve.weights.size(); ++index) {
+      const double x = curve.controlPointCoordinates[index * 2U];
+      const double y = curve.controlPointCoordinates[index * 2U + 1U];
+      bounds.minimum.x = std::min(bounds.minimum.x, x);
+      bounds.minimum.y = std::min(bounds.minimum.y, y);
+      bounds.maximum.x = std::max(bounds.maximum.x, x);
+      bounds.maximum.y = std::max(bounds.maximum.y, y);
+    }
+    return bounds;
+  }
   const Point2d first = points[primitive.firstPoint];
   if (primitive.kind == SketchPrimitiveKind::Point)
     return {first, first, false};
@@ -192,6 +414,102 @@ Bounds2d primitiveBounds(std::span<const Point2d> points,
     return {{first.x - primitive.radius, first.y - primitive.radius},
             {first.x + primitive.radius, first.y + primitive.radius},
             false};
+  }
+  if (primitive.kind == SketchPrimitiveKind::Ellipse) {
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    const double extentX =
+        std::hypot(primitive.radius * cosine, primitive.secondaryRadius * sine);
+    const double extentY =
+        std::hypot(primitive.radius * sine, primitive.secondaryRadius * cosine);
+    return {{first.x - extentX, first.y - extentY},
+            {first.x + extentX, first.y + extentY},
+            false};
+  }
+  if (primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+    const double endParameter =
+        primitive.startAngleRadians + primitive.sweepAngleRadians;
+    const Point2d start = ellipsePoint(
+        first, primitive.radius, primitive.secondaryRadius,
+        primitive.rotationAngleRadians, primitive.startAngleRadians);
+    const Point2d end =
+        ellipsePoint(first, primitive.radius, primitive.secondaryRadius,
+                     primitive.rotationAngleRadians, endParameter);
+    Bounds2d bounds{{std::min(start.x, end.x), std::min(start.y, end.y)},
+                    {std::max(start.x, end.x), std::max(start.y, end.y)},
+                    false};
+    const double rotation = primitive.rotationAngleRadians;
+    const std::array extrema{
+        std::atan2(-primitive.secondaryRadius * std::sin(rotation),
+                   primitive.radius * std::cos(rotation)),
+        std::atan2(-primitive.secondaryRadius * std::sin(rotation),
+                   primitive.radius * std::cos(rotation)) +
+            std::numbers::pi,
+        std::atan2(primitive.secondaryRadius * std::cos(rotation),
+                   primitive.radius * std::sin(rotation)),
+        std::atan2(primitive.secondaryRadius * std::cos(rotation),
+                   primitive.radius * std::sin(rotation)) +
+            std::numbers::pi};
+    for (const double parameter : extrema) {
+      if (!angleOnArc(parameter, primitive.startAngleRadians,
+                      primitive.sweepAngleRadians))
+        continue;
+      const Point2d point =
+          ellipsePoint(first, primitive.radius, primitive.secondaryRadius,
+                       rotation, parameter);
+      bounds.minimum.x = std::min(bounds.minimum.x, point.x);
+      bounds.minimum.y = std::min(bounds.minimum.y, point.y);
+      bounds.maximum.x = std::max(bounds.maximum.x, point.x);
+      bounds.maximum.y = std::max(bounds.maximum.y, point.y);
+    }
+    return bounds;
+  }
+  if (primitive.kind == SketchPrimitiveKind::HyperbolicArc ||
+      primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+    const double startParameter = primitive.startAngleRadians;
+    const double endParameter = startParameter + primitive.sweepAngleRadians;
+    const auto curvePoint = [&](double parameter) {
+      return primitive.kind == SketchPrimitiveKind::HyperbolicArc
+                 ? hyperbolaPoint(first, primitive.radius,
+                                  primitive.secondaryRadius,
+                                  primitive.rotationAngleRadians, parameter)
+                 : parabolaPoint(first, primitive.radius,
+                                 primitive.rotationAngleRadians, parameter);
+    };
+    const Point2d start = curvePoint(startParameter);
+    const Point2d end = curvePoint(endParameter);
+    Bounds2d bounds{{std::min(start.x, end.x), std::min(start.y, end.y)},
+                    {std::max(start.x, end.x), std::max(start.y, end.y)},
+                    false};
+    const auto include = [&](double parameter) {
+      if (!std::isfinite(parameter) ||
+          !parameterOnRange(parameter, startParameter,
+                            primitive.sweepAngleRadians))
+        return;
+      const Point2d point = curvePoint(parameter);
+      bounds.minimum.x = std::min(bounds.minimum.x, point.x);
+      bounds.minimum.y = std::min(bounds.minimum.y, point.y);
+      bounds.maximum.x = std::max(bounds.maximum.x, point.x);
+      bounds.maximum.y = std::max(bounds.maximum.y, point.y);
+    };
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+      const double xRatio =
+          sine * primitive.secondaryRadius / (cosine * primitive.radius);
+      const double yRatio =
+          -cosine * primitive.secondaryRadius / (sine * primitive.radius);
+      if (std::abs(xRatio) < 1.0)
+        include(std::atanh(xRatio));
+      if (std::abs(yRatio) < 1.0)
+        include(std::atanh(yRatio));
+    } else {
+      if (cosine != 0.0)
+        include(2.0 * primitive.radius * sine / cosine);
+      if (sine != 0.0)
+        include(-2.0 * primitive.radius * cosine / sine);
+    }
+    return bounds;
   }
   const double endAngle =
       primitive.startAngleRadians + primitive.sweepAngleRadians;
@@ -216,12 +534,13 @@ Bounds2d primitiveBounds(std::span<const Point2d> points,
 }
 
 Bounds2d sceneBounds(std::span<const Point2d> points,
-                     std::span<const PackedSketchPrimitive> primitives) {
+                     std::span<const PackedSketchPrimitive> primitives,
+                     SplineArrays splines = {}) {
   if (primitives.empty())
     return {};
-  Bounds2d result = primitiveBounds(points, primitives.front());
+  Bounds2d result = primitiveBounds(points, primitives.front(), splines);
   for (const PackedSketchPrimitive &primitive : primitives.subspan(1)) {
-    const Bounds2d bounds = primitiveBounds(points, primitive);
+    const Bounds2d bounds = primitiveBounds(points, primitive, splines);
     result.minimum.x = std::min(result.minimum.x, bounds.minimum.x);
     result.minimum.y = std::min(result.minimum.y, bounds.minimum.y);
     result.maximum.x = std::max(result.maximum.x, bounds.maximum.x);
@@ -230,16 +549,38 @@ Bounds2d sceneBounds(std::span<const Point2d> points,
   return result;
 }
 
-void appendPrimitive(std::vector<Point2d> &points,
-                     std::vector<PackedSketchPrimitive> &primitives,
+void appendPrimitive(SketchPrimitiveBatch &target,
                      const PackedSketchPrimitive &source,
-                     std::span<const Point2d> sourcePoints) {
+                     std::span<const Point2d> sourcePoints,
+                     SplineArrays sourceSplines) {
   PackedSketchPrimitive primitive = source;
-  primitive.firstPoint = static_cast<std::uint32_t>(points.size());
+  primitive.firstPoint = static_cast<std::uint32_t>(target.points.size());
   const std::size_t count = requiredPointCount(source.kind);
   const auto primitivePoints = sourcePoints.subspan(source.firstPoint, count);
-  points.insert(points.end(), primitivePoints.begin(), primitivePoints.end());
-  primitives.push_back(std::move(primitive));
+  target.points.insert(target.points.end(), primitivePoints.begin(),
+                       primitivePoints.end());
+  if (source.kind == SketchPrimitiveKind::BSpline) {
+    const PackedSketchSpline &sourceSpline =
+        sourceSplines.splines[source.spline];
+    PackedSketchSpline spline = sourceSpline;
+    spline.firstControlPoint = static_cast<std::uint32_t>(
+        target.splineControlPointCoordinates.size() / 2U);
+    spline.firstKnot = static_cast<std::uint32_t>(target.splineKnots.size());
+    spline.firstWeight =
+        static_cast<std::uint32_t>(target.splineWeights.size());
+    const sketch::NurbsView curve = splineView(sourceSplines, source.spline);
+    target.splineControlPointCoordinates.insert(
+        target.splineControlPointCoordinates.end(),
+        curve.controlPointCoordinates.begin(),
+        curve.controlPointCoordinates.end());
+    target.splineKnots.insert(target.splineKnots.end(), curve.knots.begin(),
+                              curve.knots.end());
+    target.splineWeights.insert(target.splineWeights.end(),
+                                curve.weights.begin(), curve.weights.end());
+    primitive.spline = static_cast<std::uint32_t>(target.splines.size());
+    target.splines.push_back(spline);
+  }
+  target.primitives.push_back(std::move(primitive));
 }
 
 struct PickAabb {
@@ -447,6 +788,12 @@ PickRefinement robustLineRefinement(Point2d query, Point2d start, Point2d end) {
 PickRefinement robustCurveRefinement(const SketchSceneSnapshot &scene,
                                      const PackedSketchPrimitive &primitive,
                                      Point2d query) {
+  if (primitive.kind == SketchPrimitiveKind::BSpline) {
+    const sketch::NurbsProjection projection = sketch::projectToNurbs(
+        splineView(splineArrays(scene), primitive.spline), {query.x, query.y});
+    const Point2d closest{projection.point.x, projection.point.y};
+    return {closest, robustPointDistance(query, closest)};
+  }
   const Point2d first = scene.points()[primitive.firstPoint];
   if (primitive.kind == SketchPrimitiveKind::Line)
     return robustLineRefinement(query, first,
@@ -479,26 +826,193 @@ PickRefinement robustCurveRefinement(const SketchSceneSnapshot &scene,
     return startDistance <= endDistance ? PickRefinement{start, startDistance}
                                         : PickRefinement{end, endDistance};
   }
+  if (primitive.kind == SketchPrimitiveKind::Ellipse ||
+      primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    const double offsetX = query.x - first.x;
+    const double offsetY = query.y - first.y;
+    const double localX = cosine * offsetX + sine * offsetY;
+    const double localY = -sine * offsetX + cosine * offsetY;
+    double bestParameter = 0.0;
+    double bestDistanceSquared = std::numeric_limits<double>::infinity();
+    constexpr std::size_t seedCount = 16U;
+    for (std::size_t seed = 0U; seed < seedCount; ++seed) {
+      double parameter =
+          fullTurn * static_cast<double>(seed) / static_cast<double>(seedCount);
+      for (std::size_t iteration = 0U; iteration < 16U; ++iteration) {
+        const double cosParameter = std::cos(parameter);
+        const double sinParameter = std::sin(parameter);
+        const double ellipseX = primitive.radius * cosParameter;
+        const double ellipseY = primitive.secondaryRadius * sinParameter;
+        const double tangentX = -primitive.radius * sinParameter;
+        const double tangentY = primitive.secondaryRadius * cosParameter;
+        const double secondX = -primitive.radius * cosParameter;
+        const double secondY = -primitive.secondaryRadius * sinParameter;
+        const double residualX = ellipseX - localX;
+        const double residualY = ellipseY - localY;
+        const double gradient = residualX * tangentX + residualY * tangentY;
+        const double curvature = tangentX * tangentX + tangentY * tangentY +
+                                 residualX * secondX + residualY * secondY;
+        if (!std::isfinite(curvature) ||
+            std::abs(curvature) < std::numeric_limits<double>::epsilon())
+          break;
+        const double step =
+            std::clamp(gradient / curvature, -std::numbers::pi / 4.0,
+                       std::numbers::pi / 4.0);
+        parameter -= step;
+        if (std::abs(step) <= 8.0 * std::numeric_limits<double>::epsilon())
+          break;
+      }
+      const double candidateX = primitive.radius * std::cos(parameter);
+      const double candidateY = primitive.secondaryRadius * std::sin(parameter);
+      const double distanceSquared = std::pow(candidateX - localX, 2.0) +
+                                     std::pow(candidateY - localY, 2.0);
+      if (distanceSquared < bestDistanceSquared) {
+        bestDistanceSquared = distanceSquared;
+        bestParameter = parameter;
+      }
+    }
+    const auto candidate = [&](double parameter) {
+      const Point2d point =
+          ellipsePoint(first, primitive.radius, primitive.secondaryRadius,
+                       primitive.rotationAngleRadians, parameter);
+      return PickRefinement{point, robustPointDistance(query, point)};
+    };
+    if (primitive.kind == SketchPrimitiveKind::Ellipse ||
+        angleOnArc(bestParameter, primitive.startAngleRadians,
+                   primitive.sweepAngleRadians))
+      return candidate(bestParameter);
+    const PickRefinement start = candidate(primitive.startAngleRadians);
+    const PickRefinement end =
+        candidate(primitive.startAngleRadians + primitive.sweepAngleRadians);
+    return start.distance <= end.distance ? start : end;
+  }
+  if (primitive.kind == SketchPrimitiveKind::HyperbolicArc ||
+      primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    const double offsetX = query.x - first.x;
+    const double offsetY = query.y - first.y;
+    const double localQueryX = cosine * offsetX + sine * offsetY;
+    const double localQueryY = -sine * offsetX + cosine * offsetY;
+    const double firstParameter = primitive.startAngleRadians;
+    const double lastParameter = firstParameter + primitive.sweepAngleRadians;
+    const double minimumParameter = std::min(firstParameter, lastParameter);
+    const double maximumParameter = std::max(firstParameter, lastParameter);
+    double bestParameter = firstParameter;
+    double bestDistanceSquared = std::numeric_limits<double>::infinity();
+    constexpr std::size_t seedCount = 16U;
+    for (std::size_t seed = 0U; seed <= seedCount; ++seed) {
+      double parameter =
+          std::lerp(firstParameter, lastParameter,
+                    static_cast<double>(seed) / static_cast<double>(seedCount));
+      for (std::size_t iteration = 0U; iteration < 20U; ++iteration) {
+        double curveX = 0.0;
+        double curveY = 0.0;
+        double tangentX = 0.0;
+        double tangentY = 0.0;
+        double secondX = 0.0;
+        double secondY = 0.0;
+        if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+          curveX = primitive.radius * std::cosh(parameter);
+          curveY = primitive.secondaryRadius * std::sinh(parameter);
+          tangentX = primitive.radius * std::sinh(parameter);
+          tangentY = primitive.secondaryRadius * std::cosh(parameter);
+          secondX = curveX;
+          secondY = curveY;
+        } else {
+          curveX = parameter * parameter / (4.0 * primitive.radius);
+          curveY = parameter;
+          tangentX = parameter / (2.0 * primitive.radius);
+          tangentY = 1.0;
+          secondX = 1.0 / (2.0 * primitive.radius);
+        }
+        const double residualX = curveX - localQueryX;
+        const double residualY = curveY - localQueryY;
+        const double gradient = residualX * tangentX + residualY * tangentY;
+        const double curvature = tangentX * tangentX + tangentY * tangentY +
+                                 residualX * secondX + residualY * secondY;
+        if (!std::isfinite(curvature) ||
+            std::abs(curvature) < std::numeric_limits<double>::epsilon())
+          break;
+        const double maximumStep =
+            std::max(std::abs(primitive.sweepAngleRadians) / 4.0,
+                     std::numeric_limits<double>::epsilon());
+        const double step =
+            std::clamp(gradient / curvature, -maximumStep, maximumStep);
+        parameter =
+            std::clamp(parameter - step, minimumParameter, maximumParameter);
+        if (std::abs(step) <= 8.0 * std::numeric_limits<double>::epsilon())
+          break;
+      }
+      const Point2d candidate =
+          primitive.kind == SketchPrimitiveKind::HyperbolicArc
+              ? hyperbolaPoint(first, primitive.radius,
+                               primitive.secondaryRadius,
+                               primitive.rotationAngleRadians, parameter)
+              : parabolaPoint(first, primitive.radius,
+                              primitive.rotationAngleRadians, parameter);
+      const double candidateDistance = robustPointDistance(query, candidate);
+      const double distanceSquared = candidateDistance * candidateDistance;
+      if (distanceSquared < bestDistanceSquared) {
+        bestDistanceSquared = distanceSquared;
+        bestParameter = parameter;
+      }
+    }
+    const Point2d closest =
+        primitive.kind == SketchPrimitiveKind::HyperbolicArc
+            ? hyperbolaPoint(first, primitive.radius, primitive.secondaryRadius,
+                             primitive.rotationAngleRadians, bestParameter)
+            : parabolaPoint(first, primitive.radius,
+                            primitive.rotationAngleRadians, bestParameter);
+    return {closest, robustPointDistance(query, closest)};
+  }
   return {{}, std::numeric_limits<double>::quiet_NaN()};
 }
 
-std::array<sketch::PointKey, 3>
+std::array<sketch::PointKey, 6>
 pointKeys(const PackedSketchPrimitive &primitive, std::size_t &count) {
   using Key = sketch::PointKey;
   if (primitive.kind == SketchPrimitiveKind::Point) {
     count = 1;
-    return {Key::Point, Key::Point, Key::Point};
+    return {Key::Point, Key::Point, Key::Point,
+            Key::Point, Key::Point, Key::Point};
   }
   if (primitive.kind == SketchPrimitiveKind::Line) {
     count = 2;
-    return {Key::Start, Key::End, Key::End};
+    return {Key::Start, Key::End, Key::End, Key::End, Key::End, Key::End};
   }
   if (primitive.kind == SketchPrimitiveKind::Circle) {
     count = 1;
-    return {Key::Center, Key::Center, Key::Center};
+    return {Key::Center, Key::Center, Key::Center,
+            Key::Center, Key::Center, Key::Center};
+  }
+  if (primitive.kind == SketchPrimitiveKind::Ellipse) {
+    count = 3;
+    return {Key::Center, Key::Major, Key::Minor,
+            Key::Minor,  Key::Minor, Key::Minor};
+  }
+  if (primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+    count = 5;
+    return {Key::Center, Key::Major, Key::Minor,
+            Key::Start,  Key::End,   Key::End};
+  }
+  if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+    count = 6;
+    return {Key::Center, Key::Major, Key::Minor,
+            Key::Focus,  Key::Start, Key::End};
+  }
+  if (primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+    count = 4;
+    return {Key::Center, Key::Focus, Key::Start, Key::End, Key::End, Key::End};
+  }
+  if (primitive.kind == SketchPrimitiveKind::BSpline) {
+    count = 2;
+    return {Key::Start, Key::End, Key::End, Key::End, Key::End, Key::End};
   }
   count = 3;
-  return {Key::Center, Key::Start, Key::End};
+  return {Key::Center, Key::Start, Key::End, Key::End, Key::End, Key::End};
 }
 
 std::optional<std::size_t> overlayRoleIndex(SketchOverlayRole role) {
@@ -697,30 +1211,70 @@ Result<void> validateProvisionalPrimitive(
                    "zero-length provisional sketch line is invalid"));
   if (!std::isfinite(primitive.radius) ||
       !std::isfinite(primitive.startAngleRadians) ||
-      !std::isfinite(primitive.sweepAngleRadians))
+      !std::isfinite(primitive.sweepAngleRadians) ||
+      !std::isfinite(primitive.secondaryRadius) ||
+      !std::isfinite(primitive.rotationAngleRadians))
     return std::unexpected(
         diagnostic("render.sketch.provisional-non-finite-curve",
                    "provisional sketch curve is not finite"));
   if (primitive.kind == SketchPrimitiveKind::Circle) {
     if (primitive.radius <= 0.0 || primitive.startAngleRadians != 0.0 ||
-        primitive.sweepAngleRadians != 0.0)
+        primitive.sweepAngleRadians != 0.0 ||
+        primitive.secondaryRadius != 0.0 ||
+        primitive.rotationAngleRadians != 0.0)
       return std::unexpected(
           diagnostic("render.sketch.provisional-invalid-circle",
                      "provisional sketch circle parameters are invalid"));
   } else if (primitive.kind == SketchPrimitiveKind::Arc) {
     if (primitive.radius <= 0.0 || primitive.sweepAngleRadians == 0.0 ||
-        std::abs(primitive.sweepAngleRadians) > fullTurn)
+        std::abs(primitive.sweepAngleRadians) > fullTurn ||
+        primitive.secondaryRadius != 0.0 ||
+        primitive.rotationAngleRadians != 0.0)
       return std::unexpected(
           diagnostic("render.sketch.provisional-invalid-arc",
                      "provisional sketch arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::Ellipse) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+        primitive.secondaryRadius > primitive.radius ||
+        primitive.startAngleRadians != 0.0 ||
+        primitive.sweepAngleRadians != 0.0)
+      return std::unexpected(
+          diagnostic("render.sketch.provisional-invalid-ellipse",
+                     "provisional sketch ellipse parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+        primitive.secondaryRadius > primitive.radius ||
+        primitive.sweepAngleRadians == 0.0 ||
+        std::abs(primitive.sweepAngleRadians) > fullTurn)
+      return std::unexpected(diagnostic(
+          "render.sketch.provisional-invalid-elliptical-arc",
+          "provisional sketch elliptical arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+        primitive.sweepAngleRadians == 0.0)
+      return std::unexpected(diagnostic(
+          "render.sketch.provisional-invalid-hyperbolic-arc",
+          "provisional sketch hyperbolic arc parameters are invalid"));
+  } else if (primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+    if (primitive.radius <= 0.0 || primitive.secondaryRadius != 0.0 ||
+        primitive.sweepAngleRadians == 0.0)
+      return std::unexpected(diagnostic(
+          "render.sketch.provisional-invalid-parabolic-arc",
+          "provisional sketch parabolic arc parameters are invalid"));
   } else if (primitive.radius != 0.0 || primitive.startAngleRadians != 0.0 ||
-             primitive.sweepAngleRadians != 0.0) {
+             primitive.sweepAngleRadians != 0.0 ||
+             primitive.secondaryRadius != 0.0 ||
+             primitive.rotationAngleRadians != 0.0) {
     return std::unexpected(
         diagnostic("render.sketch.provisional-unused-curve-parameters",
                    "provisional non-curve has curve parameters"));
   }
   if ((primitive.kind == SketchPrimitiveKind::Circle ||
-       primitive.kind == SketchPrimitiveKind::Arc) &&
+       primitive.kind == SketchPrimitiveKind::Arc ||
+       primitive.kind == SketchPrimitiveKind::Ellipse ||
+       primitive.kind == SketchPrimitiveKind::EllipticalArc ||
+       primitive.kind == SketchPrimitiveKind::HyperbolicArc ||
+       primitive.kind == SketchPrimitiveKind::ParabolicArc) &&
       (!finite(Point2d{primitive.points[0].x + primitive.radius,
                        primitive.points[0].y + primitive.radius}) ||
        !finite(Point2d{primitive.points[0].x - primitive.radius,
@@ -844,6 +1398,8 @@ struct MarkerPrimitiveGeometry {
   double radius;
   double startAngleRadians;
   double sweepAngleRadians;
+  double secondaryRadius;
+  double rotationAngleRadians;
 };
 
 std::optional<Point2d>
@@ -875,6 +1431,67 @@ markerSemanticPoint(const MarkerPrimitiveGeometry &primitive,
                          primitive.startAngleRadians +
                              primitive.sweepAngleRadians);
     break;
+  case SketchPrimitiveKind::Ellipse:
+  case SketchPrimitiveKind::EllipticalArc:
+    if (point == sketch::PointKey::Center)
+      return primitive.points[0];
+    if (point == sketch::PointKey::Major)
+      return ellipsePoint(primitive.points[0], primitive.radius,
+                          primitive.secondaryRadius,
+                          primitive.rotationAngleRadians, 0.0);
+    if (point == sketch::PointKey::Minor)
+      return ellipsePoint(
+          primitive.points[0], primitive.radius, primitive.secondaryRadius,
+          primitive.rotationAngleRadians, std::numbers::pi / 2.0);
+    if (primitive.kind == SketchPrimitiveKind::EllipticalArc &&
+        (point == sketch::PointKey::Start || point == sketch::PointKey::End))
+      return ellipsePoint(
+          primitive.points[0], primitive.radius, primitive.secondaryRadius,
+          primitive.rotationAngleRadians,
+          point == sketch::PointKey::Start
+              ? primitive.startAngleRadians
+              : primitive.startAngleRadians + primitive.sweepAngleRadians);
+    break;
+  case SketchPrimitiveKind::BSpline:
+    break;
+  case SketchPrimitiveKind::HyperbolicArc:
+    if (point == sketch::PointKey::Center)
+      return primitive.points[0];
+    if (point == sketch::PointKey::Major)
+      return hyperbolaPoint(primitive.points[0], primitive.radius,
+                            primitive.secondaryRadius,
+                            primitive.rotationAngleRadians, 0.0);
+    if (point == sketch::PointKey::Minor)
+      return rotatedPoint(primitive.points[0], primitive.radius,
+                          primitive.secondaryRadius,
+                          primitive.rotationAngleRadians);
+    if (point == sketch::PointKey::Focus) {
+      const double focus =
+          std::hypot(primitive.radius, primitive.secondaryRadius);
+      return rotatedPoint(primitive.points[0], focus, 0.0,
+                          primitive.rotationAngleRadians);
+    }
+    if (point == sketch::PointKey::Start || point == sketch::PointKey::End)
+      return hyperbolaPoint(
+          primitive.points[0], primitive.radius, primitive.secondaryRadius,
+          primitive.rotationAngleRadians,
+          point == sketch::PointKey::Start
+              ? primitive.startAngleRadians
+              : primitive.startAngleRadians + primitive.sweepAngleRadians);
+    break;
+  case SketchPrimitiveKind::ParabolicArc:
+    if (point == sketch::PointKey::Center)
+      return primitive.points[0];
+    if (point == sketch::PointKey::Focus)
+      return rotatedPoint(primitive.points[0], primitive.radius, 0.0,
+                          primitive.rotationAngleRadians);
+    if (point == sketch::PointKey::Start || point == sketch::PointKey::End)
+      return parabolaPoint(
+          primitive.points[0], primitive.radius, primitive.rotationAngleRadians,
+          point == sketch::PointKey::Start
+              ? primitive.startAngleRadians
+              : primitive.startAngleRadians + primitive.sweepAngleRadians);
+    break;
   }
   return std::nullopt;
 }
@@ -903,6 +1520,47 @@ markerCurvePoint(const MarkerPrimitiveGeometry &primitive, double parameter) {
                   primitive.sweepAngleRadians * parameter;
     return radialPoint(primitive.points[0], primitive.radius, angle);
   }
+  case SketchPrimitiveKind::Ellipse: {
+    const double ellipseParameter =
+        parameter == 1.0 ? 0.0 : fullTurn * parameter;
+    return ellipsePoint(primitive.points[0], primitive.radius,
+                        primitive.secondaryRadius,
+                        primitive.rotationAngleRadians, ellipseParameter);
+  }
+  case SketchPrimitiveKind::EllipticalArc: {
+    const double curveParameter =
+        parameter == 0.0 ? primitive.startAngleRadians
+        : parameter == 1.0
+            ? primitive.startAngleRadians + primitive.sweepAngleRadians
+            : primitive.startAngleRadians +
+                  primitive.sweepAngleRadians * parameter;
+    return ellipsePoint(primitive.points[0], primitive.radius,
+                        primitive.secondaryRadius,
+                        primitive.rotationAngleRadians, curveParameter);
+  }
+  case SketchPrimitiveKind::HyperbolicArc: {
+    const double curveParameter =
+        parameter == 0.0 ? primitive.startAngleRadians
+        : parameter == 1.0
+            ? primitive.startAngleRadians + primitive.sweepAngleRadians
+            : primitive.startAngleRadians +
+                  primitive.sweepAngleRadians * parameter;
+    return hyperbolaPoint(primitive.points[0], primitive.radius,
+                          primitive.secondaryRadius,
+                          primitive.rotationAngleRadians, curveParameter);
+  }
+  case SketchPrimitiveKind::ParabolicArc: {
+    const double curveParameter =
+        parameter == 0.0 ? primitive.startAngleRadians
+        : parameter == 1.0
+            ? primitive.startAngleRadians + primitive.sweepAngleRadians
+            : primitive.startAngleRadians +
+                  primitive.sweepAngleRadians * parameter;
+    return parabolaPoint(primitive.points[0], primitive.radius,
+                         primitive.rotationAngleRadians, curveParameter);
+  }
+  case SketchPrimitiveKind::BSpline:
+    return std::nullopt;
   }
   return std::nullopt;
 }
@@ -1122,15 +1780,28 @@ SketchPrimitiveHandle::create(std::uint32_t value) {
 SketchSceneSnapshot::SketchSceneSnapshot(
     SceneStamp stamp, Bounds2d bounds, std::vector<SketchStyle> styles,
     std::vector<Point2d> points, std::vector<PackedSketchPrimitive> primitives,
+    std::vector<double> splineControlPointCoordinates,
+    std::vector<double> splineKnots, std::vector<double> splineWeights,
+    std::vector<PackedSketchSpline> splines,
     std::vector<std::uint32_t> semanticIndex)
     : stamp_(std::move(stamp)), bounds_(bounds), styles_(std::move(styles)),
       points_(std::move(points)), primitives_(std::move(primitives)),
+      splineControlPointCoordinates_(std::move(splineControlPointCoordinates)),
+      splineKnots_(std::move(splineKnots)),
+      splineWeights_(std::move(splineWeights)), splines_(std::move(splines)),
       semanticIndex_(std::move(semanticIndex)) {}
 
 Result<SketchSceneSnapshot>
 SketchSceneSnapshot::create(SceneStamp stamp, std::vector<SketchStyle> styles,
                             std::vector<Point2d> points,
                             std::vector<PackedSketchPrimitive> primitives) {
+  return create(std::move(stamp), std::move(styles),
+                {std::move(points), std::move(primitives)});
+}
+
+Result<SketchSceneSnapshot>
+SketchSceneSnapshot::create(SceneStamp stamp, std::vector<SketchStyle> styles,
+                            SketchPrimitiveBatch batch) {
   if (styles.size() >
       static_cast<std::size_t>(std::numeric_limits<std::uint16_t>::max()) + 1U)
     return std::unexpected(diagnostic("render.sketch.too-many-styles",
@@ -1139,10 +1810,12 @@ SketchSceneSnapshot::create(SceneStamp stamp, std::vector<SketchStyle> styles,
     if (auto valid = validateBaseStyle(style); !valid)
       return std::unexpected(std::move(valid.error()));
   }
-  SketchPrimitiveBatch batch{std::move(points), std::move(primitives)};
   if (auto valid = validateBatch(batch, styles.size()); !valid)
     return std::unexpected(std::move(valid.error()));
-  const Bounds2d bounds = sceneBounds(batch.points, batch.primitives);
+  const SplineArrays arrays{batch.splineControlPointCoordinates,
+                            batch.splineKnots, batch.splineWeights,
+                            batch.splines};
+  const Bounds2d bounds = sceneBounds(batch.points, batch.primitives, arrays);
   if (!bounds.empty && (!finite(bounds.minimum) || !finite(bounds.maximum)))
     return std::unexpected(
         diagnostic("render.sketch.unrepresentable-bounds",
@@ -1166,6 +1839,10 @@ SketchSceneSnapshot::create(SceneStamp stamp, std::vector<SketchStyle> styles,
                              std::move(styles),
                              std::move(batch.points),
                              std::move(batch.primitives),
+                             std::move(batch.splineControlPointCoordinates),
+                             std::move(batch.splineKnots),
+                             std::move(batch.splineWeights),
+                             std::move(batch.splines),
                              std::move(semanticIndex)};
 }
 
@@ -1207,6 +1884,10 @@ projectSketchScene(SceneStamp stamp, std::span<const sketch::Entity> geometry,
   ids.reserve(geometry.size());
   std::vector<Point2d> points;
   std::vector<PackedSketchPrimitive> primitives;
+  std::vector<double> splineControlPointCoordinates;
+  std::vector<double> splineKnots;
+  std::vector<double> splineWeights;
+  std::vector<PackedSketchSpline> splines;
   points.reserve(geometry.size() * 2U);
   primitives.reserve(geometry.size());
   for (std::size_t index = 0; index < geometry.size(); ++index) {
@@ -1245,13 +1926,66 @@ projectSketchScene(SceneStamp stamp, std::span<const sketch::Entity> geometry,
             primitive.kind = SketchPrimitiveKind::Circle;
             primitive.radius = value.radius.si();
             points.push_back({value.center.x.si(), value.center.y.si()});
-          } else {
+          } else if constexpr (std::is_same_v<Type, sketch::ArcEntity>) {
             primitive.kind = SketchPrimitiveKind::Arc;
             primitive.radius = value.radius.si();
             primitive.startAngleRadians = value.startAngle.si();
             primitive.sweepAngleRadians =
                 value.endAngle.si() - value.startAngle.si();
             points.push_back({value.center.x.si(), value.center.y.si()});
+          } else if constexpr (std::is_same_v<Type, sketch::EllipseEntity>) {
+            primitive.kind = SketchPrimitiveKind::Ellipse;
+            primitive.radius = value.majorRadius.si();
+            primitive.secondaryRadius = value.minorRadius.si();
+            primitive.rotationAngleRadians = value.rotation.si();
+            points.push_back({value.center.x.si(), value.center.y.si()});
+          } else if constexpr (std::is_same_v<Type,
+                                              sketch::EllipticalArcEntity>) {
+            primitive.kind = SketchPrimitiveKind::EllipticalArc;
+            primitive.radius = value.majorRadius.si();
+            primitive.secondaryRadius = value.minorRadius.si();
+            primitive.rotationAngleRadians = value.rotation.si();
+            primitive.startAngleRadians = value.startParameter.si();
+            primitive.sweepAngleRadians =
+                value.endParameter.si() - value.startParameter.si();
+            points.push_back({value.center.x.si(), value.center.y.si()});
+          } else if constexpr (std::is_same_v<Type,
+                                              sketch::HyperbolicArcEntity>) {
+            primitive.kind = SketchPrimitiveKind::HyperbolicArc;
+            primitive.radius = value.majorRadius.si();
+            primitive.secondaryRadius = value.minorRadius.si();
+            primitive.rotationAngleRadians = value.rotation.si();
+            primitive.startAngleRadians = value.startParameter.si();
+            primitive.sweepAngleRadians =
+                value.endParameter.si() - value.startParameter.si();
+            points.push_back({value.center.x.si(), value.center.y.si()});
+          } else if constexpr (std::is_same_v<Type,
+                                              sketch::ParabolicArcEntity>) {
+            primitive.kind = SketchPrimitiveKind::ParabolicArc;
+            primitive.radius = value.focalLength.si();
+            primitive.rotationAngleRadians = value.rotation.si();
+            primitive.startAngleRadians = value.startParameter.si();
+            primitive.sweepAngleRadians =
+                value.endParameter.si() - value.startParameter.si();
+            points.push_back({value.vertex.x.si(), value.vertex.y.si()});
+          } else {
+            primitive.kind = SketchPrimitiveKind::BSpline;
+            primitive.spline = static_cast<std::uint32_t>(splines.size());
+            splines.push_back(
+                {static_cast<std::uint32_t>(
+                     splineControlPointCoordinates.size() / 2U),
+                 static_cast<std::uint32_t>(value.controlPoints.size()),
+                 static_cast<std::uint32_t>(splineKnots.size()),
+                 static_cast<std::uint32_t>(splineWeights.size()), value.degree,
+                 value.periodic});
+            for (const sketch::Point2 &point : value.controlPoints) {
+              splineControlPointCoordinates.push_back(point.x.si());
+              splineControlPointCoordinates.push_back(point.y.si());
+            }
+            for (const sketch::DimensionlessValue knot : value.knots)
+              splineKnots.push_back(knot.si());
+            for (const sketch::DimensionlessValue weight : value.weights)
+              splineWeights.push_back(weight.si());
           }
         },
         entity);
@@ -1260,19 +1994,34 @@ projectSketchScene(SceneStamp stamp, std::span<const sketch::Entity> geometry,
   }
 
   std::vector<SketchStyle> palette{styles.regular, styles.construction};
-  return SketchSceneSnapshot::create(std::move(stamp), std::move(palette),
-                                     std::move(points), std::move(primitives));
+  return SketchSceneSnapshot::create(
+      std::move(stamp), std::move(palette),
+      {std::move(points), std::move(primitives),
+       std::move(splineControlPointCoordinates), std::move(splineKnots),
+       std::move(splineWeights), std::move(splines)});
 }
 
 std::optional<Point2d> semanticPoint(const SketchSceneSnapshot &scene,
                                      const PackedSketchPrimitive &primitive,
                                      sketch::PointKey key) {
+  if (primitive.kind == SketchPrimitiveKind::BSpline) {
+    if (key != sketch::PointKey::Start && key != sketch::PointKey::End)
+      return std::nullopt;
+    const sketch::NurbsView curve =
+        splineView(splineArrays(scene), primitive.spline);
+    const auto [first, last] = sketch::nurbsDomain(curve);
+    const sketch::NurbsPoint point = sketch::evaluateNurbs(
+        curve, key == sketch::PointKey::Start ? first : last);
+    return Point2d{point.x, point.y};
+  }
   MarkerPrimitiveGeometry geometry{
       primitive.kind,
       {scene.points()[primitive.firstPoint], Point2d{}},
       primitive.radius,
       primitive.startAngleRadians,
-      primitive.sweepAngleRadians};
+      primitive.sweepAngleRadians,
+      primitive.secondaryRadius,
+      primitive.rotationAngleRadians};
   if (primitive.kind == SketchPrimitiveKind::Line)
     geometry.points[1] = scene.points()[primitive.firstPoint + 1U];
   return markerSemanticPoint(geometry, key);
@@ -1294,7 +2043,9 @@ resolveSketchMarkerAnchor(const SketchMarkerAnchor &anchor,
         {base.points()[primitive->firstPoint], Point2d{}},
         primitive->radius,
         primitive->startAngleRadians,
-        primitive->sweepAngleRadians};
+        primitive->sweepAngleRadians,
+        primitive->secondaryRadius,
+        primitive->rotationAngleRadians};
     if (primitive->kind == SketchPrimitiveKind::Line)
       geometry.points[1] = base.points()[primitive->firstPoint + 1U];
     auto resolved = resolveMarkerPrimitiveLocation(
@@ -1322,9 +2073,13 @@ resolveSketchMarkerAnchor(const SketchMarkerAnchor &anchor,
       return std::unexpected(diagnostic(
           "render.sketch.marker-unknown-provisional-primitive",
           "sketch marker anchor references unknown provisional geometry"));
-    const MarkerPrimitiveGeometry geometry{
-        primitive->kind, primitive->points, primitive->radius,
-        primitive->startAngleRadians, primitive->sweepAngleRadians};
+    const MarkerPrimitiveGeometry geometry{primitive->kind,
+                                           primitive->points,
+                                           primitive->radius,
+                                           primitive->startAngleRadians,
+                                           primitive->sweepAngleRadians,
+                                           primitive->secondaryRadius,
+                                           primitive->rotationAngleRadians};
     auto resolved = resolveMarkerPrimitiveLocation(
         draft->location, geometry,
         "render.sketch.marker-invalid-provisional-point",
@@ -2271,11 +3026,24 @@ applySceneDelta(const SketchSceneSnapshot &base,
        ++index)
     upserts.emplace(delta.upserts().primitives[index].handle, index);
 
-  std::vector<Point2d> points;
-  std::vector<PackedSketchPrimitive> primitives;
-  points.reserve(base.points().size() + delta.upserts().points.size());
-  primitives.reserve(base.primitives().size() +
-                     delta.upserts().primitives.size());
+  SketchPrimitiveBatch result;
+  result.points.reserve(base.points().size() + delta.upserts().points.size());
+  result.primitives.reserve(base.primitives().size() +
+                            delta.upserts().primitives.size());
+  result.splineControlPointCoordinates.reserve(
+      base.splineControlPointCoordinates().size() +
+      delta.upserts().splineControlPointCoordinates.size());
+  result.splineKnots.reserve(base.splineKnots().size() +
+                             delta.upserts().splineKnots.size());
+  result.splineWeights.reserve(base.splineWeights().size() +
+                               delta.upserts().splineWeights.size());
+  result.splines.reserve(base.splines().size() +
+                         delta.upserts().splines.size());
+  const SplineArrays baseSplines = splineArrays(base);
+  const SplineArrays upsertSplines{
+      delta.upserts().splineControlPointCoordinates,
+      delta.upserts().splineKnots, delta.upserts().splineWeights,
+      delta.upserts().splines};
   std::unordered_set<SketchPrimitiveHandle, PrimitiveHandleHash> consumed;
   std::unordered_set<SketchPrimitiveHandle, PrimitiveHandleHash> foundRemoved;
   for (const PackedSketchPrimitive &primitive : base.primitives()) {
@@ -2285,12 +3053,12 @@ applySceneDelta(const SketchSceneSnapshot &base,
     }
     const auto replacement = upserts.find(primitive.handle);
     if (replacement == upserts.end()) {
-      appendPrimitive(points, primitives, primitive, base.points());
+      appendPrimitive(result, primitive, base.points(), baseSplines);
       continue;
     }
     const PackedSketchPrimitive &upsert =
         delta.upserts().primitives[replacement->second];
-    appendPrimitive(points, primitives, upsert, delta.upserts().points);
+    appendPrimitive(result, upsert, delta.upserts().points, upsertSplines);
     consumed.insert(upsert.handle);
   }
   if (foundRemoved.size() != removed.size())
@@ -2298,10 +3066,10 @@ applySceneDelta(const SketchSceneSnapshot &base,
                                       "scene delta removes a missing handle"));
   for (const PackedSketchPrimitive &primitive : delta.upserts().primitives) {
     if (!consumed.contains(primitive.handle))
-      appendPrimitive(points, primitives, primitive, delta.upserts().points);
+      appendPrimitive(result, primitive, delta.upserts().points, upsertSplines);
   }
-  auto snapshot = SketchSceneSnapshot::create(
-      delta.target(), styles, std::move(points), std::move(primitives));
+  auto snapshot =
+      SketchSceneSnapshot::create(delta.target(), styles, std::move(result));
   if (!snapshot)
     return std::unexpected(std::move(snapshot.error()));
   return std::make_shared<const SketchSceneSnapshot>(std::move(*snapshot));
@@ -2598,8 +3366,8 @@ SketchPickIndex::build(std::shared_ptr<const SketchSceneSnapshot> scene,
                                   static_cast<std::uint8_t>(pointIndex)}};
       }
       if (primitive.kind != SketchPrimitiveKind::Point) {
-        const PickAabb bounds =
-            pickAabb(primitiveBounds(data->scene->points(), primitive));
+        const PickAabb bounds = pickAabb(primitiveBounds(
+            data->scene->points(), primitive, splineArrays(*data->scene)));
         if (!finite(bounds))
           return std::unexpected(
               diagnostic("render.pick.unrepresentable-bounds",

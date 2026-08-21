@@ -27,8 +27,8 @@ void require(bool condition, const char *message) {
 }
 
 void verifyGeneratedRoundTrips() {
-  static_assert(std::variant_size_v<sketch::Entity> == 4);
-  static_assert(std::variant_size_v<sketch::Constraint> == 17);
+  static_assert(std::variant_size_v<sketch::Entity> == 9);
+  static_assert(std::variant_size_v<sketch::Constraint> == 22);
   const auto profile = kearne::testkit::propertyProfile();
   kearne::testkit::checkProperty(
       "sketch wire round trip", profile,
@@ -41,10 +41,14 @@ void verifyGeneratedRoundTrips() {
 
         wire::SketchDefinition encoded;
         auto written = adapters::writeSketchDefinition(definition, &encoded);
-        require(written.has_value(),
-                "valid definition did not convert to wire");
+        if (!written)
+          throw std::runtime_error("valid definition did not convert to wire: " +
+                                   written.error().code + ": " +
+                                   written.error().summary);
         require(encoded.entities_size() ==
                         static_cast<int>(definition.entities.size()) &&
+                    encoded.objects_size() ==
+                        static_cast<int>(definition.objects.size()) &&
                     encoded.constraints_size() ==
                         static_cast<int>(definition.constraints.size()),
                 "source order or element counts changed in wire conversion");
@@ -112,7 +116,9 @@ void verifyRegistryEnrollment() {
   require(contains(wire::SketchDefinition::descriptor()),
           "sketch definition is absent from the wire registry");
   require(contains(wire::SketchEntity::descriptor()) &&
-              contains(wire::SketchConstraint::descriptor()),
+              contains(wire::SketchConstraint::descriptor()) &&
+              contains(wire::SketchObject::descriptor()) &&
+              contains(wire::SketchObjectMember::descriptor()),
           "sketch executable members are absent from the wire registry");
 }
 

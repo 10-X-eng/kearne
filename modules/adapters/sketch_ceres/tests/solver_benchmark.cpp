@@ -42,7 +42,7 @@ model::SolveInput dimensionedPointChain(std::size_t count) {
   auto digest = ContentDigest::fromBytes("blake3-256", bytes);
   if (!digest)
     throw std::runtime_error("could not create benchmark digest");
-  model::Definition definition{*digest, {}, {}};
+  model::Definition definition{*digest, {}, {}, {}};
   definition.entities.reserve(count);
   definition.constraints.reserve(count * 2U);
   for (std::size_t index = 0; index < count; ++index) {
@@ -51,7 +51,7 @@ model::SolveInput dimensionedPointChain(std::size_t count) {
     definition.entities.push_back(model::PointEntity{
         entity, point(static_cast<double>(index) * 0.001, 0.0)});
     if (index == 0) {
-      definition.constraints.push_back(model::Fixed{
+      definition.constraints.push_back(model::Block{
           id<SketchConstraintId>(static_cast<std::uint64_t>(count) + 1),
           entity});
       continue;

@@ -1,46 +1,68 @@
 #pragma once
 
+#include "frontend_contract.hpp"
+
 #include <QObject>
 #include <QPointF>
 #include <QString>
 
-#include <array>
+#include <cstdint>
+#include <span>
+#include <vector>
 
 namespace kearne::ui {
 
-// Lightweight, non-canonical pointer feedback. Accepted geometry still crosses
-// the typed command path only when the gesture is released.
+enum class SketchPreviewQuantity : std::uint8_t { Length = 1, Angle = 2 };
+
+struct SketchPreviewMeasurement {
+  bool operator==(const SketchPreviewMeasurement &) const = default;
+
+  QString prefix;
+  SketchPreviewQuantity quantity = SketchPreviewQuantity::Length;
+  double valueSi = 0.0;
+  QPointF anchorMillimeters;
+  QPointF originMillimeters;
+};
+
+// Responsive, non-canonical feedback projected through the same gesture model
+// as accepted geometry. Only accepted inputs cross the typed command path.
 class SketchGesturePreview final : public QObject {
   Q_OBJECT
   Q_PROPERTY(bool visible READ visible NOTIFY previewChanged)
   Q_PROPERTY(bool construction READ construction NOTIFY previewChanged)
-  Q_PROPERTY(QPointF first READ first NOTIFY previewChanged)
-  Q_PROPERTY(QPointF second READ second NOTIFY previewChanged)
-  Q_PROPERTY(QPointF third READ third NOTIFY previewChanged)
-  Q_PROPERTY(QPointF fourth READ fourth NOTIFY previewChanged)
 
 public:
   explicit SketchGesturePreview(QObject *parent = nullptr);
 
   [[nodiscard]] bool visible() const { return visible_; }
   [[nodiscard]] bool construction() const { return construction_; }
-  [[nodiscard]] QPointF first() const { return corners_[0]; }
-  [[nodiscard]] QPointF second() const { return corners_[1]; }
-  [[nodiscard]] QPointF third() const { return corners_[2]; }
-  [[nodiscard]] QPointF fourth() const { return corners_[3]; }
+  [[nodiscard]] std::span<const SketchPrimitiveProjection> primitives() const {
+    return primitives_;
+  }
+  [[nodiscard]] std::span<const SketchPreviewMeasurement>
+  measurements() const {
+    return measurements_;
+  }
+  [[nodiscard]] std::span<const QPointF> inputPoints() const {
+    return inputPoints_;
+  }
 
-  [[nodiscard]] bool updateDrag(const QString &commandId,
-                                qreal firstXMillimeters,
-                                qreal firstYMillimeters,
-                                qreal oppositeXMillimeters,
-                                qreal oppositeYMillimeters, bool construction);
+  [[nodiscard]] bool updateGesture(const QString &commandId,
+                                   std::span<const QPointF> pointsMillimeters,
+                                   bool construction,
+                                   const QString &methodId = {},
+                                   bool closed = false,
+                                   std::size_t sideCount = 0U,
+                                   std::uint32_t degree = 3U);
   void clear();
 
 signals:
   void previewChanged();
 
 private:
-  std::array<QPointF, 4> corners_{};
+  std::vector<QPointF> inputPoints_;
+  std::vector<SketchPrimitiveProjection> primitives_;
+  std::vector<SketchPreviewMeasurement> measurements_;
   bool visible_ = false;
   bool construction_ = false;
 };

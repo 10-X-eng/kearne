@@ -23,6 +23,7 @@ from kearne.sketch import (
     Entity,
     LineEntity,
     SketchDefinition,
+    SketchObject,
     SketchPlane,
     coincident,
     end,
@@ -30,6 +31,9 @@ from kearne.sketch import (
     line,
     start,
     vertical,
+)
+from kearne.sketch import (
+    rectangle as rectangle_object,
 )
 from kearne.sketch_source import emit_call
 from kearne.sketch_wire import definition_to_wire, definition_values_from_wire
@@ -53,7 +57,7 @@ def write_digest(message: object, value: str) -> None:
 
 def rectangle(
     seed: int, width_millimetres: int, height_millimetres: int
-) -> tuple[SketchDefinition, tuple[Entity | Constraint, ...]]:
+) -> tuple[SketchDefinition, tuple[SketchObject | Entity | Constraint, ...]]:
     ids = tuple(uuid7(seed * 100 + index) for index in range(1, 5))
     width = m(width_millimetres / 1000)
     height = m(height_millimetres / 1000)
@@ -75,16 +79,20 @@ def rectangle(
         horizontal(uuid7(seed * 100 + 32), ids[2]),
         vertical(uuid7(seed * 100 + 33), ids[3]),
     )
+    object_value = rectangle_object(uuid7(seed * 100 + 90), "Rectangle 1", *ids)
     definition = SketchDefinition(
-        SketchPlane(uuid7(seed * 100 + 99), Plane.XY), entities, constraints
+        SketchPlane(uuid7(seed * 100 + 99), Plane.XY),
+        entities,
+        constraints,
+        (object_value,),
     )
-    return definition, (*entities, *constraints)
+    return definition, (object_value, *entities, *constraints)
 
 
 def edit_job(
     source: str,
     target: SketchDefinition,
-    values: tuple[Entity | Constraint, ...],
+    values: tuple[SketchObject | Entity | Constraint, ...],
     action: int,
     order: tuple[int, ...] | None = None,
 ) -> worker_pb2.SketchSourceTransformJob:
@@ -100,7 +108,9 @@ def edit_job(
         operation = job.edit.edits.add()
         operation.action = action
         operation.section = (
-            worker_pb2.SKETCH_SOURCE_SECTION_ENTITIES
+            worker_pb2.SKETCH_SOURCE_SECTION_OBJECTS
+            if isinstance(value, SketchObject)
+            else worker_pb2.SKETCH_SOURCE_SECTION_ENTITIES
             if isinstance(value, LineEntity)
             else worker_pb2.SKETCH_SOURCE_SECTION_CONSTRAINTS
         )
@@ -164,6 +174,7 @@ class SketchWorkerProperties(unittest.TestCase):
         self.assertEqual(result.WhichOneof("outcome"), "success")
         decoded = definition_values_from_wire(result.success.definition)
         self.assertEqual(decoded.source_digest, source_digest(edited))
+        self.assertEqual(decoded.objects, target.objects)
         self.assertEqual(len(decoded.entities), 4)
         self.assertNotEqual(decoded.entities, target.entities)
 
@@ -172,7 +183,7 @@ class SketchWorkerProperties(unittest.TestCase):
         seed=st.integers(min_value=1, max_value=5_000_000),
         width=st.integers(min_value=1, max_value=2_000),
         height=st.integers(min_value=1, max_value=2_000),
-        order=st.permutations(tuple(range(12))),
+        order=st.permutations(tuple(range(13))),
     )
     def test_rectangle_batch_round_trips_as_native_source(
         self, seed: int, width: int, height: int, order: tuple[int, ...]
@@ -194,7 +205,11 @@ class SketchWorkerProperties(unittest.TestCase):
         assert recognition is not None
         calls = {
             value.id: value.code
-            for value in (*recognition.entities, *recognition.constraints)
+            for value in (
+                *recognition.objects,
+                *recognition.entities,
+                *recognition.constraints,
+            )
         }
         self.assertEqual(set(calls), {value.id for value in values})
         self.assertEqual(calls, {value.id: emit_call(value) for value in values})
@@ -229,7 +244,10 @@ class SketchWorkerProperties(unittest.TestCase):
             )
             entities[index % len(entities)] = replacement
             definition = SketchDefinition(
-                definition.plane, tuple(entities), definition.constraints
+                definition.plane,
+                tuple(entities),
+                definition.constraints,
+                definition.objects,
             )
             source, digest = transformed(
                 edit_job(
@@ -241,7 +259,11 @@ class SketchWorkerProperties(unittest.TestCase):
             )
             self.assertEqual(digest, source_digest(source))
 
-        all_values = (*definition.entities, *definition.constraints)
+        all_values = (
+            *definition.objects,
+            *definition.entities,
+            *definition.constraints,
+        )
         empty = SketchDefinition(definition.plane, ())
         source, _ = transformed(
             edit_job(

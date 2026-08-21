@@ -386,7 +386,10 @@ Rectangle {
                 property string semanticName: App.ui.selectedFunction.sourcePath
                                               + " native build123d source"
                 property string semanticRole: "textbox"
-                property var semanticActions: readOnly ? ["focus"] : ["focus", "setValue"]
+                property var semanticActions: readOnly
+                                              ? ["focus"]
+                                              : ["focus", "setValue",
+                                                 "prependText"]
                 property string semanticValue: conflict ? "conflict"
                                                        : (dirty ? "modified" : "current")
                 property string baselineText: ""
@@ -407,10 +410,17 @@ Rectangle {
                         forceActiveFocus()
                         return true
                     }
-                    if (action !== "setValue" || readOnly)
+                    if (readOnly)
                         return false
-                    text = String(value)
-                    return true
+                    if (action === "setValue") {
+                        text = String(value)
+                        return true
+                    }
+                    if (action === "prependText") {
+                        text = String(value) + text
+                        return true
+                    }
+                    return false
                 }
 
                 Layout.fillWidth: true
@@ -441,7 +451,7 @@ Rectangle {
 
                 Connections {
                     target: App.ui
-                    function onProjectionChanged() {
+                    function onProjectProjectionChanged() {
                         if (!sourceEditor.dirty
                                 || sourceEditor.text === App.ui.modelSource)
                             sourceEditor.loadBaseline()

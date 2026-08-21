@@ -51,6 +51,35 @@ Result<void> validateDrag(const SketchRequest &request) {
         if constexpr (std::is_same_v<Type, sketch::LineEntity>)
           return request.drag->point.key == sketch::PointKey::Start ||
                  request.drag->point.key == sketch::PointKey::End;
+        if constexpr (std::is_same_v<Type, sketch::ArcEntity>)
+          return request.drag->point.key == sketch::PointKey::Center ||
+                 request.drag->point.key == sketch::PointKey::Start ||
+                 request.drag->point.key == sketch::PointKey::End;
+        if constexpr (std::is_same_v<Type, sketch::EllipseEntity>)
+          return request.drag->point.key == sketch::PointKey::Center ||
+                 request.drag->point.key == sketch::PointKey::Major ||
+                 request.drag->point.key == sketch::PointKey::Minor;
+        if constexpr (std::is_same_v<Type, sketch::EllipticalArcEntity>)
+          return request.drag->point.key == sketch::PointKey::Center ||
+                 request.drag->point.key == sketch::PointKey::Major ||
+                 request.drag->point.key == sketch::PointKey::Minor ||
+                 request.drag->point.key == sketch::PointKey::Start ||
+                 request.drag->point.key == sketch::PointKey::End;
+        if constexpr (std::is_same_v<Type, sketch::HyperbolicArcEntity>)
+          return request.drag->point.key == sketch::PointKey::Center ||
+                 request.drag->point.key == sketch::PointKey::Major ||
+                 request.drag->point.key == sketch::PointKey::Minor ||
+                 request.drag->point.key == sketch::PointKey::Focus ||
+                 request.drag->point.key == sketch::PointKey::Start ||
+                 request.drag->point.key == sketch::PointKey::End;
+        if constexpr (std::is_same_v<Type, sketch::ParabolicArcEntity>)
+          return request.drag->point.key == sketch::PointKey::Center ||
+                 request.drag->point.key == sketch::PointKey::Focus ||
+                 request.drag->point.key == sketch::PointKey::Start ||
+                 request.drag->point.key == sketch::PointKey::End;
+        if constexpr (std::is_same_v<Type, sketch::BSplineEntity>)
+          return request.drag->point.key == sketch::PointKey::Start ||
+                 request.drag->point.key == sketch::PointKey::End;
         return request.drag->point.key == sketch::PointKey::Center;
       },
       *found);
@@ -87,7 +116,7 @@ Result<void> validateRequest(const SketchRequest &request) {
 
 std::size_t parameterCount(const sketch::Entity &entity) {
   return std::visit(
-      []<typename Entity>(const Entity &) {
+      []<typename Entity>(const Entity &value) {
         using Type = std::decay_t<Entity>;
         if constexpr (std::is_same_v<Type, sketch::PointEntity>)
           return std::size_t{2};
@@ -95,6 +124,13 @@ std::size_t parameterCount(const sketch::Entity &entity) {
           return std::size_t{4};
         if constexpr (std::is_same_v<Type, sketch::CircleEntity>)
           return std::size_t{3};
+        if constexpr (std::is_same_v<Type, sketch::EllipticalArcEntity> ||
+                      std::is_same_v<Type, sketch::HyperbolicArcEntity>)
+          return std::size_t{7};
+        if constexpr (std::is_same_v<Type, sketch::ParabolicArcEntity>)
+          return std::size_t{6};
+        if constexpr (std::is_same_v<Type, sketch::BSplineEntity>)
+          return value.controlPoints.size() * 3U;
         return std::size_t{5};
       },
       entity);

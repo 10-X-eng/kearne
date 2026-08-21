@@ -1,5 +1,5 @@
 #include "application_context.hpp"
-#include "development_frontend_port.hpp"
+#include "desktop_controller.hpp"
 #include "local_sketch_session.hpp"
 #include "navigation_device.hpp"
 #include "observation_controller.hpp"
@@ -41,15 +41,21 @@ themeOptions(const kearne::ui::ThemeManager &themes) {
 
 kearne::ui::LocalSketchSessionConfig localSketchSessionConfig() {
   QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+  const QDir applicationDirectory{QCoreApplication::applicationDirPath()};
+  QString runtimeRoot = applicationDirectory.filePath(QStringLiteral("python"));
+  if (!QDir{runtimeRoot}.exists())
+    runtimeRoot = applicationDirectory.filePath(
+        QStringLiteral("../share/kearne/python"));
   QStringList pythonPaths{
-      QStringLiteral(KEARNE_LOCAL_SDK_ROOT),
-      QStringLiteral(KEARNE_LOCAL_GENERATED_PYTHON_ROOT),
+      QDir{runtimeRoot}.filePath(QStringLiteral("sdk")),
+      QDir{runtimeRoot}.filePath(QStringLiteral("generated")),
   };
-  const QString inherited = environment.value(QStringLiteral("PYTHONPATH"));
-  if (!inherited.isEmpty())
-    pythonPaths.push_back(inherited);
   environment.insert(QStringLiteral("PYTHONPATH"),
                      pythonPaths.join(QDir::listSeparator()));
+  environment.insert(QStringLiteral("PYTHONNOUSERSITE"), QStringLiteral("1"));
+  environment.insert(QStringLiteral("PYTHONDONTWRITEBYTECODE"),
+                     QStringLiteral("1"));
+  environment.remove(QStringLiteral("PYTHONHOME"));
   return {
       QStringLiteral(KEARNE_LOCAL_PYTHON),
       {QStringLiteral("-m"), QStringLiteral("kearne._worker")},
@@ -160,9 +166,9 @@ int main(int argc, char *argv[]) {
   kearne::ui::NavigationDevice navigationDevice(navigationRouter);
   const bool useDesignEngine =
       !parser.isSet(captureOption) || parser.isSet(designEngineOption);
-  std::unique_ptr<kearne::ui::FrontendPort> frontend =
+  std::unique_ptr<kearne::ui::FrontendController> frontend =
       useDesignEngine
-          ? kearne::ui::makeLocalFrontendPort(
+          ? kearne::ui::makeDesktopController(
                 std::make_unique<kearne::ui::LocalSketchSession>(
                     localSketchSessionConfig()),
                 themeOptions(themes), themes.selectionId(),
@@ -171,7 +177,7 @@ int main(int argc, char *argv[]) {
                 preferences.value(QStringLiteral("interface-density"))
                     .toString(),
                 navigationProfile, zoomDirection)
-          : kearne::ui::makeDevelopmentFrontendPort(
+          : kearne::ui::makeCaptureDesktopController(
                 themeOptions(themes), themes.selectionId(),
                 preferences.value(QStringLiteral("default-length-unit"))
                     .toString(),
@@ -216,7 +222,7 @@ int main(int argc, char *argv[]) {
   session.selectInspectorPage(parser.value(inspectorOption));
   session.selectSettingsCategory(parser.value(settingsCategoryOption));
   if (parser.isSet(stateOption))
-    session.requestCommand(QStringLiteral("development.state.") +
+    session.requestCommand(QStringLiteral("capture.state.") +
                            parser.value(stateOption));
   workspaceState.selectWorkspace(session.activeWorkspaceId());
   QObject::connect(&session, &kearne::ui::UiSession::projectionChanged,

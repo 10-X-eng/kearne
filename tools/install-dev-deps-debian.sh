@@ -26,6 +26,9 @@ fi
     clang-format-19 \
     clang-tidy-19 \
     cmake \
+    libocct-foundation-dev \
+    libocct-modeling-algorithms-dev \
+    libocct-modeling-data-dev \
     libspnav-dev \
     libvulkan-dev \
     libyaml-cpp-dev \

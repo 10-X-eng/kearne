@@ -1,5 +1,6 @@
 #include "local_sketch_session.hpp"
 #include "sketch_gesture_preview.hpp"
+#include "sketch_tool_fixture.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -110,25 +111,47 @@ int main(int argc, char **argv) {
   std::vector<double> warmCreate;
   std::vector<double> warmRectangle;
   std::vector<double> dispatch;
-  std::vector<double> dragPreview;
   loadedCreate.reserve(samples);
   warmCreate.reserve(samples);
   warmRectangle.reserve(samples);
   dispatch.reserve(samples * 3U);
-  dragPreview.reserve(previewSamples);
 
-  ui::SketchGesturePreview preview;
-  for (std::size_t sample = 0; sample < previewSamples; ++sample) {
-    QElapsedTimer elapsed;
-    elapsed.start();
-    require(preview.updateDrag(QStringLiteral("sketch.rectangle"), -40.0, -25.0,
-                               40.0 + static_cast<double>(sample) * 0.001, 25.0,
-                               false),
-            "rectangle drag preview update was rejected");
-    dragPreview.push_back(static_cast<double>(elapsed.nsecsElapsed()) / 1.0e6);
+  double worstGesturePreview = 0.0;
+  for (const ui::LocalSketchToolDefinition &definition :
+       ui::localSketchToolDefinitions()) {
+    const auto canonical = ui::test::definingSketchToolPoints(definition.kind);
+    std::vector<QPointF> points;
+    points.reserve(canonical.size());
+    for (const ui::LocalSketchToolPoint point : canonical)
+      points.push_back({point.xMetres * 1'000.0, point.yMetres * 1'000.0});
+    std::vector<double> timings;
+    timings.reserve(previewSamples);
+    ui::SketchGesturePreview preview;
+    for (std::size_t sample = 0; sample < previewSamples; ++sample) {
+      points.back().rx() += 0.001;
+      QElapsedTimer elapsed;
+      elapsed.start();
+      require(preview.updateGesture(
+                  QString::fromLatin1(
+                      definition.commandId.data(),
+                      static_cast<qsizetype>(definition.commandId.size())),
+                  points, false,
+                  QString::fromLatin1(
+                      definition.methodId.data(),
+                      static_cast<qsizetype>(definition.methodId.size())),
+                  false,
+                  definition.kind == ui::LocalSketchToolKind::RegularPolygon
+                      ? 9U
+                      : 0U,
+                  3U),
+              "catalog gesture preview update was rejected");
+      timings.push_back(static_cast<double>(elapsed.nsecsElapsed()) / 1.0e6);
+    }
+    const double p95 = percentile95(timings);
+    worstGesturePreview = std::max(worstGesturePreview, p95);
+    require(preview.visible() && !preview.inputPoints().empty() && p95 <= 16.7,
+            "catalog gesture preview projection exceeded 16.7 ms p95");
   }
-  require(preview.visible() && preview.first() == QPointF(-40.0, -25.0),
-          "rectangle drag preview projection is invalid");
 
   for (std::size_t sample = 0; sample < samples; ++sample) {
     ui::LocalSketchSession session{config()};
@@ -161,8 +184,10 @@ int main(int argc, char **argv) {
     double rectangleDispatch = 0.0;
     auto [rectangle, rectangleElapsed] = await(
         [&session](ui::LocalSketchSession::Completion completion) {
-          return session.applyRectangle({-0.04, -0.025, 0.04, 0.025, false},
-                                        std::move(completion));
+          return session.applyTool({ui::LocalSketchToolKind::Rectangle,
+                                    {{-0.04, -0.025}, {0.04, 0.025}},
+                                    false},
+                                   std::move(completion));
         },
         rectangleDispatch);
     require(rectangle && rectangle->scene &&
@@ -177,7 +202,8 @@ int main(int argc, char **argv) {
   print("warm_new_sketch", warmCreate);
   print("warm_rectangle", warmRectangle);
   print("dispatch", dispatch);
-  print("drag_preview_update", dragPreview);
+  std::cout << "catalog_gesture_preview_worst_p95_ms=" << worstGesturePreview
+            << '\n';
   require(percentile95(loadedCreate) <= 500.0,
           "loaded New Sketch exceeded 500 ms p95");
   require(percentile95(warmCreate) <= 150.0,
@@ -186,7 +212,5 @@ int main(int argc, char **argv) {
           "warm rectangle exceeded 100 ms p95");
   require(percentile95(dispatch) <= 100.0,
           "operation acknowledgement exceeded 100 ms p95");
-  require(percentile95(dragPreview) <= 16.7,
-          "drag preview projection exceeded 16.7 ms p95");
   return 0;
 }

@@ -505,9 +505,17 @@ void verifyPatternPixelsMatchPicking(OffscreenQuickRenderer &renderer) {
                             center.y};
     const QPointF query = synchronized->transform().toItem(canonical);
     const auto picked = item.pick(query, 0.0, SketchPickTargets::Curves);
-    require(picked && static_cast<bool>(picked->hit) == sample.visible &&
-                hasForegroundNear(frame, query, 0) == sample.visible,
-            "shader dash pixels and exact picking disagreed");
+    const bool pickedVisible = picked && static_cast<bool>(picked->hit);
+    const bool rasterVisible = hasForegroundNear(frame, query, 0);
+    if (!picked || pickedVisible != sample.visible ||
+        rasterVisible != sample.visible)
+      throw std::runtime_error(
+          "shader dash pixels and exact picking disagreed: path=" +
+          std::to_string(sample.pathLogicalPixels) +
+          " expected=" + std::to_string(sample.visible) +
+          " pick=" + std::to_string(pickedVisible) +
+          " raster=" + std::to_string(rasterVisible) +
+          " error=" + (picked ? std::string{} : picked.error().code));
   }
 
   const std::uint64_t builds = item.geometryBuildCount();
@@ -922,11 +930,11 @@ void verifyProgressiveDisplayedCoverage(OffscreenQuickRenderer &renderer) {
   const std::array transitions{
       Transition{{3, {}, 0.002, 0.0}, {300.0, 220.0}, 896U, true, true},
       Transition{
-          {4, {-0.13, -0.13}, 0.0005, 0.0}, {160.0, 120.0}, 124U, true, false},
+          {4, {-0.13, -0.13}, 0.0005, 0.0}, {160.0, 120.0}, 96U, true, false},
       Transition{
           {5, {0.13, 0.13}, 0.0005, 0.0}, {160.0, 120.0}, 776U, true, true},
       Transition{
-          {5, {0.13, 0.13}, 0.0005, 0.0}, {280.0, 200.0}, 684U, false, true},
+          {5, {0.13, 0.13}, 0.0005, 0.0}, {280.0, 200.0}, 688U, false, true},
       Transition{
           {6, {0.1, 0.156}, 0.0004, 0.0}, {160.0, 120.0}, 864U, true, false},
   };

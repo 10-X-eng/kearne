@@ -7,9 +7,9 @@
 namespace kearne::ui {
 
 [[nodiscard]] Result<std::shared_ptr<const render::SketchSceneSnapshot>>
-makeDevelopmentSketchScene();
+makeSampleSketchScene();
 
 [[nodiscard]] Result<std::shared_ptr<const render::SketchSceneSnapshot>>
-makeDevelopmentSketchScene(render::SceneStamp stamp);
+makeSampleSketchScene(render::SceneStamp stamp);
 
 } // namespace kearne::ui

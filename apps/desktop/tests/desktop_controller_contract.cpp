@@ -1,4 +1,4 @@
-#include "development_frontend_port.hpp"
+#include "desktop_controller.hpp"
 #include "sketch_gesture_preview.hpp"
 
 #include <QCoreApplication>
@@ -6,6 +6,7 @@
 #include <QSet>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -20,7 +21,7 @@ using kearne::ui::CommandDraftRequest;
 using kearne::ui::CommandDraftState;
 using kearne::ui::FieldKind;
 using kearne::ui::FieldValue;
-using kearne::ui::FrontendPort;
+using kearne::ui::FrontendController;
 using kearne::ui::FrontendSnapshot;
 using kearne::ui::ParameterEditRequest;
 using kearne::ui::PreferenceKind;
@@ -78,7 +79,7 @@ bool commandAvailable(const std::vector<CommandDescriptor> &commands,
   return command != commands.end() && command->available;
 }
 
-void verifyImmutablePublication(FrontendPort &port) {
+void verifyImmutablePublication(FrontendController &port) {
   const auto first = port.snapshot();
   const auto duplicate = port.snapshot();
   require(first && duplicate == first,
@@ -159,9 +160,15 @@ void verifySnapshot(const FrontendSnapshot &snapshot) {
               "sketch projection contains a non-finite point");
     require(primitive.pointKeys.size() == primitive.points.size(),
             "sketch projection point keys are incomplete");
-    requireUniqueIds(
-        primitive.pointKeys, [](const auto &key) { return key; },
-        "sketch projection point key is empty or duplicated");
+    if (primitive.kind == kearne::ui::SketchPrimitiveKind::BSpline) {
+      require(primitive.pointKeys.front() == QStringLiteral("start") &&
+                  primitive.pointKeys.back() == QStringLiteral("end"),
+              "B-spline semantic endpoints are missing");
+    } else {
+      requireUniqueIds(
+          primitive.pointKeys, [](const auto &key) { return key; },
+          "sketch projection point key is empty or duplicated");
+    }
   }
   for (const CommandDescriptor &command : snapshot.commands) {
     require(containsCommand(snapshot.commandCatalog, command.id),
@@ -178,7 +185,7 @@ void verifySnapshot(const FrontendSnapshot &snapshot) {
   }
 }
 
-void verifySketchInteractionContracts(FrontendPort &port) {
+void verifySketchInteractionContracts(FrontendController &port) {
   port.selectEntity(QStringLiteral("contract.entity"));
   port.selectWorkspace(QStringLiteral("sketch"));
   require(!port.snapshot()->sketchEditing &&
@@ -240,27 +247,29 @@ void verifySketchInteractionContracts(FrontendPort &port) {
                 "sketch input ignored its selection predicate");
     }
 
+    std::size_t entityIndex = 0U;
     for (int index = 0; index < interaction.minimumInputCount; ++index) {
       snapshot = *port.snapshot();
+      const auto &currentInteraction = snapshot.sketchInteraction;
       SketchInputRequest input{
           command.id,
           snapshot.projectRevision,
-          interaction.inputKind,
+          currentInteraction.inputKind,
           {0.01 * index, 0.01 * (index + 1)},
           {},
           {},
       };
-      if (interaction.inputKind == SketchInputKind::Entity) {
-        require(static_cast<std::size_t>(index) <
-                    snapshot.sketchProjection.primitives.size(),
+      if (currentInteraction.inputKind == SketchInputKind::Entity) {
+        require(entityIndex < snapshot.sketchProjection.primitives.size(),
                 "sketch fixture has too few selectable entities");
-        input.entityId = snapshot.sketchProjection.primitives[index].id;
-        const auto &sequence = interaction.selectionSequence;
+        input.entityId = snapshot.sketchProjection.primitives[entityIndex++].id;
+        const auto &sequence = currentInteraction.selectionSequence;
         const SketchSelectionKind selection =
             sequence.empty()
                 ? SketchSelectionKind::Any
-                : sequence[std::min(static_cast<std::size_t>(index),
-                                    sequence.size() - 1)];
+                : sequence[std::min(
+                      static_cast<std::size_t>(currentInteraction.inputCount),
+                      sequence.size() - 1)];
         if (selection == SketchSelectionKind::Point)
           input.subElementKey =
               snapshot.sketchProjection.primitives[index].pointKeys.front();
@@ -306,7 +315,7 @@ void verifySketchInteractionContracts(FrontendPort &port) {
           "workspace navigation changed the selected design object");
 }
 
-void verifyParameterEditing(FrontendPort &port) {
+void verifyParameterEditing(FrontendController &port) {
   const FrontendSnapshot before = *port.snapshot();
   require(!before.parameters.empty(), "parameter projection is empty");
   const auto parameter = before.parameters.front();
@@ -337,7 +346,7 @@ void verifyParameterEditing(FrontendPort &port) {
           "unknown parameter edit was accepted");
 }
 
-void verifyDeclaredTransitions(FrontendPort &port) {
+void verifyDeclaredTransitions(FrontendController &port) {
   FrontendSnapshot snapshot = *port.snapshot();
   verifySnapshot(snapshot);
 
@@ -398,7 +407,7 @@ void verifyDeclaredTransitions(FrontendPort &port) {
           "entity selection exposed machine-facing inspector fields");
 }
 
-void verifyCommandDraftContracts(FrontendPort &port) {
+void verifyCommandDraftContracts(FrontendController &port) {
   const std::vector<CommandDescriptor> catalog =
       port.snapshot()->commandCatalog;
   for (const CommandDescriptor &command : catalog) {
@@ -476,7 +485,7 @@ void verifyCommandDraftContracts(FrontendPort &port) {
   }
 }
 
-void verifySettings(FrontendPort &port) {
+void verifySettings(FrontendController &port) {
   FrontendSnapshot snapshot = *port.snapshot();
   std::vector<QString> preferenceIds;
   preferenceIds.reserve(snapshot.preferences.size());
@@ -519,10 +528,10 @@ void verifySettings(FrontendPort &port) {
   }
 }
 
-void verifySourceEditing(FrontendPort &port) {
+void verifySourceEditing(FrontendController &port) {
   FrontendSnapshot before = *port.snapshot();
   require(before.sourceEditingAvailable,
-          "development port does not expose source editing");
+          "capture controller does not expose source editing");
   const QString proposed =
       before.modelSource + QStringLiteral("\n# contract revision\n");
   const SourceEditRequest request{
@@ -558,25 +567,39 @@ void verifyGesturePreview() {
   int changes = 0;
   QObject::connect(&preview, &kearne::ui::SketchGesturePreview::previewChanged,
                    [&changes] { ++changes; });
-  require(!preview.updateDrag(QStringLiteral("sketch.circle"), 0.0, 0.0, 40.0,
-                              25.0, false) &&
+  const std::array dragPoints{QPointF{0.0, 0.0}, QPointF{40.0, 25.0}};
+  require(!preview.updateGesture(QStringLiteral("sketch.unknown"), dragPoints,
+                                 false) &&
               !preview.visible() && changes == 0,
-          "unsupported drag preview changed transient state");
-  require(preview.updateDrag(QStringLiteral("sketch.rectangle"), -40.0, -25.0,
-                             40.0, 25.0, true) &&
-              preview.visible() && preview.construction() &&
-              preview.first() == QPointF(-40.0, -25.0) &&
-              preview.second() == QPointF(40.0, -25.0) &&
-              preview.third() == QPointF(40.0, 25.0) &&
-              preview.fourth() == QPointF(-40.0, 25.0) && changes == 1,
-          "rectangle drag preview did not project its four corners");
-  require(preview.updateDrag(QStringLiteral("sketch.rectangle"), -40.0, -25.0,
-                             40.0, 25.0, true) &&
+          "unknown gesture preview changed transient state");
+  require(preview.updateGesture(QStringLiteral("sketch.circle"), dragPoints,
+                                false, QStringLiteral("center-radius")) &&
+              preview.primitives().size() == 1U &&
+              preview.primitives().front().kind ==
+                  kearne::ui::SketchPrimitiveKind::Circle &&
+              preview.measurements().size() == 1U &&
               changes == 1,
-          "unchanged drag preview emitted redundant work");
+          "circle drag preview did not use shared provisional geometry");
   preview.clear();
-  require(!preview.visible() && changes == 2,
-          "drag preview did not clear exactly once");
+  const std::array rectanglePoints{QPointF{-40.0, -25.0},
+                                   QPointF{40.0, 25.0}};
+  require(preview.updateGesture(QStringLiteral("sketch.rectangle"),
+                                rectanglePoints, true,
+                                QStringLiteral("corner")) &&
+              preview.visible() && preview.construction() &&
+              std::ranges::equal(preview.inputPoints(), rectanglePoints) &&
+              preview.primitives().size() == 4U &&
+              preview.measurements().size() == 2U && changes == 3,
+          "rectangle gesture preview did not project geometry and sizes");
+  require(preview.updateGesture(QStringLiteral("sketch.rectangle"),
+                                rectanglePoints, true,
+                                QStringLiteral("corner")) &&
+              changes == 3,
+          "unchanged gesture preview emitted redundant work");
+  preview.clear();
+  require(!preview.visible() && preview.primitives().empty() &&
+              preview.measurements().empty() && changes == 4,
+          "gesture preview did not clear exactly once");
 }
 
 } // namespace
@@ -589,7 +612,7 @@ int main(int argc, char *argv[]) {
         {QStringLiteral("light"), QStringLiteral("Light")},
         {QStringLiteral("dark"), QStringLiteral("Dark")},
     };
-    auto port = kearne::ui::makeDevelopmentFrontendPort(
+    auto port = kearne::ui::makeCaptureDesktopController(
         std::move(themes), QStringLiteral("light"), QStringLiteral("mm"),
         QStringLiteral("compact"), QStringLiteral("fusion"),
         QStringLiteral("standard"));

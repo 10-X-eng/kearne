@@ -133,7 +133,7 @@ scene(std::size_t count, std::uint64_t seed, render::SceneStamp sceneStamp) {
         *handle,
         static_cast<std::uint32_t>(points.size()),
         static_cast<std::uint16_t>(index % 5U),
-        static_cast<render::SketchPrimitiveKind>(index % 4U + 1U),
+        static_cast<render::SketchPrimitiveKind>(index % 8U + 1U),
         render::SketchPrimitiveFlags::Visible |
             render::SketchPrimitiveFlags::Selectable,
         0.0,
@@ -162,6 +162,39 @@ scene(std::size_t count, std::uint64_t seed, render::SceneStamp sceneStamp) {
       primitive.sweepAngleRadians =
           random.between(0.2, 5.5) * (index % 2U == 0U ? 1.0 : -1.0);
       break;
+    case render::SketchPrimitiveKind::Ellipse:
+    case render::SketchPrimitiveKind::EllipticalArc:
+      points.push_back(center);
+      primitive.radius = random.between(0.004, 0.008);
+      primitive.secondaryRadius = random.between(0.001, primitive.radius);
+      primitive.rotationAngleRadians =
+          random.between(-std::numbers::pi, std::numbers::pi);
+      if (primitive.kind == render::SketchPrimitiveKind::EllipticalArc) {
+        primitive.startAngleRadians =
+            random.between(-std::numbers::pi, std::numbers::pi);
+        primitive.sweepAngleRadians =
+            random.between(0.2, 5.5) * (index % 2U == 0U ? 1.0 : -1.0);
+      }
+      break;
+    case render::SketchPrimitiveKind::HyperbolicArc:
+      points.push_back(center);
+      primitive.radius = random.between(0.003, 0.006);
+      primitive.secondaryRadius = random.between(0.002, 0.008);
+      primitive.rotationAngleRadians =
+          random.between(-std::numbers::pi, std::numbers::pi);
+      primitive.startAngleRadians = random.between(-1.2, -0.2);
+      primitive.sweepAngleRadians = random.between(0.4, 2.4);
+      break;
+    case render::SketchPrimitiveKind::ParabolicArc:
+      points.push_back(center);
+      primitive.radius = random.between(0.003, 0.006);
+      primitive.rotationAngleRadians =
+          random.between(-std::numbers::pi, std::numbers::pi);
+      primitive.startAngleRadians = random.between(-0.008, -0.001);
+      primitive.sweepAngleRadians = random.between(0.002, 0.016);
+      break;
+    case render::SketchPrimitiveKind::BSpline:
+      throw std::runtime_error("generic desktop fixture selected B-spline");
     }
     primitives.push_back(primitive);
   }

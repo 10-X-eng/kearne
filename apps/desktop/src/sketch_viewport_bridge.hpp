@@ -7,14 +7,21 @@
 
 #include <QObject>
 
+#include <array>
 #include <chrono>
 #include <memory>
+#include <optional>
+#include <span>
+#include <utility>
+#include <vector>
 
 class QQuickItem;
 
 namespace kearne::ui {
 
 class UiSession;
+struct SketchPickSelection;
+struct SketchPrimitiveProjection;
 
 // Publishes the frontend's immutable Sketch scene to one native Quick item.
 // Geometry preparation stays off the UI thread; the bridge only validates and
@@ -39,8 +46,13 @@ private:
                        SketchCameraController &camera);
 
   [[nodiscard]] Result<void> initialize();
+  [[nodiscard]] Result<void> publishProjection();
   [[nodiscard]] Result<void> publishScene();
+  [[nodiscard]] Result<void> publishProvisional();
   [[nodiscard]] Result<void> publishCamera();
+  [[nodiscard]] Result<void>
+  publishOverlay(std::optional<std::pair<QString, QString>> hover,
+                 std::span<const QString> selected);
   void synchronizeGeometry();
   void record(Result<void> result);
 
@@ -51,8 +63,19 @@ private:
   std::unique_ptr<SketchSceneItem> item_;
   std::unique_ptr<SketchScenePublicationController> publication_;
   std::shared_ptr<const render::SketchSceneSnapshot> publishedScene_;
+  std::shared_ptr<const render::SketchPresentationOverlay> overlay_;
+  std::shared_ptr<const render::SketchProvisionalGeometry> provisional_;
+  std::array<render::SketchOverlayRoleSetPtr, 4> overlayRoleSets_;
+  std::optional<std::pair<QString, QString>> hovered_;
+  std::vector<QString> selected_;
+  std::vector<SketchPrimitiveProjection> publishedDraft_;
+  QString provisionalCommand_;
+  std::uint64_t toolInstanceGeneration_ = 0U;
+  std::uint64_t provisionalGeneration_ = 0U;
   std::uint64_t productGeneration_ = 0U;
+  std::uint64_t presentationGeneration_ = 0U;
   Diagnostic lastDiagnostic_;
+  bool presentationPublished_ = false;
   bool stopped_ = false;
 };
 

@@ -17,6 +17,7 @@ enum SketchSourceSection {
   SKETCH_SOURCE_SECTION_UNSPECIFIED = 0;
   SKETCH_SOURCE_SECTION_ENTITIES = 1;
   SKETCH_SOURCE_SECTION_CONSTRAINTS = 2;
+  SKETCH_SOURCE_SECTION_OBJECTS = 3;
 }
 
 message ValidateCommandJob {
@@ -70,12 +71,12 @@ message EditSketchSource {
     stable_name: "worker.sketch.source.edit_batch"
     schema_version: 1
     surface: SURFACE_KIND_WORKER_JOB
-    max_serialized_bytes: 131072
+    max_serialized_bytes: 33553408
   };
   bytes source_utf8 = 1 [(field_rules) = {
     required: true
     min_length: 1
-    max_length: 65536
+    max_length: 8388608
   }];
   string function_name = 2 [(field_rules) = {
     required: true
@@ -89,7 +90,7 @@ message EditSketchSource {
   SketchDefinition target = 4 [(field_rules) = { required: true }];
   repeated SketchSourceEdit edits = 5 [(field_rules) = {
     required: true
-    max_items: 32
+    max_items: 65536
   }];
 }
 
@@ -98,12 +99,12 @@ message ReplaceSketchSource {
     stable_name: "worker.sketch.source.replace"
     schema_version: 1
     surface: SURFACE_KIND_WORKER_JOB
-    max_serialized_bytes: 66048
+    max_serialized_bytes: 8389632
   };
   bytes source_utf8 = 1 [(field_rules) = {
     required: true
     min_length: 1
-    max_length: 65536
+    max_length: 8388608
   }];
   string function_name = 2 [(field_rules) = {
     required: true
@@ -121,7 +122,7 @@ message SketchSourceTransformJob {
     stable_name: "worker.sketch.source.transform"
     schema_version: 1
     surface: SURFACE_KIND_WORKER_JOB
-    max_serialized_bytes: 131328
+    max_serialized_bytes: 33553664
     required_oneof: "operation"
   };
   oneof operation {
@@ -136,12 +137,12 @@ message SketchSourceTransformSuccess {
     stable_name: "worker.sketch.source.success"
     schema_version: 1
     surface: SURFACE_KIND_WIRE
-    max_serialized_bytes: 131328
+    max_serialized_bytes: 33553664
   };
   bytes source_utf8 = 1 [(field_rules) = {
     required: true
     min_length: 1
-    max_length: 65536
+    max_length: 8388608
   }];
   Digest source_digest = 2 [(field_rules) = {
     required: true
@@ -155,7 +156,7 @@ message SketchSourceTransformFailure {
     stable_name: "worker.sketch.source.failure"
     schema_version: 1
     surface: SURFACE_KIND_WIRE
-    max_serialized_bytes: 131072
+    max_serialized_bytes: 33553408
   };
   repeated Diagnostic diagnostics = 1 [(field_rules) = {
     required: true
@@ -168,7 +169,7 @@ message SketchSourceTransformResult {
     stable_name: "worker.sketch.source.result"
     schema_version: 1
     surface: SURFACE_KIND_WIRE
-    max_serialized_bytes: 131328
+    max_serialized_bytes: 33553664
     required_oneof: "outcome"
   };
   oneof outcome {
@@ -182,7 +183,7 @@ message WorkerJobEnvelope {
     stable_name: "worker.job.envelope"
     schema_version: 1
     surface: SURFACE_KIND_WIRE
-    max_serialized_bytes: 132096
+    max_serialized_bytes: 33554432
     required_oneof: "payload"
   };
   UuidV7 worker_instance_id = 1 [(field_rules) = {
@@ -204,7 +205,7 @@ message WorkerResultEnvelope {
     stable_name: "worker.result.envelope"
     schema_version: 1
     surface: SURFACE_KIND_WIRE
-    max_serialized_bytes: 132096
+    max_serialized_bytes: 33554432
     required_oneof: "payload"
   };
   UuidV7 worker_instance_id = 1 [(field_rules) = {

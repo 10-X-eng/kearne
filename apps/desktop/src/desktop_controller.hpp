@@ -9,12 +9,12 @@ namespace kearne::ui {
 
 class LocalSketchSession;
 
-[[nodiscard]] std::unique_ptr<FrontendPort> makeDevelopmentFrontendPort(
+[[nodiscard]] std::unique_ptr<FrontendController> makeCaptureDesktopController(
     std::vector<UiOption> themeOptions, const QString &themeId,
     const QString &defaultLengthUnitId, const QString &interfaceDensityId,
     const QString &navigationProfileId, const QString &zoomDirectionId);
 
-[[nodiscard]] std::unique_ptr<FrontendPort> makeLocalFrontendPort(
+[[nodiscard]] std::unique_ptr<FrontendController> makeDesktopController(
     std::unique_ptr<LocalSketchSession> sketchSession,
     std::vector<UiOption> themeOptions, const QString &themeId,
     const QString &defaultLengthUnitId, const QString &interfaceDensityId,

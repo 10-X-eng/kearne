@@ -301,7 +301,7 @@ Rectangle {
 
                             KButton {
                                 required property var modelData
-                                semanticId: "development.state." + modelData.id
+                                semanticId: "capture.state." + modelData.id
                                 semanticName: "Show " + modelData.label + " state"
                                 semanticValue: modelData.id
                                 iconName: modelData.icon
@@ -310,7 +310,7 @@ Rectangle {
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 48
                                 onClicked: {
-                                    App.ui.requestCommand("development.state." + modelData.id)
+                                    App.ui.requestCommand("capture.state." + modelData.id)
                                     App.ui.navigateTo("editor")
                                 }
                             }

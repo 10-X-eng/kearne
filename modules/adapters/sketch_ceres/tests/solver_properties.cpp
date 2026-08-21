@@ -1,7 +1,9 @@
 #include <kearne/adapters/ceres_sketch_solver.hpp>
+#include <kearne/sketch/nurbs.hpp>
 #include <kearne/testkit/property.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -17,6 +19,7 @@ namespace {
 namespace model = kearne::sketch;
 using kearne::Angle;
 using kearne::ContentDigest;
+using kearne::Dimensionless;
 using kearne::Length;
 using kearne::Quantity;
 using kearne::SketchConstraintId;
@@ -66,6 +69,13 @@ model::AngleValue angle(double value) {
   return *result;
 }
 
+model::DimensionlessValue dimensionless(double value) {
+  auto result = Quantity<Dimensionless>::fromSi(value);
+  if (!result)
+    throw std::runtime_error("invalid test scalar");
+  return *result;
+}
+
 model::Point2 point(double x, double y) { return {length(x), length(y)}; }
 
 model::SolveInput solveInput(model::Definition definition) {
@@ -94,10 +104,11 @@ model::Definition fullyConstrainedPoints(std::uint64_t seed, double originX,
   const SketchEntityId anchor = id<SketchEntityId>(seed + 1);
   const SketchEntityId moving = id<SketchEntityId>(seed + 2);
   return {digest(seed),
+          {},
           {model::PointEntity{anchor, point(originX, originY)},
            model::PointEntity{
                moving, point(originX + deltaX * 0.2, originY - deltaY * 0.3)}},
-          {model::Fixed{id<SketchConstraintId>(seed + 11), anchor},
+          {model::Block{id<SketchConstraintId>(seed + 11), anchor},
            model::HorizontalDistance{id<SketchConstraintId>(seed + 12),
                                      {anchor, model::PointKey::Point},
                                      {moving, model::PointKey::Point},
@@ -128,9 +139,11 @@ model::Definition completeConstraintScene(std::uint64_t seed, double x,
   const SketchEntityId tangentCircle = entity(9);
   const SketchEntityId lineTangentCircle = entity(10);
   const SketchEntityId arc = entity(11);
+  const SketchEntityId mirrored = entity(12);
 
   model::Definition definition{
       digest(seed),
+      {},
       {model::PointEntity{origin, point(x, y)},
        model::PointEntity{midpoint, point(x + extent * 0.5, y)},
        model::LineEntity{horizontal, point(x, y), point(x + extent, y)},
@@ -149,7 +162,8 @@ model::Definition completeConstraintScene(std::uint64_t seed, double x,
        model::CircleEntity{lineTangentCircle,
                            point(x + extent * 0.7, y + radius), length(radius)},
        model::ArcEntity{arc, point(x + extent * 6.0, y), length(radius),
-                        angle(0.0), angle(std::numbers::pi / 2.0)}},
+                        angle(0.0), angle(std::numbers::pi / 2.0)},
+       model::PointEntity{mirrored, point(x - extent * 0.5, y)}},
       {}};
   auto &constraints = definition.constraints;
   constraints = {
@@ -168,7 +182,7 @@ model::Definition completeConstraintScene(std::uint64_t seed, double x,
       model::Equal{constraint(9), firstCircle, equalCircle},
       model::Midpoint{
           constraint(10), {midpoint, model::PointKey::Point}, horizontal},
-      model::Fixed{constraint(11), origin},
+      model::Block{constraint(11), origin},
       model::Collinear{constraint(12), horizontal, collinear},
       model::Distance{constraint(13),
                       {origin, model::PointKey::Point},
@@ -186,12 +200,24 @@ model::Definition completeConstraintScene(std::uint64_t seed, double x,
       model::Diameter{constraint(17), tangentCircle, length(radius * 2.0)},
       model::AngleBetween{constraint(18), horizontal, vertical,
                           angle(std::numbers::pi / 2.0)},
-      model::Radius{constraint(19), arc, length(radius)}};
+      model::Radius{constraint(19), arc, length(radius)},
+      model::PointOnObject{
+          constraint(20), {origin, model::PointKey::Point}, horizontal},
+      model::Symmetric{constraint(21),
+                       {mirrored, model::PointKey::Point},
+                       {midpoint, model::PointKey::Point},
+                       vertical},
+      model::Lock{
+          constraint(22), {origin, model::PointKey::Point}, point(x, y)},
+      model::SymmetricAboutPoint{constraint(23),
+                                 {mirrored, model::PointKey::Point},
+                                 {midpoint, model::PointKey::Point},
+                                 {origin, model::PointKey::Point}}};
   return definition;
 }
 
 model::Definition fixedPointScene(std::uint64_t seed, std::size_t count) {
-  model::Definition definition{digest(seed), {}, {}};
+  model::Definition definition{digest(seed), {}, {}, {}};
   definition.entities.reserve(count);
   definition.constraints.reserve(count);
   for (std::size_t index = 0; index < count; ++index) {
@@ -200,7 +226,7 @@ model::Definition fixedPointScene(std::uint64_t seed, std::size_t count) {
     definition.entities.push_back(model::PointEntity{
         entity, point(static_cast<double>(index % 32U) * 0.01,
                       static_cast<double>(index / 32U) * 0.01)});
-    definition.constraints.push_back(model::Fixed{
+    definition.constraints.push_back(model::Block{
         id<SketchConstraintId>(seed + count + offset + 1), entity});
   }
   return definition;
@@ -212,9 +238,10 @@ model::Definition tangentCircleScene(std::uint64_t seed, double x, double y,
   const SketchEntityId moving = id<SketchEntityId>(seed + 2);
   return {
       digest(seed),
+      {},
       {model::CircleEntity{anchor, point(0.0, 0.0), length(1.0)},
        model::CircleEntity{moving, point(x, y), length(radius)}},
-      {model::Fixed{id<SketchConstraintId>(seed + 11), anchor},
+      {model::Block{id<SketchConstraintId>(seed + 11), anchor},
        model::Radius{id<SketchConstraintId>(seed + 12), moving, length(1.0)},
        model::VerticalDistance{id<SketchConstraintId>(seed + 13),
                                {anchor, model::PointKey::Center},
@@ -368,12 +395,52 @@ void nonlinearSolverContract(const PropertyProfile &baseProfile) {
       });
 }
 
+void rigidGroupContract(const PropertyProfile &baseProfile) {
+  PropertyProfile profile = baseProfile;
+  profile.iterations =
+      std::max<std::uint64_t>(100, baseProfile.iterations / 100);
+  CeresSketchSolver solver;
+  checkProperty(
+      "rigid group preserves shape with three planar freedoms", profile,
+      [&solver](Random &random, std::uint64_t index) {
+        const double extent = random.between(0.01, 10.0);
+        const double offset = random.between(0.01, 10.0);
+        const std::uint64_t seed = 5'800'000 + index * 16U;
+        const SketchEntityId first = id<SketchEntityId>(seed + 1U);
+        const SketchEntityId second = id<SketchEntityId>(seed + 2U);
+        model::Definition definition{
+            digest(seed),
+            {},
+            {model::LineEntity{first, point(0.0, 0.0), point(extent, 0.0)},
+             model::LineEntity{second, point(0.0, offset),
+                               point(extent, offset)}},
+            {model::Group{id<SketchConstraintId>(seed + 3U), {first, second}}}};
+        auto solved = solver.solve(solveInput(definition));
+        require(solved.has_value(), solved ? "" : solved.error().code);
+        require(solved->status == model::SolveStatus::Underconstrained &&
+                    solved->degreesOfFreedom == 3 &&
+                    std::ranges::all_of(solved->residuals,
+                                        &model::ConstraintResidual::satisfied),
+                "rigid group did not preserve exactly three planar freedoms");
+
+        std::ranges::reverse(definition.entities);
+        std::get<model::Group>(definition.constraints.front()).entities = {
+            second, first};
+        auto reordered = solver.solve(solveInput(std::move(definition)));
+        require(reordered.has_value() &&
+                    reordered->status == model::SolveStatus::Underconstrained &&
+                    reordered->degreesOfFreedom == 3,
+                "rigid group depends on entity declaration order");
+      });
+}
+
 void validationAndDegeneracy() {
   const SketchEntityId entity = id<SketchEntityId>(6'000'001);
   const SketchEntityId line = id<SketchEntityId>(6'000'002);
   const SketchEntityId arc = id<SketchEntityId>(6'000'003);
   model::Definition valid{
       digest(6'000'000),
+      {},
       {model::PointEntity{entity, point(0.0, 0.0)},
        model::LineEntity{line, point(0.0, 0.0), point(1.0, 0.0)},
        model::ArcEntity{arc, point(0.0, 0.0), length(1.0), angle(0.0),
@@ -426,6 +493,16 @@ void validationAndDegeneracy() {
   requireError(model::evaluateResiduals(valid, invalidGeometry, {}),
                "sketch.solution.degenerate-arc");
 
+  model::Definition invalidGroup = valid;
+  invalidGroup.constraints = {
+      model::Group{id<SketchConstraintId>(6'000'010), {entity}}};
+  requireError(model::validate(invalidGroup, {}),
+               "sketch.constraint.invalid-group");
+  invalidGroup.constraints = {
+      model::Group{id<SketchConstraintId>(6'000'011), {entity, entity}}};
+  requireError(model::validate(invalidGroup, {}),
+               "sketch.constraint.invalid-group");
+
   CeresSketchSolver solver;
   model::SolveInput withPrior = solveInput(valid);
   withPrior.priorSolution = {
@@ -454,8 +531,8 @@ void rankAndCancellationStress() {
   const std::vector<model::Constraint> independent = deficient.constraints;
   for (std::size_t index = 0; index < independent.size(); ++index) {
     const SketchEntityId selected =
-        std::get<model::Fixed>(independent[index]).entity;
-    deficient.constraints.push_back(model::Fixed{
+        std::get<model::Block>(independent[index]).entity;
+    deficient.constraints.push_back(model::Block{
         id<SketchConstraintId>(7'200'000 + static_cast<std::uint64_t>(index)),
         selected});
   }
@@ -488,7 +565,7 @@ void stateSemantics() {
   CeresSketchSolver solver;
   const SketchEntityId pointId = id<SketchEntityId>(90'001);
   model::Definition free{
-      digest(90'000), {model::PointEntity{pointId, point(1.0, 2.0)}}, {}};
+      digest(90'000), {}, {model::PointEntity{pointId, point(1.0, 2.0)}}, {}};
   auto underconstrained = solver.solve(solveInput(free));
   require(underconstrained.has_value(),
           underconstrained ? "" : underconstrained.error().code);
@@ -507,7 +584,7 @@ void stateSemantics() {
           "drag target was not solved");
 
   free.constraints.push_back(
-      model::Fixed{id<SketchConstraintId>(90'002), pointId});
+      model::Block{id<SketchConstraintId>(90'002), pointId});
   dragged.definition = free;
   auto blocked = solver.solve(dragged);
   require(blocked.has_value(), blocked ? "" : blocked.error().code);
@@ -548,6 +625,227 @@ void stateSemantics() {
           "contradiction was not reported as an approximate conflict");
 }
 
+void exactConicSolverContract() {
+  CeresSketchSolver solver;
+  const SketchEntityId ellipseId = id<SketchEntityId>(110'001);
+  const SketchEntityId arcId = id<SketchEntityId>(110'002);
+  const SketchEntityId hyperbolaId = id<SketchEntityId>(110'003);
+  const SketchEntityId parabolaId = id<SketchEntityId>(110'004);
+  model::Definition free{
+      digest(110'000),
+      {},
+      {model::EllipseEntity{ellipseId, point(0.0, 0.0), length(2.0),
+                            length(0.75), angle(0.25)},
+       model::EllipticalArcEntity{arcId, point(4.0, 1.0), length(1.5),
+                                  length(0.5), angle(-0.4), angle(0.2),
+                                  angle(2.6)},
+       model::HyperbolicArcEntity{hyperbolaId, point(-3.0, 2.0), length(0.8),
+                                  length(1.2), angle(0.6), dimensionless(-0.7),
+                                  dimensionless(1.1)},
+       model::ParabolicArcEntity{parabolaId, point(7.0, -2.0), length(0.65),
+                                 angle(-0.35), length(-1.2), length(1.8)}},
+      {}};
+  auto unconstrained = solver.solve(solveInput(free));
+  require(unconstrained &&
+              unconstrained->status == model::SolveStatus::Underconstrained &&
+              unconstrained->degreesOfFreedom == 25U,
+          "free conic parameter count is incorrect");
+
+  model::Definition fixed = free;
+  fixed.constraints = {
+      model::Block{id<SketchConstraintId>(110'010), ellipseId},
+      model::Block{id<SketchConstraintId>(110'011), arcId},
+      model::Block{id<SketchConstraintId>(110'012), hyperbolaId},
+      model::Block{id<SketchConstraintId>(110'013), parabolaId}};
+  auto blocked = solver.solve(solveInput(fixed));
+  require(blocked && blocked->status == model::SolveStatus::Solved &&
+              blocked->degreesOfFreedom == 0U &&
+              blocked->geometry == free.entities,
+          "blocked conics did not preserve every exact parameter");
+
+  model::SolveInput dragged = solveInput(free);
+  dragged.drag =
+      model::DragTarget{{ellipseId, model::PointKey::Major}, point(2.5, 1.25)};
+  auto moved = solver.solve(dragged);
+  require(moved && moved->status == model::SolveStatus::Underconstrained,
+          "ellipse major-axis drag did not solve");
+  model::Definition movedDefinition = free;
+  movedDefinition.entities = moved->geometry;
+  auto major =
+      model::resolvePoint(movedDefinition, {ellipseId, model::PointKey::Major});
+  require(major && std::abs(major->x.si() - 2.5) <= 1.0e-7 &&
+              std::abs(major->y.si() - 1.25) <= 1.0e-7,
+          "ellipse semantic axis did not follow the drag target");
+
+  model::SolveInput hyperbolaDrag = solveInput(free);
+  hyperbolaDrag.drag = model::DragTarget{{hyperbolaId, model::PointKey::Start},
+                                         point(-2.1, 1.4)};
+  auto movedHyperbola = solver.solve(hyperbolaDrag);
+  require(movedHyperbola &&
+              movedHyperbola->status == model::SolveStatus::Underconstrained,
+          "hyperbolic endpoint drag did not solve");
+  model::Definition movedHyperbolaDefinition = free;
+  movedHyperbolaDefinition.entities = movedHyperbola->geometry;
+  auto hyperbolaStart = model::resolvePoint(
+      movedHyperbolaDefinition, {hyperbolaId, model::PointKey::Start});
+  require(hyperbolaStart && std::hypot(hyperbolaStart->x.si() + 2.1,
+                                       hyperbolaStart->y.si() - 1.4) <= 1.0e-7,
+          "hyperbolic endpoint did not follow the drag target");
+
+  model::SolveInput parabolaDrag = solveInput(free);
+  parabolaDrag.drag = model::DragTarget{{parabolaId, model::PointKey::Focus},
+                                        point(8.0, -1.25)};
+  auto movedParabola = solver.solve(parabolaDrag);
+  require(movedParabola &&
+              movedParabola->status == model::SolveStatus::Underconstrained,
+          "parabolic focus drag did not solve");
+  model::Definition movedParabolaDefinition = free;
+  movedParabolaDefinition.entities = movedParabola->geometry;
+  auto parabolaFocus = model::resolvePoint(
+      movedParabolaDefinition, {parabolaId, model::PointKey::Focus});
+  require(parabolaFocus && std::hypot(parabolaFocus->x.si() - 8.0,
+                                      parabolaFocus->y.si() + 1.25) <= 1.0e-7,
+          "parabolic focus did not follow the drag target");
+
+  const SketchEntityId hyperbolaPoint = id<SketchEntityId>(110'020);
+  const SketchEntityId parabolaPoint = id<SketchEntityId>(110'021);
+  const double hyperbolaParameter = 0.45;
+  const double parabolaParameter = -0.7;
+  model::Definition incidence{
+      digest(110'019),
+      {},
+      {model::HyperbolicArcEntity{hyperbolaId, point(0.0, 0.0), length(2.0),
+                                  length(0.75), angle(0.0), dimensionless(-1.0),
+                                  dimensionless(1.0)},
+       model::ParabolicArcEntity{parabolaId, point(5.0, 0.0), length(0.5),
+                                 angle(0.0), length(-1.0), length(1.0)},
+       model::PointEntity{hyperbolaPoint,
+                          point(2.0 * std::cosh(hyperbolaParameter),
+                                0.75 * std::sinh(hyperbolaParameter))},
+       model::PointEntity{
+           parabolaPoint,
+           point(5.0 + parabolaParameter * parabolaParameter / 2.0,
+                 parabolaParameter)}},
+      {model::Block{id<SketchConstraintId>(110'030), hyperbolaId},
+       model::Block{id<SketchConstraintId>(110'031), parabolaId},
+       model::PointOnObject{id<SketchConstraintId>(110'032),
+                            {hyperbolaPoint, model::PointKey::Point},
+                            hyperbolaId},
+       model::PointOnObject{id<SketchConstraintId>(110'033),
+                            {parabolaPoint, model::PointKey::Point},
+                            parabolaId}}};
+  auto incident = solver.solve(solveInput(incidence));
+  require(incident &&
+              incident->status == model::SolveStatus::Underconstrained &&
+              incident->degreesOfFreedom == 2U &&
+              std::ranges::all_of(incident->residuals,
+                                  &model::ConstraintResidual::satisfied),
+          "exact conic point-on-object constraints are not solved");
+}
+
+void exactBSplineSolverContract() {
+  CeresSketchSolver solver;
+  const SketchEntityId splineId = id<SketchEntityId>(120'001);
+  const SketchEntityId pointId = id<SketchEntityId>(120'002);
+  const std::vector<model::DimensionlessValue> knots{
+      dimensionless(0.0), dimensionless(0.0), dimensionless(0.0),
+      dimensionless(1.0), dimensionless(1.0), dimensionless(1.0)};
+  const std::vector<model::DimensionlessValue> weights{
+      dimensionless(1.0), dimensionless(0.75), dimensionless(1.0)};
+  const model::BSplineEntity spline{
+      splineId,
+      {point(0.0, 0.0), point(1.0, 2.0), point(2.0, 0.0)},
+      knots,
+      weights,
+      2U};
+  model::Definition free{digest(120'000), {}, {spline}, {}};
+
+  auto unconstrained = solver.solve(solveInput(free));
+  require(unconstrained &&
+              unconstrained->status == model::SolveStatus::Underconstrained &&
+              unconstrained->degreesOfFreedom == 9U,
+          "free rational B-spline parameter count is incorrect");
+
+  const SketchEntityId periodicId = id<SketchEntityId>(120'003);
+  const model::BSplineEntity periodic{
+      periodicId,
+      {point(-0.5, 0.38888888888888884), point(0.5, -0.38888888888888884),
+       point(1.142857142857143, -0.19047619047619047), point(1.25, 1.25),
+       point(-0.14285714285714296, 1.190476190476191),
+       point(-0.5, 0.38888888888888884), point(0.5, -0.38888888888888884)},
+      {dimensionless(-2.0), dimensionless(-1.0), dimensionless(0.0),
+       dimensionless(0.0), dimensionless(1.0), dimensionless(2.0),
+       dimensionless(3.0), dimensionless(4.0), dimensionless(4.0),
+       dimensionless(5.0), dimensionless(6.0)},
+      {dimensionless(1.0), dimensionless(1.0), dimensionless(1.0),
+       dimensionless(1.0), dimensionless(1.0), dimensionless(1.0),
+       dimensionless(1.0)},
+      3U,
+      true};
+  model::Definition periodicFree{digest(120'004), {}, {periodic}, {}};
+  auto periodicResult = solver.solve(solveInput(periodicFree));
+  require(periodicResult &&
+              periodicResult->status == model::SolveStatus::Underconstrained &&
+              periodicResult->degreesOfFreedom == 15U &&
+              periodicResult->geometry == periodicFree.entities,
+          "periodic B-spline seam is not an exact intrinsic constraint");
+
+  model::Definition fixed = free;
+  fixed.constraints = {model::Block{id<SketchConstraintId>(120'010), splineId}};
+  auto blocked = solver.solve(solveInput(fixed));
+  require(blocked && blocked->status == model::SolveStatus::Solved &&
+              blocked->degreesOfFreedom == 0U &&
+              blocked->geometry == free.entities,
+          "blocked rational B-spline did not preserve its exact parameters");
+
+  model::SolveInput drag = solveInput(free);
+  drag.drag =
+      model::DragTarget{{splineId, model::PointKey::Start}, point(-0.5, 0.25)};
+  auto moved = solver.solve(drag);
+  require(moved && moved->status == model::SolveStatus::Underconstrained,
+          "B-spline endpoint drag did not solve");
+  model::Definition movedDefinition = free;
+  movedDefinition.entities = moved->geometry;
+  auto start =
+      model::resolvePoint(movedDefinition, {splineId, model::PointKey::Start});
+  require(start &&
+              std::hypot(start->x.si() + 0.5, start->y.si() - 0.25) <= 1.0e-7,
+          "B-spline endpoint did not follow the drag target");
+
+  const std::array<double, 6U> coordinates{0.0, 0.0, 1.0, 2.0, 2.0, 0.0};
+  const std::array<double, 6U> plainKnots{0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
+  const std::array<double, 3U> plainWeights{1.0, 0.75, 1.0};
+  const model::NurbsPoint incidentPoint =
+      model::evaluateNurbs({coordinates, plainKnots, plainWeights, 2U}, 0.37);
+  model::Definition incidence{
+      digest(120'020),
+      {},
+      {spline, model::PointEntity{pointId, point(incidentPoint.x + 0.1,
+                                                 incidentPoint.y + 0.15)}},
+      {model::Block{id<SketchConstraintId>(120'021), splineId},
+       model::PointOnObject{id<SketchConstraintId>(120'022),
+                            {pointId, model::PointKey::Point},
+                            splineId}}};
+  auto incident = solver.solve(solveInput(incidence));
+  const std::string incidenceState =
+      !incident
+          ? incident.error().code
+          : "status=" + std::to_string(static_cast<int>(incident->status)) +
+                ", dof=" + std::to_string(incident->degreesOfFreedom) +
+                ", residual=" +
+                (incident->residuals.empty()
+                     ? std::string{"missing"}
+                     : std::to_string(
+                           incident->residuals.back().normalizedMaximum));
+  require(incident &&
+              incident->status == model::SolveStatus::Underconstrained &&
+              incident->degreesOfFreedom == 1U &&
+              std::ranges::all_of(incident->residuals,
+                                  &model::ConstraintResidual::satisfied),
+          "exact rational B-spline point-on-object constraint did not solve: " +
+              incidenceState);
+}
+
 } // namespace
 
 int main() {
@@ -557,9 +855,12 @@ int main() {
     solverContract(profile);
     generatedScaleAndOrderStress(profile);
     nonlinearSolverContract(profile);
+    rigidGroupContract(profile);
     validationAndDegeneracy();
     rankAndCancellationStress();
     stateSemantics();
+    exactConicSolverContract();
+    exactBSplineSolverContract();
     return 0;
   } catch (const std::exception &error) {
     std::fprintf(stderr, "%s\n", error.what());

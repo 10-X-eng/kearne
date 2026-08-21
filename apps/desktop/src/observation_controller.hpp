@@ -7,7 +7,10 @@
 #include <QString>
 #include <QStringList>
 
+#include <chrono>
 #include <functional>
+#include <memory>
+#include <optional>
 
 class QQuickWindow;
 
@@ -27,9 +30,17 @@ public:
                         QList<QJsonObject> operations,
                         std::function<bool()> presentationCurrent,
                         QObject *parent);
+  ~ObservationController() override;
 
 private:
+  struct PendingPointerMotion;
+
+  void framePresented();
   void performNextOperation();
+  void continuePointerMotion();
+  void capturePreviewImage();
+  void recordPresentedState();
+  void finishActiveReceipt();
   void capture();
 
   QQuickWindow &window_;
@@ -43,7 +54,13 @@ private:
   int presentedFrames_ = 0;
   int settledFrames_ = 0;
   QByteArray lastFrameFingerprint_;
+  std::unique_ptr<PendingPointerMotion> pointerMotion_;
+  std::optional<qsizetype> activeReceipt_;
+  std::optional<std::chrono::steady_clock::time_point> actionStarted_;
+  std::optional<std::chrono::steady_clock::time_point> inputCompleted_;
   bool actionScheduled_ = false;
+  bool pointerStepScheduled_ = false;
+  bool pointerPreviewCapturePending_ = false;
   bool captureScheduled_ = false;
 };
 

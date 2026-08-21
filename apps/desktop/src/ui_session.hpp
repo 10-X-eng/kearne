@@ -9,9 +9,11 @@
 #include <QVariantMap>
 #include <QtQml/qqmlregistration.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace kearne::ui {
@@ -20,134 +22,155 @@ struct SketchPickSelection {
   QString entityId;
   QString pointKey;
   QPointF closestPointMillimeters;
+  bool operator==(const SketchPickSelection &) const = default;
 };
 
 using SketchPickHandler = std::function<std::optional<SketchPickSelection>(
     QPointF itemPoint, double tolerancePixels, SketchSelectionKind targets)>;
+using SketchHoverHandler =
+    std::function<void(std::optional<SketchPickSelection>)>;
 
 class UiSession : public QObject {
   Q_OBJECT
   QML_NAMED_ELEMENT(UiSession)
   QML_UNCREATABLE("Available through App.ui")
   Q_PROPERTY(qulonglong generation READ generation NOTIFY projectionChanged)
-  Q_PROPERTY(QString projectName READ projectName NOTIFY projectionChanged)
-  Q_PROPERTY(QString branchLabel READ branchLabel NOTIFY projectionChanged)
-  Q_PROPERTY(QString revisionLabel READ revisionLabel NOTIFY projectionChanged)
   Q_PROPERTY(
-      QString projectRevision READ projectRevision NOTIFY projectionChanged)
+      QString projectName READ projectName NOTIFY projectProjectionChanged)
   Q_PROPERTY(
-      QString activeWorkspaceId READ activeWorkspaceId NOTIFY projectionChanged)
+      QString branchLabel READ branchLabel NOTIFY projectProjectionChanged)
   Q_PROPERTY(
-      QString activeCommandId READ activeCommandId NOTIFY projectionChanged)
-  Q_PROPERTY(bool sketchEditing READ sketchEditing NOTIFY projectionChanged)
+      QString revisionLabel READ revisionLabel NOTIFY projectProjectionChanged)
+  Q_PROPERTY(QString projectRevision READ projectRevision NOTIFY
+                 projectProjectionChanged)
+  Q_PROPERTY(QString activeWorkspaceId READ activeWorkspaceId NOTIFY
+                 navigationProjectionChanged)
+  Q_PROPERTY(QString activeCommandId READ activeCommandId NOTIFY
+                 commandProjectionChanged)
   Q_PROPERTY(
-      QString commandDraftState READ commandDraftState NOTIFY projectionChanged)
+      bool sketchEditing READ sketchEditing NOTIFY sketchProjectionChanged)
+  Q_PROPERTY(QString commandDraftState READ commandDraftState NOTIFY
+                 commandProjectionChanged)
   Q_PROPERTY(QString commandDraftBaseRevision READ commandDraftBaseRevision
-                 NOTIFY projectionChanged)
+                 NOTIFY commandProjectionChanged)
   Q_PROPERTY(bool commandPreviewSupported READ commandPreviewSupported NOTIFY
-                 projectionChanged)
+                 commandProjectionChanged)
   Q_PROPERTY(bool commandApplySupported READ commandApplySupported NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(
-      QString activeSurfaceId READ activeSurfaceId NOTIFY projectionChanged)
+                 commandProjectionChanged)
+  Q_PROPERTY(QString activeSurfaceId READ activeSurfaceId NOTIFY
+                 navigationProjectionChanged)
   Q_PROPERTY(QString settingsCategoryId READ settingsCategoryId NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(int inspectorPage READ inspectorPage NOTIFY projectionChanged)
-  Q_PROPERTY(QString viewportState READ viewportState NOTIFY projectionChanged)
+                 navigationProjectionChanged)
   Q_PROPERTY(
-      QString inspectorTitle READ inspectorTitle NOTIFY projectionChanged)
+      int inspectorPage READ inspectorPage NOTIFY navigationProjectionChanged)
   Q_PROPERTY(
-      QString inspectorStatus READ inspectorStatus NOTIFY projectionChanged)
+      QString viewportState READ viewportState NOTIFY sketchProjectionChanged)
+  Q_PROPERTY(QString inspectorTitle READ inspectorTitle NOTIFY
+                 commandProjectionChanged)
+  Q_PROPERTY(QString inspectorStatus READ inspectorStatus NOTIFY
+                 commandProjectionChanged)
+  Q_PROPERTY(QString viewportHeadline READ viewportHeadline NOTIFY
+                 commandProjectionChanged)
+  Q_PROPERTY(QString viewportDetail READ viewportDetail NOTIFY
+                 commandProjectionChanged)
   Q_PROPERTY(
-      QString viewportHeadline READ viewportHeadline NOTIFY projectionChanged)
+      QString modelHealth READ modelHealth NOTIFY projectProjectionChanged)
+  Q_PROPERTY(QString selectionSummary READ selectionSummary NOTIFY
+                 projectProjectionChanged)
   Q_PROPERTY(
-      QString viewportDetail READ viewportDetail NOTIFY projectionChanged)
-  Q_PROPERTY(QString modelHealth READ modelHealth NOTIFY projectionChanged)
+      QString agentStatus READ agentStatus NOTIFY activityProjectionChanged)
   Q_PROPERTY(
-      QString selectionSummary READ selectionSummary NOTIFY projectionChanged)
-  Q_PROPERTY(QString agentStatus READ agentStatus NOTIFY projectionChanged)
-  Q_PROPERTY(QString modelSource READ modelSource NOTIFY projectionChanged)
+      QString modelSource READ modelSource NOTIFY projectProjectionChanged)
   Q_PROPERTY(QVariantMap selectedFunction READ selectedFunction NOTIFY
-                 projectionChanged)
+                 projectProjectionChanged)
   Q_PROPERTY(QString defaultLengthUnitId READ defaultLengthUnitId NOTIFY
-                 projectionChanged)
+                 catalogProjectionChanged)
   Q_PROPERTY(QString projectLengthUnitId READ projectLengthUnitId NOTIFY
-                 projectionChanged)
+                 catalogProjectionChanged)
   Q_PROPERTY(QString interfaceDensityId READ interfaceDensityId NOTIFY
-                 projectionChanged)
+                 catalogProjectionChanged)
   Q_PROPERTY(
-      QString gridPlaneLabel READ gridPlaneLabel NOTIFY projectionChanged)
-  Q_PROPERTY(
-      QString gridSpacingLabel READ gridSpacingLabel NOTIFY projectionChanged)
+      QString gridPlaneLabel READ gridPlaneLabel NOTIFY sketchProjectionChanged)
+  Q_PROPERTY(QString gridSpacingLabel READ gridSpacingLabel NOTIFY
+                 sketchProjectionChanged)
   Q_PROPERTY(qreal gridSpacingMillimeters READ gridSpacingMillimeters NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(
-      QString sketchSolveStatus READ sketchSolveStatus NOTIFY projectionChanged)
+                 sketchProjectionChanged)
+  Q_PROPERTY(QString sketchSolveStatus READ sketchSolveStatus NOTIFY
+                 sketchProjectionChanged)
   Q_PROPERTY(int sketchDegreesOfFreedom READ sketchDegreesOfFreedom NOTIFY
-                 projectionChanged)
+                 sketchProjectionChanged)
   Q_PROPERTY(QVariantList sketchPrimitives READ sketchPrimitives NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(
-      QString sketchInputKind READ sketchInputKind NOTIFY projectionChanged)
+                 sketchProjectionChanged)
+  Q_PROPERTY(QString sketchInputKind READ sketchInputKind NOTIFY
+                 sketchProjectionChanged)
   Q_PROPERTY(QString sketchSelectionKind READ sketchSelectionKind NOTIFY
-                 projectionChanged)
+                 sketchProjectionChanged)
   Q_PROPERTY(int sketchMinimumInputCount READ sketchMinimumInputCount NOTIFY
-                 projectionChanged)
+                 sketchProjectionChanged)
   Q_PROPERTY(int sketchMaximumInputCount READ sketchMaximumInputCount NOTIFY
-                 projectionChanged)
+                 sketchProjectionChanged)
   Q_PROPERTY(
-      int sketchInputCount READ sketchInputCount NOTIFY projectionChanged)
-  Q_PROPERTY(
-      QString sketchInputPrompt READ sketchInputPrompt NOTIFY projectionChanged)
-  Q_PROPERTY(
-      bool backendConnected READ backendConnected NOTIFY projectionChanged)
+      int sketchInputCount READ sketchInputCount NOTIFY sketchProjectionChanged)
+  Q_PROPERTY(QString sketchInputPrompt READ sketchInputPrompt NOTIFY
+                 sketchProjectionChanged)
+  Q_PROPERTY(QString sketchHoveredEntityId READ sketchHoveredEntityId NOTIFY
+                 sketchHoverChanged)
+  Q_PROPERTY(QString sketchHoveredPointKey READ sketchHoveredPointKey NOTIFY
+                 sketchHoverChanged)
+  Q_PROPERTY(bool backendConnected READ backendConnected NOTIFY
+                 catalogProjectionChanged)
   Q_PROPERTY(bool projectPersistenceAvailable READ projectPersistenceAvailable
-                 NOTIFY projectionChanged)
+                 NOTIFY catalogProjectionChanged)
   Q_PROPERTY(bool sourceEditingAvailable READ sourceEditingAvailable NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(bool canUndo READ canUndo NOTIFY projectionChanged)
-  Q_PROPERTY(bool canRedo READ canRedo NOTIFY projectionChanged)
-  Q_PROPERTY(bool sketchDragPreviewVisible READ sketchDragPreviewVisible NOTIFY
-                 sketchDragPreviewChanged)
-  Q_PROPERTY(bool sketchDragPreviewConstruction READ
-                 sketchDragPreviewConstruction NOTIFY sketchDragPreviewChanged)
-  Q_PROPERTY(QPointF sketchDragPreviewFirst READ sketchDragPreviewFirst NOTIFY
-                 sketchDragPreviewChanged)
-  Q_PROPERTY(QPointF sketchDragPreviewSecond READ sketchDragPreviewSecond NOTIFY
-                 sketchDragPreviewChanged)
-  Q_PROPERTY(QPointF sketchDragPreviewThird READ sketchDragPreviewThird NOTIFY
-                 sketchDragPreviewChanged)
-  Q_PROPERTY(QPointF sketchDragPreviewFourth READ sketchDragPreviewFourth NOTIFY
-                 sketchDragPreviewChanged)
-  Q_PROPERTY(QVariantList lengthUnits READ lengthUnits NOTIFY projectionChanged)
+                 projectProjectionChanged)
+  Q_PROPERTY(bool canUndo READ canUndo NOTIFY projectProjectionChanged)
+  Q_PROPERTY(bool canRedo READ canRedo NOTIFY projectProjectionChanged)
+  Q_PROPERTY(bool sketchGesturePreviewVisible READ sketchGesturePreviewVisible
+                 NOTIFY sketchGesturePreviewChanged)
+  Q_PROPERTY(QVariantList sketchPreviewMeasurements READ
+                 sketchPreviewMeasurements NOTIFY sketchGesturePreviewChanged)
+  Q_PROPERTY(QVariantList sketchPreviewPrimitives READ sketchPreviewPrimitives
+                 NOTIFY sketchGesturePreviewChanged)
+  Q_PROPERTY(
+      QVariantList lengthUnits READ lengthUnits NOTIFY catalogProjectionChanged)
   Q_PROPERTY(QVariantList preferenceCategories READ preferenceCategories NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(QVariantList preferences READ preferences NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList workspaces READ workspaces NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList commands READ commands NOTIFY projectionChanged)
+                 catalogProjectionChanged)
   Q_PROPERTY(
-      QVariantList commandCatalog READ commandCatalog NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList structure READ structure NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList revisions READ revisions NOTIFY projectionChanged)
+      QVariantList preferences READ preferences NOTIFY catalogProjectionChanged)
+  Q_PROPERTY(
+      QVariantList workspaces READ workspaces NOTIFY catalogProjectionChanged)
+  Q_PROPERTY(
+      QVariantList commands READ commands NOTIFY commandListProjectionChanged)
+  Q_PROPERTY(QVariantList commandCatalog READ commandCatalog NOTIFY
+                 commandCatalogProjectionChanged)
+  Q_PROPERTY(
+      QVariantList structure READ structure NOTIFY projectProjectionChanged)
+  Q_PROPERTY(
+      QVariantList revisions READ revisions NOTIFY projectProjectionChanged)
   Q_PROPERTY(QVariantList historyCommands READ historyCommands NOTIFY
-                 projectionChanged)
-  Q_PROPERTY(QVariantList fields READ fields NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList parameters READ parameters NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList jobs READ jobs NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList diagnostics READ diagnostics NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList proposals READ proposals NOTIFY projectionChanged)
+                 projectProjectionChanged)
   Q_PROPERTY(
-      QVariantList recentProjects READ recentProjects NOTIFY projectionChanged)
+      QVariantList fields READ fields NOTIFY commandFieldsProjectionChanged)
+  Q_PROPERTY(
+      QVariantList parameters READ parameters NOTIFY projectProjectionChanged)
+  Q_PROPERTY(QVariantList jobs READ jobs NOTIFY activityProjectionChanged)
+  Q_PROPERTY(QVariantList diagnostics READ diagnostics NOTIFY
+                 activityProjectionChanged)
+  Q_PROPERTY(
+      QVariantList proposals READ proposals NOTIFY activityProjectionChanged)
+  Q_PROPERTY(QVariantList recentProjects READ recentProjects NOTIFY
+                 hubProjectionChanged)
   Q_PROPERTY(QVariantList projectTemplates READ projectTemplates NOTIFY
-                 projectionChanged)
+                 hubProjectionChanged)
   Q_PROPERTY(
-      QVariantList recoveryItems READ recoveryItems NOTIFY projectionChanged)
-  Q_PROPERTY(QVariantList operations READ operations NOTIFY projectionChanged)
+      QVariantList recoveryItems READ recoveryItems NOTIFY hubProjectionChanged)
+  Q_PROPERTY(
+      QVariantList operations READ operations NOTIFY activityProjectionChanged)
   Q_PROPERTY(QVariantList interfaceStates READ interfaceStates NOTIFY
-                 projectionChanged)
+                 catalogProjectionChanged)
 
 public:
-  explicit UiSession(std::unique_ptr<FrontendPort> port,
+  explicit UiSession(std::unique_ptr<FrontendController> controller,
                      QObject *parent = nullptr);
   ~UiSession() override;
 
@@ -191,17 +214,16 @@ public:
   [[nodiscard]] int sketchMaximumInputCount() const;
   [[nodiscard]] int sketchInputCount() const;
   [[nodiscard]] QString sketchInputPrompt() const;
+  [[nodiscard]] QString sketchHoveredEntityId() const;
+  [[nodiscard]] QString sketchHoveredPointKey() const;
   [[nodiscard]] bool backendConnected() const;
   [[nodiscard]] bool projectPersistenceAvailable() const;
   [[nodiscard]] bool sourceEditingAvailable() const;
   [[nodiscard]] bool canUndo() const;
   [[nodiscard]] bool canRedo() const;
-  [[nodiscard]] bool sketchDragPreviewVisible() const;
-  [[nodiscard]] bool sketchDragPreviewConstruction() const;
-  [[nodiscard]] QPointF sketchDragPreviewFirst() const;
-  [[nodiscard]] QPointF sketchDragPreviewSecond() const;
-  [[nodiscard]] QPointF sketchDragPreviewThird() const;
-  [[nodiscard]] QPointF sketchDragPreviewFourth() const;
+  [[nodiscard]] bool sketchGesturePreviewVisible() const;
+  [[nodiscard]] QVariantList sketchPreviewMeasurements() const;
+  [[nodiscard]] QVariantList sketchPreviewPrimitives() const;
   [[nodiscard]] QVariantList lengthUnits() const;
   [[nodiscard]] QVariantList preferenceCategories() const;
   [[nodiscard]] QVariantList preferences() const;
@@ -237,6 +259,7 @@ public:
   Q_INVOKABLE void editField(const QString &fieldId, const QVariant &value);
   Q_INVOKABLE bool submitActiveCommand(bool preview);
   Q_INVOKABLE bool submitSketchPoint(qreal xMillimeters, qreal yMillimeters);
+  Q_INVOKABLE bool removeLastSketchInput();
   Q_INVOKABLE bool submitSketchDrag(qreal firstXMillimeters,
                                     qreal firstYMillimeters,
                                     qreal oppositeXMillimeters,
@@ -245,14 +268,22 @@ public:
                                      qreal firstYMillimeters,
                                      qreal oppositeXMillimeters,
                                      qreal oppositeYMillimeters);
+  Q_INVOKABLE bool previewSketchPoint(qreal xMillimeters,
+                                      qreal yMillimeters);
   Q_INVOKABLE QString formatProjectLength(qreal lengthMillimeters) const;
-  Q_INVOKABLE void clearSketchDragPreview();
+  Q_INVOKABLE void clearSketchGesturePreview();
   Q_INVOKABLE bool submitSketchEntity(const QString &entityId,
                                       const QString &subElementKey);
   Q_INVOKABLE bool submitSketchPointerClick(qreal itemX, qreal itemY);
+  Q_INVOKABLE bool updateSketchPointerHover(qreal itemX, qreal itemY);
+  Q_INVOKABLE void clearSketchPointerHover();
+  Q_INVOKABLE bool beginSketchCurveDrag(qreal itemPressX, qreal itemPressY);
+  Q_INVOKABLE bool previewSketchCurveDrag(qreal currentXMillimeters,
+                                          qreal currentYMillimeters);
   Q_INVOKABLE bool submitSketchCurveDrag(qreal itemPressX, qreal itemPressY,
                                          qreal currentXMillimeters,
                                          qreal currentYMillimeters);
+  Q_INVOKABLE void cancelSketchCurveDrag();
   Q_INVOKABLE bool toggleSketchConstruction();
   Q_INVOKABLE void cancelActiveCommand();
   Q_INVOKABLE bool submitParameterEdit(const QString &parameterId,
@@ -264,29 +295,62 @@ public:
   Q_INVOKABLE bool redo();
 
 signals:
+  void projectProjectionChanged();
+  void navigationProjectionChanged();
+  void commandProjectionChanged();
+  void commandListProjectionChanged();
+  void commandCatalogProjectionChanged();
+  void commandFieldsProjectionChanged();
+  void sketchProjectionChanged();
+  void catalogProjectionChanged();
+  void activityProjectionChanged();
+  void hubProjectionChanged();
   void projectionChanged();
-  void sketchDragPreviewChanged();
+  void sketchGesturePreviewChanged();
+  void sketchHoverChanged();
   void commandRequested(const QString &commandId, qulonglong generation);
   void preferenceChanged(const QString &preferenceId, const QVariant &value);
 
 public:
   void setSketchPickHandler(SketchPickHandler handler);
   void clearSketchPickHandler();
+  void setSketchHoverHandler(SketchHoverHandler handler);
+  void clearSketchHoverHandler();
+  [[nodiscard]] const std::vector<QString> &selectedSketchEntityIds() const {
+    return snapshot_->selectedSketchEntityIds;
+  }
+  [[nodiscard]] std::span<const SketchPrimitiveProjection>
+  sketchPrimitiveProjections() const {
+    return snapshot_->sketchProjection.primitives;
+  }
   void replacePreferenceOptions(const QString &preferenceId,
                                 std::vector<UiOption> options,
                                 const QString &value);
 
 private:
+  [[nodiscard]] bool
+  previewSketchGesture(std::span<const QPointF> pointsMillimeters);
   void refresh();
+  void queueProjectionNotification(std::uint32_t groups);
 
-  std::unique_ptr<FrontendPort> port_;
+  std::unique_ptr<FrontendController> controller_;
   FrontendSnapshotPtr snapshot_;
   SketchGesturePreview gesturePreview_;
   SketchPickHandler sketchPickHandler_;
+  SketchHoverHandler sketchHoverHandler_;
   QString activeSurfaceId_ = QStringLiteral("editor");
   QString settingsCategoryId_ = QStringLiteral("appearance");
+  QString sketchHoveredEntityId_;
+  QString sketchHoveredPointKey_;
+  struct SketchCurveDragTarget {
+    QString entityId;
+    PlanePoint first;
+  };
+  std::optional<SketchCurveDragTarget> sketchCurveDragTarget_;
   int inspectorPage_ = 0;
   qulonglong generation_ = 0;
+  std::uint32_t pendingProjectionGroups_ = 0;
+  bool projectionNotificationQueued_ = false;
 };
 
 } // namespace kearne::ui

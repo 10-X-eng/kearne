@@ -8,15 +8,45 @@ import Kearne.UI
 Rectangle {
     id: root
 
+    function entitySemanticId(record, index) {
+        const identity = String(record.id)
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+                .test(identity))
+            return "entity." + identity
+        let occurrence = 0
+        const records = App.ui.structure
+        for (let current = 0; current <= index; ++current) {
+            if (records[current].kind === record.kind)
+                ++occurrence
+        }
+        const kind = String(record.kind).replace(/^sketch-/, "")
+                                      .replace(/[^a-z0-9]+/gi, "-")
+                                      .toLowerCase()
+        return "entity.sketch." + kind + "." + occurrence
+    }
+
     function iconFor(record) {
         if (root.activePage === 1)
             return "checkpoint"
         switch (record.kind) {
         case "sketch": return "sketch"
+        case "sketch-rectangle": return "rectangle"
+        case "sketch-edge": return "line"
         case "sketch-point": return "point"
         case "sketch-line": return "line"
+        case "sketch-polyline": return "polyline"
+        case "sketch-polygon": return "polygon"
         case "sketch-circle": return "circle"
         case "sketch-arc": return "arc"
+        case "sketch-ellipse": return "ellipse"
+        case "sketch-elliptical-arc": return "elliptical-arc"
+        case "sketch-hyperbolic-arc": return "hyperbolic-arc"
+        case "sketch-parabolic-arc": return "parabolic-arc"
+        case "sketch-bspline": return "bspline"
+        case "sketch-slot": return "slot"
+        case "sketch-oblong": return "oblong"
+        case "sketch-arc-slot": return "slot"
+        case "sketch-constraint": return "coincident"
         case "plane": return "plane"
         case "model-function": return "code"
         case "group": return "folder"
@@ -98,8 +128,10 @@ Rectangle {
             delegate: ItemDelegate {
                 id: row
                 required property var modelData
+                required property int index
                 property string semanticId: root.activePage === 0
-                                                ? "entity." + row.modelData.id
+                                                ? root.entitySemanticId(
+                                                      row.modelData, row.index)
                                                 : "revision." + row.modelData.id
                 property string semanticName: row.modelData.label
                 property string semanticRole: "listitem"

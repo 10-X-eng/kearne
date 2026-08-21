@@ -22,7 +22,7 @@ namespace {
 namespace protobuf = google::protobuf;
 namespace wire = api::v1;
 
-constexpr std::size_t maximumWorkerFrameBytes = 132'096U;
+constexpr std::size_t maximumWorkerFrameBytes = 33'554'432U;
 constexpr int maximumWorkerWireDepth = 32;
 
 bool containsUnknownFields(const protobuf::Message &message) {
@@ -117,6 +117,8 @@ wire::SketchSourceEditAction action(sketch::SourceEditAction value) {
 
 wire::SketchSourceSection section(sketch::SourceSection value) {
   switch (value) {
+  case sketch::SourceSection::Objects:
+    return wire::SKETCH_SOURCE_SECTION_OBJECTS;
   case sketch::SourceSection::Entities:
     return wire::SKETCH_SOURCE_SECTION_ENTITIES;
   case sketch::SourceSection::Constraints:
@@ -204,7 +206,8 @@ SketchSourceWorker::create(JobId job, std::string_view functionName,
   auto transformed = transform(job, request, cancellation);
   if (!transformed)
     return std::unexpected(std::move(transformed.error()));
-  if (!transformed->definition.entities.empty() ||
+  if (!transformed->definition.objects.empty() ||
+      !transformed->definition.entities.empty() ||
       !transformed->definition.constraints.empty())
     return std::unexpected(diagnostic("worker.source.create-definition",
                                       "source worker created a nonempty Sketch",

@@ -104,6 +104,10 @@ struct SketchMeshVertex {
   float extrusionX = 0.0F;
   float extrusionY = 0.0F;
   float pathDistanceMetres = 0.0F;
+  float coverageDistancePixels = 0.0F;
+  float coverageRadiusPixels = 0.0F;
+  float patternOnLogicalPixels = 0.0F;
+  float patternPeriodLogicalPixels = 0.0F;
   bool operator==(const SketchMeshVertex &) const = default;
 };
 

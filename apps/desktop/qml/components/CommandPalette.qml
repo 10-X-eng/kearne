@@ -80,7 +80,7 @@ Popup {
                 topPadding: Theme.space2
 
                 Repeater {
-                    model: App.ui.commandCatalog
+                    model: root.opened ? App.ui.commandCatalog : []
 
                     KButton {
                         id: commandButton

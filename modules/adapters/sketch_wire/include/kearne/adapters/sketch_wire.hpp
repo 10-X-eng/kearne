@@ -11,6 +11,7 @@ namespace kearne::adapters {
 
 // Coordinates are local to the trusted SketchPlane supplied by evaluation.
 inline constexpr std::size_t maximumSketchDefinitionWireBytes = 16'777'216;
+inline constexpr std::size_t maximumSketchDefinitionObjects = 65'536;
 inline constexpr std::size_t maximumSketchDefinitionEntities = 65'536;
 inline constexpr std::size_t maximumSketchDefinitionConstraints = 65'536;
 inline constexpr int maximumSketchDefinitionWireDepth = 16;

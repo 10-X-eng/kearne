@@ -19,7 +19,7 @@ struct FramedWorkerProcessConfig {
   QString program;
   QStringList arguments;
   QProcessEnvironment environment;
-  std::size_t maximumFrameBytes = 132'096U;
+  std::size_t maximumFrameBytes = 33'554'432U;
   std::size_t maximumStandardErrorBytes = 65'536U;
   int startTimeoutMilliseconds = 10'000;
   int jobTimeoutMilliseconds = 30'000;

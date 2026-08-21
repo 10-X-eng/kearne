@@ -96,7 +96,7 @@ def scenarios(mode: str) -> list[dict[str, object]]:
             {"action": "choose", "semantic_id": "viewport.datum_planes",
              "value": "reference.plane.xy"},
         ]
-        return [
+        proofs = [
             {"name": "proof-sketch-entry", "surface": "editor",
              "workspace": "sketch", "initial_workspace": "sketch",
              "design_engine": True,
@@ -127,6 +127,29 @@ def scenarios(mode: str) -> list[dict[str, object]]:
              "expected_values": {"sketch.solve.state": "solved:0",
                                  "viewport.state": "current"},
              "width": 1440, "height": 900},
+            {"name": "proof-sketch-no-cursor-substitute", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "design_engine": True,
+             "operations": [
+                 *create,
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerHover", "semantic_id": "viewport.primary",
+                  "value": {"from": [0.32, 0.32], "to": [0.40, 0.40],
+                            "capture_preview": True}},
+             ],
+             "required": ["sketch.solve.state"],
+             "expected_values": {"sketch.solve.state": "solved:0",
+                                 "viewport.state": "current"},
+             "expected_preview_measurements": 0,
+             "action_evidence": [
+                 {"semantic_id": "viewport.primary", "action": "pointerHover",
+                  "forbid_pointer_move_preview": True,
+                  "forbid_preview_frame": True,
+                  "require_preview_image": True,
+                  "require_native_scene": True},
+             ],
+             "width": 1440, "height": 900},
             {"name": "proof-sketch-rectangle", "surface": "editor",
              "workspace": "sketch", "initial_workspace": "model",
              "design_engine": True,
@@ -136,13 +159,71 @@ def scenarios(mode: str) -> list[dict[str, object]]:
                   "semantic_id": "command.sketch.rectangle"},
                  {"action": "pointerDrag", "semantic_id": "viewport.primary",
                   "value": {"button": "left", "from": [0.42, 0.43],
-                            "to": [0.58, 0.57]}},
+                            "to": [0.58, 0.57],
+                            "capture_preview": True}},
              ],
              "required": ["sketch.solve.state"],
              "expected_values": {
                  "sketch.solve.state": "underconstrained:4",
                  "viewport.state": "current",
              },
+             "action_evidence": [
+                 {"semantic_id": "viewport.datum_planes", "action": "choose",
+                  "state_after_dispatch": "pending",
+                  "settled_state": "none", "max_first_presented_ms": 100,
+                  "max_settled_ms": 500, "require_native_scene": True},
+                 {"semantic_id": "viewport.primary", "action": "pointerDrag",
+                  "state_after_input": "pending", "settled_state": "none",
+                  "max_first_presented_ms": 100,
+                  "max_current_scene_after_input_ms": 250,
+                  "max_pointer_move_p95_ms": 16.7,
+                  "require_pointer_move_preview": True,
+                  "require_preview_frame": True,
+                  "require_preview_image": True,
+                  "require_native_scene": True},
+             ],
+             "expected_preview_measurements": 2,
+             "width": 1440, "height": 900},
+            {"name": "proof-sketch-rectangle-warm", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "design_engine": True,
+             "operations": [
+                 *create,
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerDrag", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "from": [0.34, 0.43],
+                            "to": [0.46, 0.57]}},
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerDrag", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "from": [0.56, 0.43],
+                            "to": [0.68, 0.57]}},
+             ],
+             "required": ["sketch.solve.state",
+                          "entity.sketch.rectangle.2"],
+             "expected_values": {
+                 "sketch.solve.state": "underconstrained:8",
+                 "viewport.state": "current",
+             },
+             "action_evidence": [
+                 {"semantic_id": "viewport.primary", "action": "pointerDrag",
+                  "occurrence": 1, "state_after_input": "pending",
+                  "settled_state": "none",
+                  "max_current_scene_after_input_ms": 250,
+                  "max_pointer_move_p95_ms": 16.7,
+                  "require_pointer_move_preview": True,
+                  "require_preview_frame": True,
+                  "require_native_scene": True},
+                 {"semantic_id": "viewport.primary", "action": "pointerDrag",
+                  "occurrence": 2, "state_after_input": "pending",
+                  "settled_state": "none",
+                  "max_current_scene_after_input_ms": 100,
+                  "max_pointer_move_p95_ms": 16.7,
+                  "require_pointer_move_preview": True,
+                  "require_preview_frame": True,
+                  "require_native_scene": True},
+             ],
              "width": 1440, "height": 900},
             {"name": "proof-sketch-edge-resize", "surface": "editor",
              "workspace": "sketch", "initial_workspace": "model",
@@ -154,17 +235,33 @@ def scenarios(mode: str) -> list[dict[str, object]]:
                  {"action": "pointerDrag", "semantic_id": "viewport.primary",
                   "value": {"button": "left", "from": [0.42, 0.43],
                             "to": [0.58, 0.57]}},
+                 {"action": "pointerHover", "semantic_id": "viewport.primary",
+                  "value": {"from": [0.30, 0.30], "to": [0.50, 0.43],
+                            "capture_preview": True}},
                  {"action": "pointerDrag", "semantic_id": "viewport.primary",
                   "value": {"button": "left", "from": [0.50, 0.42],
-                            "to": [0.50, 0.32]}},
+                            "to": [0.50, 0.32],
+                            "capture_preview": True}},
              ],
              "required": ["sketch.solve.state",
                           "entity.function.sketch",
-                          "entity.output.sketch.profile.1"],
+                          "entity.sketch.rectangle.1"],
              "expected_values": {
                  "sketch.solve.state": "underconstrained:4",
                  "viewport.state": "current",
              },
+             "action_evidence": [
+                 {"semantic_id": "viewport.primary", "action": "pointerHover",
+                  "max_pointer_move_p95_ms": 50,
+                  "require_pointer_move_hover": True,
+                  "require_preview_image": True,
+                  "require_native_scene": True},
+                 {"semantic_id": "viewport.primary", "action": "pointerDrag",
+                  "occurrence": 2, "max_pointer_move_p95_ms": 50,
+                  "require_pointer_move_hover": True,
+                  "require_preview_image": True,
+                  "require_native_scene": True},
+             ],
              "width": 1440, "height": 900},
             {"name": "proof-sketch-adaptive-grid", "surface": "editor",
              "workspace": "sketch", "initial_workspace": "model",
@@ -194,13 +291,269 @@ def scenarios(mode: str) -> list[dict[str, object]]:
                   "semantic_id": "viewport.primary"},
              ],
              "required": ["sketch.solve.state", "entity.function.sketch"],
-             "expected_absent": ["entity.output.sketch.profile.1"],
+             "expected_absent": ["entity.sketch.rectangle.1"],
              "expected_values": {
                  "sketch.solve.state": "underconstrained:4",
                  "viewport.state": "current",
              },
              "width": 1440, "height": 900},
+            {"name": "proof-sketch-cancel", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "design_engine": True,
+             "operations": [
+                 {"action": "invoke",
+                  "semantic_id": "command.model.sketch.create"},
+                 {"action": "invoke", "semantic_id": "inspector.cancel"},
+             ],
+             "revision_evidence": [
+                 {"semantic_id": "inspector.cancel", "action": "invoke",
+                  "reference_semantic_id": "command.model.sketch.create",
+                  "reference_action": "invoke", "relation": "same"},
+             ],
+             "expected_absent": ["command.sketch.rectangle",
+                                 "sketch.solve.state"],
+             "expected_values": {"viewport.state": "current"},
+             "width": 1440, "height": 900},
+            {"name": "proof-sketch-invalid-retry", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "design_engine": True,
+             "operations": [
+                 *create,
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerClick", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "position": [0.50, 0.50]}},
+                 {"action": "pointerClick", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "position": [0.50, 0.50]}},
+                 {"action": "pointerDrag", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "from": [0.42, 0.43],
+                            "to": [0.58, 0.57]}},
+             ],
+             "action_evidence": [
+                 {"semantic_id": "viewport.primary", "action": "pointerClick",
+                  "occurrence": 2, "settled_state": "editing",
+                  "require_native_scene": True},
+                 {"semantic_id": "viewport.primary", "action": "pointerDrag",
+                  "state_after_input": "pending", "settled_state": "none",
+                  "max_current_scene_after_input_ms": 250,
+                  "max_pointer_move_p95_ms": 16.7,
+                  "require_pointer_move_preview": True,
+                  "require_preview_frame": True,
+                  "require_native_scene": True},
+             ],
+             "revision_evidence": [
+                 {"semantic_id": "viewport.primary", "action": "pointerClick",
+                  "occurrence": 2,
+                  "reference_semantic_id": "command.sketch.rectangle",
+                  "reference_action": "invoke", "relation": "same"},
+                 {"semantic_id": "viewport.primary", "action": "pointerDrag",
+                  "reference_semantic_id": "command.sketch.rectangle",
+                  "reference_action": "invoke", "relation": "different"},
+             ],
+             "required": ["sketch.solve.state",
+                          "entity.sketch.rectangle.1"],
+             "expected_values": {
+                 "sketch.solve.state": "underconstrained:4",
+                 "viewport.state": "current",
+             },
+             "width": 1440, "height": 900},
+            {"name": "proof-sketch-source-history", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "design_engine": True,
+             "operations": [
+                 *create,
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerDrag", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "from": [0.42, 0.43],
+                            "to": [0.58, 0.57]}},
+                 {"action": "invoke",
+                  "semantic_id": "inspector.tab.source"},
+                 {"action": "prependText",
+                  "semantic_id": "inspector.source.editor",
+                  "value": "# edited through Kearne UI\n"},
+                 {"action": "invoke", "semantic_id": "source.diff"},
+                 {"action": "invoke", "semantic_id": "source_diff.apply"},
+                 {"action": "invoke",
+                  "semantic_id": "structure.tab.history"},
+                 {"action": "invoke",
+                  "semantic_id": "history.command.version.undo"},
+                 {"action": "invoke",
+                  "semantic_id": "history.command.version.redo"},
+             ],
+             "revision_evidence": [
+                 {"semantic_id": "source_diff.apply", "action": "invoke",
+                  "reference_semantic_id": "viewport.primary",
+                  "reference_action": "pointerDrag", "relation": "different"},
+                 {"semantic_id": "history.command.version.undo",
+                  "action": "invoke",
+                  "reference_semantic_id": "viewport.primary",
+                  "reference_action": "pointerDrag", "relation": "same"},
+                 {"semantic_id": "history.command.version.redo",
+                  "action": "invoke",
+                  "reference_semantic_id": "source_diff.apply",
+                  "reference_action": "invoke", "relation": "same"},
+             ],
+             "required": ["sketch.solve.state", "source.draft.state",
+                          "history.command.version.undo",
+                          "history.command.version.redo"],
+             "expected_values": {
+                 "sketch.solve.state": "underconstrained:4",
+                 "source.draft.state": "current",
+                 "viewport.state": "current",
+             },
+             "expected_source_contains": "# edited through Kearne UI",
+             "width": 1440, "height": 900},
         ]
+        def invoke(semantic_id: str) -> dict[str, object]:
+            return {"action": "invoke", "semantic_id": semantic_id}
+
+        def drag(start: list[float], finish: list[float],
+                 capture: bool = False) -> dict[str, object]:
+            return {
+                "action": "pointerDrag", "semantic_id": "viewport.primary",
+                "value": {"button": "left", "from": start, "to": finish,
+                          "capture_preview": capture},
+            }
+
+        def hover(start: list[float], finish: list[float],
+                  capture: bool = False) -> dict[str, object]:
+            return {
+                "action": "pointerHover", "semantic_id": "viewport.primary",
+                "value": {"from": start, "to": finish,
+                          "capture_preview": capture},
+            }
+
+        def click(position: list[float]) -> dict[str, object]:
+            return {
+                "action": "pointerClick", "semantic_id": "viewport.primary",
+                "value": {"button": "left", "position": position},
+            }
+
+        def preview_scenario(name: str, operations: list[dict[str, object]],
+                             measurement_count: int,
+                             action: str = "pointerHover",
+                             occurrence: int = 1) -> dict[str, object]:
+            evidence = {
+                "semantic_id": "viewport.primary", "action": action,
+                "require_preview_frame": True,
+                "require_preview_image": True,
+                "require_native_scene": True,
+            }
+            if occurrence > 1:
+                evidence["occurrence"] = occurrence
+            if action == "pointerDrag":
+                evidence.update({
+                    "max_pointer_move_p95_ms": 30.0,
+                    "require_pointer_move_preview": True,
+                })
+            else:
+                evidence.update({
+                    "max_pointer_move_p95_ms": 30.0,
+                    "require_pointer_move_preview": True,
+                    "settled_state": "editing",
+                })
+            return {
+                "name": f"proof-sketch-preview-{name}",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [*create, *operations],
+                "required": ["sketch.solve.state"],
+                "expected_values": {"viewport.state": "current"},
+                "expected_preview_measurements": measurement_count,
+                "action_evidence": [evidence],
+                "width": 1440, "height": 900,
+            }
+
+        proofs.extend([
+            preview_scenario(
+                "line",
+                [invoke("command.sketch.line"),
+                 drag([0.38, 0.56], [0.62, 0.42], True)],
+                1,
+                "pointerDrag"),
+            preview_scenario(
+                "polygon",
+                [invoke("command-menu.sketch.shapes"),
+                 invoke("command.sketch.polygon"),
+                 drag([0.48, 0.52], [0.61, 0.43], True)],
+                2,
+                "pointerDrag"),
+            preview_scenario(
+                "circle",
+                [invoke("command.sketch.circle"),
+                 drag([0.48, 0.52], [0.62, 0.42], True)],
+                1,
+                "pointerDrag"),
+            preview_scenario(
+                "arc",
+                [invoke("command-menu.sketch.circles"),
+                 invoke("command.sketch.arc"),
+                 drag([0.38, 0.55], [0.62, 0.55]),
+                 hover([0.62, 0.55], [0.50, 0.38], True)],
+                2),
+            preview_scenario(
+                "ellipse",
+                [invoke("command.sketch.ellipse"),
+                 drag([0.45, 0.52], [0.62, 0.52]),
+                 hover([0.62, 0.52], [0.45, 0.38], True)],
+                2),
+            preview_scenario(
+                "elliptical-arc",
+                [invoke("command-menu.sketch.conics"),
+                 invoke("command.sketch.elliptical-arc"),
+                 drag([0.45, 0.52], [0.62, 0.52]),
+                 hover([0.62, 0.52], [0.45, 0.40]),
+                 click([0.45, 0.40]),
+                 hover([0.45, 0.40], [0.58, 0.45]),
+                 click([0.58, 0.45]),
+                 hover([0.58, 0.45], [0.45, 0.64], True)],
+                4,
+                occurrence=3),
+            preview_scenario(
+                "hyperbolic-arc",
+                [invoke("command-menu.sketch.conics"),
+                 invoke("command.sketch.hyperbolic-arc"),
+                 drag([0.40, 0.52], [0.48, 0.52]),
+                 hover([0.48, 0.52], [0.58, 0.42]),
+                 click([0.58, 0.42]),
+                 hover([0.58, 0.42], [0.60, 0.62], True)],
+                2,
+                occurrence=2),
+            preview_scenario(
+                "parabolic-arc",
+                [invoke("command-menu.sketch.conics"),
+                 invoke("command.sketch.parabolic-arc"),
+                 drag([0.48, 0.52], [0.40, 0.52]),
+                 hover([0.40, 0.52], [0.50, 0.42]),
+                 click([0.50, 0.42]),
+                 hover([0.50, 0.42], [0.53, 0.62], True)],
+                1,
+                occurrence=2),
+            preview_scenario(
+                "slot",
+                [invoke("command.sketch.slot"),
+                 drag([0.38, 0.52], [0.58, 0.52]),
+                 hover([0.58, 0.52], [0.48, 0.42], True)],
+                2),
+            preview_scenario(
+                "arc-slot",
+                [invoke("command-menu.sketch.slots"),
+                 invoke("command.sketch.arc-slot"),
+                 drag([0.45, 0.55], [0.58, 0.55]),
+                 hover([0.58, 0.55], [0.45, 0.42]),
+                 click([0.45, 0.42]),
+                 hover([0.45, 0.42], [0.62, 0.55], True)],
+                3,
+                occurrence=2),
+            preview_scenario(
+                "bspline",
+                [invoke("command.sketch.bspline.control-points"),
+                 drag([0.37, 0.58], [0.48, 0.40]),
+                 hover([0.48, 0.40], [0.61, 0.56], True)],
+                1),
+        ])
+        return proofs
     result = [
         {"name": f"route-{surface}", "initial_surface": initial, "surface": surface,
          "actions": [action], "width": 1440, "height": 900}
@@ -905,6 +1258,15 @@ def validate_bounds(node: dict[str, object], image_width: int, image_height: int
     return failures
 
 
+def bounds_overlap(left: list[object], right: list[object]) -> bool:
+    left_x, left_y, left_width, left_height = map(float, left)
+    right_x, right_y, right_width, right_height = map(float, right)
+    return (max(left_x, right_x) < min(left_x + left_width,
+                                      right_x + right_width)
+            and max(left_y, right_y) < min(left_y + left_height,
+                                           right_y + right_height))
+
+
 def validate(output: Path, scenario: dict[str, object]) -> list[str]:
     failures: list[str] = []
     image_path = output / "application-session.png"
@@ -968,6 +1330,294 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
                 failures.append(f"semantic operation receipt differs for {key}")
         if receipt.get("generation_after", -1) < receipt.get("generation_before", 0):
             failures.append("semantic operation receipt moved generation backward")
+        dispatch_ms = receipt.get("dispatch_ms")
+        if (not isinstance(dispatch_ms, (int, float))
+                or not math.isfinite(dispatch_ms) or dispatch_ms < 0):
+            failures.append("semantic operation receipt has invalid dispatch timing")
+        presented = receipt.get("presented")
+        if not isinstance(presented, list) or not presented:
+            failures.append(
+                "semantic operation receipt has no presented-frame evidence"
+            )
+            continue
+        frame_before = receipt.get("presented_frame_before")
+        first = presented[0]
+        if (not isinstance(frame_before, int)
+                or first.get("frame") != frame_before + 1):
+            failures.append("semantic operation was not observed on the next frame")
+        prior_frame = frame_before
+        prior_elapsed = -1.0
+        for frame in presented:
+            frame_number = frame.get("frame")
+            elapsed_ms = frame.get("elapsed_ms")
+            if (not isinstance(frame_number, int) or frame_number <= prior_frame
+                    or not isinstance(elapsed_ms, (int, float))
+                    or not math.isfinite(elapsed_ms) or elapsed_ms < prior_elapsed):
+                failures.append("semantic operation frame trace is not monotonic")
+                break
+            prior_frame = frame_number
+            prior_elapsed = elapsed_ms
+        settled_frame = receipt.get("settled_frame")
+        settled_ms = receipt.get("settled_ms")
+        if (not isinstance(settled_frame, int) or settled_frame < prior_frame
+                or not isinstance(settled_ms, (int, float))
+                or not math.isfinite(settled_ms) or settled_ms < prior_elapsed):
+            failures.append("semantic operation settlement evidence is invalid")
+        if receipt.get("settled_generation", -1) < receipt.get("generation_after", 0):
+            failures.append("semantic operation settled generation moved backward")
+        if receipt.get("settled_native_scene_current") is not True:
+            failures.append("semantic operation settled before its native scene")
+        current_scene_frame = receipt.get("current_scene_frame")
+        current_scene_ms = receipt.get("current_scene_ms")
+        if (not isinstance(current_scene_frame, int)
+                or current_scene_frame > settled_frame
+                or not isinstance(current_scene_ms, (int, float))
+                or not math.isfinite(current_scene_ms)
+                or current_scene_ms > settled_ms):
+            failures.append("semantic operation current-scene evidence is invalid")
+        if "pointer_move_frames" in receipt:
+            move_frames = receipt.get("pointer_move_frames")
+            move_count = receipt.get("pointer_move_presentations")
+            if (not isinstance(move_frames, list) or not move_frames
+                    or move_count != len(move_frames)):
+                failures.append("pointer motion has invalid presented-move evidence")
+                continue
+            prior_move = 0
+            prior_move_frame = frame_before if isinstance(frame_before, int) else 0
+            for move_frame in move_frames:
+                move = move_frame.get("move")
+                frame = move_frame.get("frame")
+                latency_ms = move_frame.get("latency_ms")
+                if (not isinstance(move, int) or move != prior_move + 1
+                        or not isinstance(frame, int) or frame <= prior_move_frame
+                        or not isinstance(latency_ms, (int, float))
+                        or not math.isfinite(latency_ms) or latency_ms < 0
+                        or not isinstance(move_frame.get("preview_visible"), bool)):
+                    failures.append(
+                        "pointer motion presented-move evidence is invalid")
+                    break
+                prior_move = move
+                prior_move_frame = frame
+    for evidence in scenario.get("action_evidence", []):
+        matches = [
+            receipt for receipt in action_receipts
+            if receipt.get("semantic_id") == evidence["semantic_id"]
+            and receipt.get("action") == evidence["action"]
+        ]
+        occurrence = evidence.get("occurrence", 1)
+        if (not isinstance(occurrence, int) or occurrence < 1
+                or len(matches) < occurrence
+                or ("occurrence" not in evidence and len(matches) != 1)):
+            failures.append(
+                "action evidence target occurrence is unavailable: "
+                f"{evidence['semantic_id']}:{evidence['action']}"
+            )
+            continue
+        receipt = matches[occurrence - 1]
+        presented = receipt.get("presented", [])
+        first_presented_ms = (
+            presented[0].get("elapsed_ms", math.inf)
+            if isinstance(presented, list) and presented else math.inf
+        )
+        checks = (
+            ("state_after_dispatch", "state_after_dispatch"),
+            ("state_after_input", "state_after_input"),
+            ("settled_state", "settled_state"),
+        )
+        for expected_key, receipt_key in checks:
+            if (expected_key in evidence
+                    and receipt.get(receipt_key) != evidence[expected_key]):
+                failures.append(
+                    f"{evidence['semantic_id']}: {receipt_key} differs from "
+                    "evidence contract"
+                )
+        if first_presented_ms > evidence.get("max_first_presented_ms", math.inf):
+            failures.append(
+                f"{evidence['semantic_id']}: first presented frame exceeded budget"
+            )
+        if (receipt.get("settled_ms", math.inf)
+                > evidence.get("max_settled_ms", math.inf)):
+            failures.append(f"{evidence['semantic_id']}: settlement exceeded budget")
+        if (receipt.get("settled_after_input_ms", math.inf)
+                > evidence.get("max_settled_after_input_ms", math.inf)):
+            failures.append(
+                f"{evidence['semantic_id']}: post-input settlement exceeded budget"
+            )
+        if (receipt.get("current_scene_after_input_ms", math.inf)
+                > evidence.get("max_current_scene_after_input_ms", math.inf)):
+            failures.append(
+                f"{evidence['semantic_id']}: accepted native scene exceeded budget"
+            )
+        move_frames = receipt.get("pointer_move_frames", [])
+        if not isinstance(move_frames, list):
+            move_frames = []
+        move_latencies = sorted(
+            move.get("latency_ms", math.inf) for move in move_frames)
+        move_p95 = (move_latencies[
+            max(0, math.ceil(0.95 * len(move_latencies)) - 1)]
+            if move_latencies else math.inf)
+        if move_p95 > evidence.get("max_pointer_move_p95_ms", math.inf):
+            failures.append(
+                f"{evidence['semantic_id']}: pointer preview p95 exceeded budget"
+            )
+        if evidence.get("require_pointer_move_preview"):
+            visible_moves = [
+                move.get("preview_visible") is True for move in move_frames
+            ]
+            first_visible = next(
+                (index for index, visible in enumerate(visible_moves) if visible),
+                None)
+            if (first_visible is None
+                    or not all(visible_moves[first_visible:])):
+                failures.append(
+                    f"{evidence['semantic_id']}: pointer preview did not remain visible"
+                )
+        if (evidence.get("forbid_pointer_move_preview")
+                and any(move.get("preview_visible") is True
+                        for move in move_frames)):
+            failures.append(
+                f"{evidence['semantic_id']}: unwanted pointer preview became visible"
+            )
+        if evidence.get("require_pointer_move_hover"):
+            hovered_moves = [
+                move.get("hovered_entity", "") for move in move_frames
+            ]
+            first_hovered = next(
+                (index for index, entity in enumerate(hovered_moves) if entity),
+                None)
+            if (first_hovered is None
+                    or not all(hovered_moves[first_hovered:])):
+                failures.append(
+                    f"{evidence['semantic_id']}: hover highlight did not remain active"
+                )
+        if (evidence.get("require_preview_frame")
+                and not any(frame.get("sketch_preview_visible") is True
+                            for frame in presented)):
+            failures.append(
+                f"{evidence['semantic_id']}: drag preview reached no presented frame"
+            )
+        if (evidence.get("forbid_preview_frame")
+                and any(frame.get("sketch_preview_visible") is True
+                        for frame in presented)):
+            failures.append(
+                f"{evidence['semantic_id']}: unwanted preview reached a presented frame"
+            )
+        preview_image = receipt.get("preview_image")
+        preview_semantic = receipt.get("preview_semantic")
+        if evidence.get("require_preview_image"):
+            if (not isinstance(preview_image, str)
+                    or not (output / preview_image).is_file()):
+                failures.append(
+                    f"{evidence['semantic_id']}: full-screen pointer preview is missing"
+                )
+            if (not isinstance(preview_semantic, str)
+                    or not (output / preview_semantic).is_file()):
+                failures.append(
+                    f"{evidence['semantic_id']}: pointer preview semantics are missing"
+                )
+        if (evidence.get("require_native_scene")
+                and receipt.get("settled_native_scene_current") is not True):
+            failures.append(
+                f"{evidence['semantic_id']}: native scene was not current at settlement"
+            )
+    preview_receipts = [
+        receipt for receipt in action_receipts
+        if isinstance(receipt.get("preview_image"), str)
+    ]
+    expected_measurements = scenario.get("expected_preview_measurements")
+    if expected_measurements is not None and len(preview_receipts) != 1:
+        failures.append("scenario did not produce exactly one pointer preview")
+    for receipt in preview_receipts:
+        preview_path = output / receipt["preview_image"]
+        semantic_name = receipt.get("preview_semantic")
+        if not preview_path.is_file() or not isinstance(semantic_name, str):
+            continue
+        preview_semantic_path = output / semantic_name
+        if not preview_semantic_path.is_file():
+            continue
+        if os.name == "posix":
+            for path in (preview_path, preview_semantic_path):
+                if stat.S_IMODE(path.stat().st_mode) & 0o077:
+                    failures.append(
+                        f"{path.name} is accessible outside its owner")
+        try:
+            preview_width, preview_height, preview_colors, _, _ = png_pixels(
+                preview_path)
+            preview_semantic = json.loads(
+                preview_semantic_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, zlib.error, json.JSONDecodeError) as error:
+            failures.append(f"invalid pointer preview evidence: {error}")
+            continue
+        if (preview_width, preview_height) != (image_width, image_height):
+            failures.append("pointer preview is not a full-window capture")
+        if preview_colors < 8:
+            failures.append("pointer preview has insufficient visual content")
+        if (preview_semantic.get("schema") != "kearne.pointer-preview/v1"
+                or preview_semantic.get("frame")
+                != receipt.get("preview_frame")
+                or preview_semantic.get("ui_generation")
+                != receipt.get("preview_generation")):
+            failures.append("pointer preview semantic correlation differs")
+        preview_nodes = preview_semantic.get("nodes")
+        if not isinstance(preview_nodes, list):
+            failures.append("pointer preview semantic nodes are missing")
+            continue
+        measurements = [
+            node for node in preview_nodes
+            if str(node.get("id", "")).startswith(
+                "sketch.preview.measurement.") and node.get("visible")
+        ]
+        if (expected_measurements is not None
+                and len(measurements) != expected_measurements):
+            failures.append(
+                "pointer preview live measurement count differs from scenario")
+        for node in measurements:
+            failures.extend(validate_bounds(node, image_width, image_height))
+        for index, left in enumerate(measurements):
+            for right in measurements[index + 1:]:
+                if bounds_overlap(left["physical_bounds"],
+                                  right["physical_bounds"]):
+                    failures.append(
+                        "pointer preview live measurement labels overlap")
+    for evidence in scenario.get("revision_evidence", []):
+        matches = [
+            receipt for receipt in action_receipts
+            if receipt.get("semantic_id") == evidence["semantic_id"]
+            and receipt.get("action") == evidence["action"]
+        ]
+        references = [
+            receipt for receipt in action_receipts
+            if receipt.get("semantic_id") == evidence["reference_semantic_id"]
+            and receipt.get("action") == evidence["reference_action"]
+        ]
+        occurrence = evidence.get("occurrence", 1)
+        reference_occurrence = evidence.get("reference_occurrence", 1)
+        if (not isinstance(occurrence, int) or occurrence < 1
+                or not isinstance(reference_occurrence, int)
+                or reference_occurrence < 1
+                or len(matches) < occurrence
+                or len(references) < reference_occurrence):
+            failures.append("revision evidence target is unavailable")
+            continue
+        match_revision = matches[occurrence - 1].get(
+            "settled_project_revision"
+        )
+        reference_revision = references[reference_occurrence - 1].get(
+            "settled_project_revision"
+        )
+        if (not isinstance(match_revision, str) or not match_revision
+                or not isinstance(reference_revision, str)
+                or not reference_revision):
+            failures.append("revision evidence has no settled revision")
+            continue
+        matches_reference = match_revision == reference_revision
+        relation = evidence.get("relation")
+        if ((relation == "same" and not matches_reference)
+                or (relation == "different" and matches_reference)
+                or relation not in ("same", "different")):
+            failures.append(
+                f"{evidence['semantic_id']}: project revision relation failed"
+            )
     expected_theme = scenario.get("expected_theme", scenario.get("theme", "light"))
     if metadata.get("theme_id") != expected_theme or semantic.get("theme_id") != expected_theme:
         failures.append("captured theme differs from scenario")
@@ -975,6 +1625,14 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
         failures.append("captured surface differs from scenario")
     if semantic.get("workspace_id") != scenario.get("workspace", "model"):
         failures.append("captured workspace differs from scenario")
+    if expected_source := scenario.get("expected_source_contains"):
+        source_snapshot = semantic.get("source_snapshot")
+        if (not isinstance(source_snapshot, dict)
+                or not isinstance(source_snapshot.get("source"), str)
+                or expected_source not in source_snapshot["source"]
+                or not source_snapshot.get("path")
+                or not source_snapshot.get("revision")):
+            failures.append("canonical source snapshot differs from scenario")
     nodes = semantic.get("nodes")
     if not isinstance(nodes, list) or not nodes:
         return [*failures, "semantic snapshot has no nodes"]
@@ -1184,7 +1842,9 @@ def main() -> int:
             outcomes.append((index, name, failures))
         return outcomes
 
-    workers = max(1, int(os.environ.get("KEARNE_OBSERVE_WORKERS", "4")))
+    default_workers = "1" if arguments.mode == "proof" else "4"
+    workers = max(1, int(os.environ.get("KEARNE_OBSERVE_WORKERS",
+                                       default_workers)))
     outcomes: list[tuple[int, str, list[str]]] = []
     with VirtualDisplay() as display:
         with ThreadPoolExecutor(max_workers=min(workers, len(groups))) as executor:

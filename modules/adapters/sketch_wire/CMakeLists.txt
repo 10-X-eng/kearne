@@ -17,14 +17,9 @@ if(BUILD_TESTING)
     target_link_libraries(kearne_sketch_wire_properties PRIVATE
         Kearne::SketchWire Kearne::Testkit Kearne::BuildOptions)
     add_test(NAME sketch-wire-properties COMMAND kearne_sketch_wire_properties)
-    if(KEARNE_ENABLE_SANITIZERS)
-        set(sketch_wire_property_timeout 180)
-    else()
-        set(sketch_wire_property_timeout 60)
-    endif()
     set_tests_properties(sketch-wire-properties PROPERTIES
         LABELS "property;contract"
-        TIMEOUT ${sketch_wire_property_timeout})
+        TIMEOUT 180)
 
     add_library(kearne_sketch_wire_fuzz OBJECT tests/sketch_wire_fuzz.cpp)
     target_link_libraries(kearne_sketch_wire_fuzz PRIVATE

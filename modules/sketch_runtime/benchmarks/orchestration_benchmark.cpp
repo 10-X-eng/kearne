@@ -55,7 +55,7 @@ private:
 };
 
 runtime::SketchRequest benchmarkRequest(std::size_t entityCount) {
-  model::Definition definition{digest<ContentDigest>(1), {}, {}};
+  model::Definition definition{digest<ContentDigest>(1), {}, {}, {}};
   definition.entities.reserve(entityCount);
   for (std::size_t index = 0; index < entityCount; ++index) {
     const double x = static_cast<double>(index) * 0.002;

@@ -52,11 +52,16 @@ struct RenderedPickVertex {
   double x = 0.0;
   double y = 0.0;
   double pathLogicalPixels = 0.0;
+  double coverageDistancePixels = 0.0;
+  double coverageRadiusPixels = 0.0;
 };
 
 [[nodiscard]] bool finite(const RenderedPickVertex &vertex) {
   return std::isfinite(vertex.x) && std::isfinite(vertex.y) &&
-         std::isfinite(vertex.pathLogicalPixels);
+         std::isfinite(vertex.pathLogicalPixels) &&
+         std::isfinite(vertex.coverageDistancePixels) &&
+         std::isfinite(vertex.coverageRadiusPixels) &&
+         vertex.coverageRadiusPixels >= 0.0;
 }
 
 [[nodiscard]] RenderedPickVertex projectVertex(const SketchMeshVertex &vertex,
@@ -77,7 +82,8 @@ struct RenderedPickVertex {
   itemY -= view.sine * vertex.extrusionX + view.cosine * vertex.extrusionY;
   const float pathLogicalPixels =
       patterned ? vertex.pathDistanceMetres / view.metresPerLogicalPixel : 0.0F;
-  return {itemX, itemY, pathLogicalPixels};
+  return {itemX, itemY, pathLogicalPixels, vertex.coverageDistancePixels,
+          vertex.coverageRadiusPixels};
 }
 
 [[nodiscard]] double pointDistance(double firstX, double firstY, double secondX,
@@ -179,7 +185,11 @@ clipRenderedBoundary(std::span<const RenderedPickVertex> input,
       if (!append({std::lerp(previous.x, current.x, amount),
                    std::lerp(previous.y, current.y, amount),
                    std::lerp(previous.pathLogicalPixels,
-                             current.pathLogicalPixels, amount)}))
+                             current.pathLogicalPixels, amount),
+                   std::lerp(previous.coverageDistancePixels,
+                             current.coverageDistancePixels, amount),
+                   std::lerp(previous.coverageRadiusPixels,
+                             current.coverageRadiusPixels, amount)}))
         return overflow;
     }
     if (currentInside && !append(current))
@@ -220,7 +230,30 @@ struct RenderedTriangleEvaluation {
   std::array<RenderedPickVertex, clippingCapacity> viewportClip{};
   const auto x = [](const RenderedPickVertex &vertex) { return vertex.x; };
   const auto y = [](const RenderedPickVertex &vertex) { return vertex.y; };
-  std::size_t count = clipRenderedBoundary(triangle, firstClip, 0.0, true, x);
+  const auto positiveCoverage = [](const RenderedPickVertex &vertex) {
+    return vertex.coverageDistancePixels - vertex.coverageRadiusPixels;
+  };
+  const auto negativeCoverage = [](const RenderedPickVertex &vertex) {
+    return -vertex.coverageDistancePixels - vertex.coverageRadiusPixels;
+  };
+  std::size_t count =
+      clipRenderedBoundary(triangle, firstClip, 0.0, false, positiveCoverage);
+  if (count == clippingOverflow)
+    return {RenderedTriangleDecision::WorkBudgetExceeded};
+  count =
+      count == 0U
+          ? 0U
+          : clipRenderedBoundary(
+                std::span<const RenderedPickVertex>{firstClip.data(), count},
+                secondClip, 0.0, false, negativeCoverage);
+  if (count == clippingOverflow)
+    return {RenderedTriangleDecision::WorkBudgetExceeded};
+  count =
+      count == 0U
+          ? 0U
+          : clipRenderedBoundary(
+                std::span<const RenderedPickVertex>{secondClip.data(), count},
+                firstClip, 0.0, true, x);
   if (count == clippingOverflow)
     return {RenderedTriangleDecision::WorkBudgetExceeded};
   count =
@@ -281,9 +314,11 @@ struct RenderedTriangleEvaluation {
     if (patternIntervals == maximumPatternIntervals)
       return {RenderedTriangleDecision::WorkBudgetExceeded};
     ++patternIntervals;
-    const float intervalEnd = on > std::numeric_limits<float>::max() - interval
-                                  ? std::numeric_limits<float>::max()
-                                  : interval + on;
+    const float inclusiveEnd = on > std::numeric_limits<float>::max() - interval
+                                   ? std::numeric_limits<float>::max()
+                                   : interval + on;
+    const float intervalEnd =
+        std::nextafter(inclusiveEnd, -std::numeric_limits<float>::infinity());
     const std::size_t firstCount =
         clipRenderedBoundary(displayedTriangle, firstClip, interval, true,
                              &RenderedPickVertex::pathLogicalPixels);
@@ -630,8 +665,26 @@ buildBaseStrokeMesh(const render::SketchSceneSnapshot &scene,
     case render::SketchPrimitiveKind::Arc:
       kind = SketchStrokeSourceKind::Arc;
       break;
+    case render::SketchPrimitiveKind::Ellipse:
+      kind = SketchStrokeSourceKind::Ellipse;
+      break;
+    case render::SketchPrimitiveKind::EllipticalArc:
+      kind = SketchStrokeSourceKind::EllipticalArc;
+      break;
+    case render::SketchPrimitiveKind::HyperbolicArc:
+      kind = SketchStrokeSourceKind::HyperbolicArc;
+      break;
+    case render::SketchPrimitiveKind::ParabolicArc:
+      kind = SketchStrokeSourceKind::ParabolicArc;
+      break;
+    case render::SketchPrimitiveKind::BSpline:
+      kind = SketchStrokeSourceKind::BSpline;
+      break;
     }
-    const render::Point2d first = snapshot.points()[primitive.firstPoint];
+    const render::Point2d first =
+        primitive.kind == render::SketchPrimitiveKind::BSpline
+            ? render::Point2d{}
+            : snapshot.points()[primitive.firstPoint];
     const render::Point2d second =
         primitive.kind == render::SketchPrimitiveKind::Line
             ? snapshot.points()[primitive.firstPoint + 1U]
@@ -645,14 +698,37 @@ buildBaseStrokeMesh(const render::SketchSceneSnapshot &scene,
         second,
         primitive.radius,
         primitive.startAngleRadians,
-        primitive.sweepAngleRadians};
+        primitive.sweepAngleRadians,
+        0U,
+        primitive.secondaryRadius,
+        primitive.rotationAngleRadians};
+  };
+  const auto splineAt = [](const void *opaque,
+                           std::size_t index) noexcept -> sketch::NurbsView {
+    const auto &snapshot =
+        *static_cast<const render::SketchSceneSnapshot *>(opaque);
+    const render::PackedSketchPrimitive &primitive =
+        snapshot.primitives()[index];
+    if (primitive.kind != render::SketchPrimitiveKind::BSpline)
+      return {};
+    const render::PackedSketchSpline &spline =
+        snapshot.splines()[primitive.spline];
+    const std::size_t count = spline.controlPointCount;
+    return {snapshot.splineControlPointCoordinates().subspan(
+                static_cast<std::size_t>(spline.firstControlPoint) * 2U,
+                count * 2U),
+            snapshot.splineKnots().subspan(spline.firstKnot,
+                                           count + spline.degree + 1U),
+            snapshot.splineWeights().subspan(spline.firstWeight, count),
+            spline.degree};
   };
   const auto &bounds = scene.bounds();
   SketchStrokeMeshSource source{scene.styles(),
                                 &scene,
                                 scene.primitives().size(),
                                 primitiveAt,
-                                {bounds.minimum, bounds.maximum, bounds.empty}};
+                                {bounds.minimum, bounds.maximum, bounds.empty},
+                                splineAt};
   auto built = SketchStrokeMeshBuildAccess::build(
       source, lod, tessellation, upload, std::move(reuse), cancellation);
   if (!built)

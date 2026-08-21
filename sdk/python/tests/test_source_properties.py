@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from inspect import Parameter, signature
 from itertools import product
-from math import inf, nextafter, pi
+from math import cosh, inf, nextafter, pi, sinh
 from uuid import UUID
 
 import kearne.sketch as sketch_api
@@ -27,9 +27,14 @@ from kearne.sketch import (
     SketchDefinitionError,
     SketchPlane,
     arc,
+    bspline,
     circle,
+    ellipse,
+    elliptical_arc,
     horizontal,
+    hyperbolic_arc,
     line,
+    parabolic_arc,
     point,
 )
 from kearne.source import (
@@ -135,6 +140,24 @@ def entity_of_kind(kind: str, stable: str) -> sketch_api.Entity:
         return circle(stable, (mm(0), mm(0)), mm(1))
     if kind == "arc":
         return arc(stable, (mm(0), mm(0)), mm(1), deg(0), deg(90))
+    if kind == "ellipse":
+        return ellipse(stable, (mm(0), mm(0)), mm(2), mm(1), deg(15))
+    if kind == "elliptical_arc":
+        return elliptical_arc(
+            stable, (mm(0), mm(0)), mm(2), mm(1), deg(15), deg(0), deg(90)
+        )
+    if kind == "hyperbolic_arc":
+        return hyperbolic_arc(stable, (mm(0), mm(0)), mm(2), mm(3), deg(15), -0.5, 0.5)
+    if kind == "parabolic_arc":
+        return parabolic_arc(stable, (mm(0), mm(0)), mm(1), deg(15), mm(-1), mm(1))
+    if kind == "bspline":
+        return bspline(
+            stable,
+            ((mm(0), mm(0)), (mm(1), mm(1)), (mm(2), mm(0))),
+            (0.0, 0.0, 0.0, 1.0, 1.0, 1.0),
+            (1.0, 1.0, 1.0),
+            2,
+        )
     raise AssertionError(f"unknown entity kind {kind}")
 
 
@@ -594,17 +617,24 @@ def profile(plane):
                 stable = f'"{uuid7(1_000 + index * 10 + offset)}"'
                 value = {
                     "stable_id": stable,
+                    "label": '"Rectangle 1"',
                     "point": "(mm(0), mm(0))",
+                    "points": "((mm(0), mm(0)), (mm(1), mm(1)))",
                     "length": "mm(1)",
                     "angle": "deg(1)",
+                    "scalar": "0.5",
+                    "scalars": "(0.0, 0.0, 1.0, 1.0)",
+                    "integer": "1",
                     "entity_ref": stable,
+                    "entity_refs": f'({stable}, "{uuid7(99_000 + index)}")',
                     "point_ref": f"at({stable})",
                 }[argument.kind]
                 arguments.append(value)
-            section = "entities" if spec.section == "entities" else "constraints"
+            section = spec.section
 
             def source_with(call: str, selected_section: str = section) -> str:
                 entries = call + ","
+                objects = entries if selected_section == "objects" else ""
                 entities = entries if selected_section == "entities" else ""
                 constraints = entries if selected_section == "constraints" else ""
                 return f"""from kearne.sketch import {imports}
@@ -613,6 +643,7 @@ from kearne.units import deg, mm
 def profile(plane):
     return SketchDefinition(
         plane=plane,
+        objects=({objects}),
         entities=({entities}),
         constraints=({constraints}),
     ).build()
@@ -920,6 +951,162 @@ class HelperProperties(unittest.TestCase):
         self.assertEqual(len(result.faces()), 1)
         self.assertAlmostEqual(result.area, pi * radius**2, places=5)
 
+    @settings(max_examples=100, deadline=None)
+    @given(
+        st.floats(min_value=1.0, max_value=1_000.0, allow_nan=False),
+        st.floats(min_value=0.1, max_value=1.0, allow_nan=False),
+        st.floats(min_value=-720.0, max_value=720.0, allow_nan=False),
+    )
+    def test_ellipse_crosses_build123d_as_exact_rotated_geometry(
+        self, major: float, ratio: float, rotation: float
+    ) -> None:
+        minor = major * ratio
+        definition = SketchDefinition(
+            plane=SketchPlane(uuid7(350), Plane.XY),
+            entities=(
+                ellipse(
+                    uuid7(351),
+                    (mm(0), mm(0)),
+                    mm(major),
+                    mm(minor),
+                    deg(rotation),
+                ),
+            ),
+        )
+        result = definition.build()
+        self.assertEqual(len(result.faces()), 1)
+        self.assertAlmostEqual(result.area, pi * major * minor, places=5)
+
+    def test_elliptical_arcs_join_without_polyline_approximation(self) -> None:
+        definition = SketchDefinition(
+            plane=SketchPlane(uuid7(360), Plane.XY),
+            entities=(
+                elliptical_arc(
+                    uuid7(361),
+                    (mm(0), mm(0)),
+                    mm(8),
+                    mm(3),
+                    deg(25),
+                    deg(0),
+                    deg(180),
+                ),
+                elliptical_arc(
+                    uuid7(362),
+                    (mm(0), mm(0)),
+                    mm(8),
+                    mm(3),
+                    deg(25),
+                    deg(180),
+                    deg(360),
+                ),
+            ),
+        )
+        result = definition.build()
+        self.assertEqual(len(result.faces()), 1)
+        self.assertAlmostEqual(result.area, pi * 8 * 3, places=5)
+
+    @settings(max_examples=100, deadline=None)
+    @given(
+        st.floats(min_value=1.0, max_value=100.0, allow_nan=False),
+        st.floats(min_value=1.1, max_value=3.0, allow_nan=False),
+        st.floats(min_value=0.1, max_value=1.5, allow_nan=False),
+    )
+    def test_hyperbolic_arc_crosses_as_exact_native_geometry(
+        self, major: float, ratio: float, parameter: float
+    ) -> None:
+        minor = major * ratio
+        endpoint_x = major * cosh(parameter)
+        endpoint_y = minor * sinh(parameter)
+        definition = SketchDefinition(
+            plane=SketchPlane(uuid7(370), Plane.XY),
+            entities=(
+                hyperbolic_arc(
+                    uuid7(371),
+                    (mm(0), mm(0)),
+                    mm(major),
+                    mm(minor),
+                    deg(0),
+                    -parameter,
+                    parameter,
+                ),
+                line(
+                    uuid7(372),
+                    (mm(endpoint_x), mm(endpoint_y)),
+                    (mm(endpoint_x), mm(-endpoint_y)),
+                ),
+            ),
+        )
+        result = definition.build()
+        self.assertEqual(len(result.faces()), 1)
+        expected = major * minor * (cosh(parameter) * sinh(parameter) - parameter)
+        self.assertAlmostEqual(result.area, expected, places=5)
+
+    @settings(max_examples=100, deadline=None)
+    @given(
+        st.floats(min_value=0.5, max_value=100.0, allow_nan=False),
+        st.floats(min_value=0.5, max_value=100.0, allow_nan=False),
+    )
+    def test_parabolic_arc_crosses_as_exact_native_geometry(
+        self, focal: float, parameter: float
+    ) -> None:
+        endpoint_x = parameter * parameter / (4.0 * focal)
+        definition = SketchDefinition(
+            plane=SketchPlane(uuid7(380), Plane.XY),
+            entities=(
+                parabolic_arc(
+                    uuid7(381),
+                    (mm(0), mm(0)),
+                    mm(focal),
+                    deg(0),
+                    mm(-parameter),
+                    mm(parameter),
+                ),
+                line(
+                    uuid7(382),
+                    (mm(endpoint_x), mm(parameter)),
+                    (mm(endpoint_x), mm(-parameter)),
+                ),
+            ),
+        )
+        result = definition.build()
+        self.assertEqual(len(result.faces()), 1)
+        self.assertAlmostEqual(result.area, parameter**3 / (3.0 * focal), places=5)
+
+    @settings(max_examples=100, deadline=None)
+    @given(
+        st.floats(min_value=0.5, max_value=100.0, allow_nan=False),
+        st.floats(min_value=0.5, max_value=100.0, allow_nan=False),
+    )
+    def test_bspline_crosses_as_exact_native_geometry(
+        self, length_value: float, height: float
+    ) -> None:
+        definition = SketchDefinition(
+            plane=SketchPlane(uuid7(385), Plane.XY),
+            entities=(
+                bspline(
+                    uuid7(386),
+                    (
+                        (mm(0), mm(0)),
+                        (mm(length_value), mm(height)),
+                        (mm(2.0 * length_value), mm(0)),
+                    ),
+                    (0.0, 0.0, 0.0, 1.0, 1.0, 1.0),
+                    (1.0, 1.0, 1.0),
+                    2,
+                ),
+                line(
+                    uuid7(387),
+                    (mm(2.0 * length_value), mm(0)),
+                    (mm(0), mm(0)),
+                ),
+            ),
+        )
+        result = definition.build()
+        self.assertEqual(len(result.faces()), 1)
+        self.assertAlmostEqual(
+            result.area, 2.0 * length_value * height / 3.0, places=5
+        )
+
     def test_runtime_definition_rejects_missing_references(self) -> None:
         entity_id = uuid7(400)
         with self.assertRaises(SketchDefinitionError):
@@ -943,6 +1130,9 @@ class HelperProperties(unittest.TestCase):
                 for argument in spec.positional
                 if argument.kind == "entity_ref"
             ]
+            has_entity_set = any(
+                argument.kind == "entity_refs" for argument in spec.positional
+            )
             if spec.entity_combinations:
                 selected_kinds = tuple(
                     sorted(allowed)[0] for allowed in spec.entity_combinations[0]
@@ -961,6 +1151,11 @@ class HelperProperties(unittest.TestCase):
                 stable = uuid7(base + 20 + entity_index)
                 entities.append(entity_of_kind(kind, stable))
                 entity_ids.append(stable)
+            if has_entity_set:
+                for entity_index in range(2):
+                    stable = uuid7(base + 40 + entity_index)
+                    entities.append(entity_of_kind("line", stable))
+                    entity_ids.append(stable)
             value_argument = next(
                 (
                     argument
@@ -972,6 +1167,11 @@ class HelperProperties(unittest.TestCase):
             value: Length | Angle | None = None
             if value_argument is not None:
                 value = mm(1) if value_argument.kind == "length" else deg(1)
+            position = (
+                (mm(1), mm(2))
+                if any(argument.kind == "point" for argument in spec.positional)
+                else None
+            )
             constraint = Constraint(
                 uuid7(base + 90),
                 spec.name,
@@ -979,6 +1179,7 @@ class HelperProperties(unittest.TestCase):
                 tuple(entity_ids),
                 value,
                 "external" if spec.name == "tangent" else None,
+                position,
             )
             plane = SketchPlane(uuid7(base + 91), Plane.XY)
             SketchDefinition(plane, tuple(entities), (constraint,))

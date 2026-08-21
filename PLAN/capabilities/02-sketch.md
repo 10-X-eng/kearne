@@ -17,15 +17,15 @@ AI and users may instead write any native build123d sketch construction. Such fu
 
 ### SKH-001 — Source is canonical
 
-Sketch geometry, constraints, dimensions, attachment, and stable IDs are expressed in the function source and contract. Parsed sketch records, solver rows, solved coordinates, profiles, and canvas state are derived.
+Sketch operation objects, geometry, constraints, dimensions, attachment, and stable IDs are expressed in the function source and contract. Parsed sketch records, solver rows, solved coordinates, profiles, and canvas state are derived. Compound operation objects follow [ADR-0022](../adr/0022-sketch-operation-objects.md); derived profiles cannot replace them in Structure.
 
 ### SKH-002 — Stable source IDs
 
-Generated point, line, circle, arc, and constraint declarations carry collision-resistant IDs independent of source order, variable names, solver order, trimming, and draw order. Endpoints and centers use keys such as `start`, `end`, and `center`, never numeric offsets.
+Generated operation, point, line, circle, arc, and constraint declarations carry collision-resistant IDs independent of source order, variable names, solver order, trimming, and draw order. Compound members use stable roles and entity IDs. Endpoints and centers use keys such as `start`, `end`, and `center`, never numeric offsets.
 
 ### SKH-003 — Structural edits only
 
-The graphical editor transforms a recognized concrete syntax structure against an expected source digest. It preserves unrelated source or refuses. It does not maintain a hidden sketch entity table or rewrite arbitrary Python with regular expressions.
+The graphical editor transforms a recognized concrete syntax structure against an expected source digest. It preserves unrelated source or refuses. Operation objects, member entities, and constraints change atomically. The editor does not maintain a hidden sketch entity table or rewrite arbitrary Python with regular expressions.
 
 ## 3. MVP geometry and constraints
 
@@ -48,7 +48,7 @@ Higher-order curves and constraint types follow after the solver and source-tran
 
 ### SKH-009 — Complete Sketch tool coverage
 
-The operation matrix MUST cover:
+The authoritative [Sketch tool inventory](02-sketch-tool-inventory.md) is the enablement ledger. The operation matrix MUST cover:
 
 - center/three-point circles and arcs; ellipse, elliptical/hyperbolic/parabolic arc, spline, periodic spline, polygon, corner/center rectangle, oblong, straight/arc slot, point, polyline, and text;
 - trim, extend, split, join, fillet, chamfer, offset, translate, rotate, scale, symmetry, rectangular array, construction conversion, clipboard operations, and rendering order;
@@ -140,7 +140,7 @@ Current Ceres-adapter evidence covers all MVP residual equations, nonlinear solv
 ## 9. Open decisions
 
 - **SKH-OPEN-001:** Solver library and license.
-- **SKH-OPEN-002:** `kearne.sketch` helper API and generated source shape.
+- **SKH-OPEN-002:** Remaining helper API and generated source shapes beyond the operation-object rule fixed by ADR-0022.
 - **SKH-OPEN-004:** Stable profile labels across topology-changing sketch edits.
 - **SKH-OPEN-005:** Exact minimal-conflict guarantees and large-sketch target.
 

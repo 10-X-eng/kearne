@@ -42,6 +42,6 @@ packages = ["kearne"]
 mypy_path = "sdk/python/src"
 
 [[tool.mypy.overrides]]
-module = ["build123d", "build123d.*"]
+module = ["build123d", "build123d.*", "OCP", "OCP.*"]
 ignore_missing_imports = true
 follow_imports = "skip"

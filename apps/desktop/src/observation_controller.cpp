@@ -11,6 +11,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QJsonArray>
@@ -27,6 +28,7 @@
 #include <QWindow>
 
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -366,6 +368,20 @@ QJsonArray jsonArray(const QList<QJsonObject> &objects) {
 
 } // namespace
 
+struct ObservationController::PendingPointerMotion final {
+  QPointF start;
+  QPointF finish;
+  Qt::MouseButton button = Qt::NoButton;
+  Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+  std::optional<std::chrono::steady_clock::time_point> moveDispatched;
+  QJsonArray movePresentations;
+  int nextMove = 1;
+  bool capturePreview = false;
+  bool previewCaptured = false;
+  bool releaseAtEnd = false;
+  static constexpr int moveCount = 20;
+};
+
 QList<QJsonObject>
 parseSemanticOperations(const QStringList &actions,
                         const QStringList &encodedOperations) {
@@ -409,38 +425,8 @@ ObservationController::ObservationController(
       pendingOperations_(std::move(operations)),
       sessionId_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
       presentationCurrent_(std::move(presentationCurrent)) {
-  connect(&window_, &QQuickWindow::frameSwapped, this, [this] {
-    ++presentedFrames_;
-    if (hasActiveSemanticTransition(window_) ||
-        session_.commandDraftState() == QStringLiteral("pending") ||
-        (presentationCurrent_ && !presentationCurrent_())) {
-      settledFrames_ = 0;
-      window_.update();
-      return;
-    }
-    const QByteArray fingerprint = semanticFrameFingerprint(window_);
-    if (fingerprint == lastFrameFingerprint_)
-      ++settledFrames_;
-    else {
-      lastFrameFingerprint_ = fingerprint;
-      settledFrames_ = 0;
-    }
-    if (settledFrames_ < 2) {
-      window_.update();
-      return;
-    }
-    if (!pendingOperations_.isEmpty() || actionScheduled_) {
-      if (!pendingOperations_.isEmpty() && !actionScheduled_) {
-        actionScheduled_ = true;
-        QTimer::singleShot(0, this, [this] { performNextOperation(); });
-      }
-      return;
-    }
-    if (!captureScheduled_) {
-      captureScheduled_ = true;
-      QTimer::singleShot(0, this, [this] { capture(); });
-    }
-  });
+  connect(&window_, &QQuickWindow::frameSwapped, this,
+          [this] { framePresented(); });
   QTimer::singleShot(30'000, this, [this] {
     if (!captureScheduled_) {
       std::cerr << "capture deadline expired before two presented frames\n";
@@ -448,6 +434,218 @@ ObservationController::ObservationController(
     }
   });
   window_.update();
+}
+
+ObservationController::~ObservationController() = default;
+
+void ObservationController::framePresented() {
+  ++presentedFrames_;
+  if (pointerMotion_ && pointerMotion_->moveDispatched) {
+    pointerMotion_->movePresentations.push_back(QJsonObject{
+        {QStringLiteral("move"), pointerMotion_->nextMove - 1},
+        {QStringLiteral("frame"), presentedFrames_},
+        {QStringLiteral("latency_ms"),
+         std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now() - *pointerMotion_->moveDispatched)
+             .count()},
+        {QStringLiteral("preview_visible"),
+         session_.sketchGesturePreviewVisible()},
+        {QStringLiteral("hovered_entity"),
+         session_.sketchHoveredEntityId()},
+        {QStringLiteral("hovered_point"), session_.sketchHoveredPointKey()}});
+    pointerMotion_->moveDispatched.reset();
+    if (pointerMotion_->capturePreview && !pointerMotion_->previewCaptured &&
+        pointerMotion_->nextMove > PendingPointerMotion::moveCount) {
+      capturePreviewImage();
+      pointerMotion_->previewCaptured = true;
+    }
+  }
+  recordPresentedState();
+  if (pointerPreviewCapturePending_) {
+    capturePreviewImage();
+    pointerPreviewCapturePending_ = false;
+  }
+
+  if (pointerMotion_) {
+    settledFrames_ = 0;
+    if (!pointerStepScheduled_) {
+      pointerStepScheduled_ = true;
+      QTimer::singleShot(0, this, [this] { continuePointerMotion(); });
+    }
+    return;
+  }
+  if (hasActiveSemanticTransition(window_) ||
+      session_.commandDraftState() == QStringLiteral("pending") ||
+      (presentationCurrent_ && !presentationCurrent_())) {
+    settledFrames_ = 0;
+    window_.update();
+    return;
+  }
+  const QByteArray fingerprint = semanticFrameFingerprint(window_);
+  if (fingerprint == lastFrameFingerprint_)
+    ++settledFrames_;
+  else {
+    lastFrameFingerprint_ = fingerprint;
+    settledFrames_ = 0;
+  }
+  if (settledFrames_ < 2) {
+    window_.update();
+    return;
+  }
+  finishActiveReceipt();
+  if (!pendingOperations_.isEmpty() || actionScheduled_) {
+    if (!pendingOperations_.isEmpty() && !actionScheduled_) {
+      actionScheduled_ = true;
+      QTimer::singleShot(0, this, [this] { performNextOperation(); });
+    }
+    return;
+  }
+  if (!captureScheduled_) {
+    captureScheduled_ = true;
+    QTimer::singleShot(0, this, [this] { capture(); });
+  }
+}
+
+void ObservationController::capturePreviewImage() {
+  try {
+    if (!activeReceipt_)
+      throw std::runtime_error("pointer preview has no active receipt");
+    if (!QDir{}.mkpath(outputDirectory_))
+      throw std::runtime_error("could not create preview capture directory");
+    QImage preview = window_.grabWindow();
+    if (preview.isNull())
+      throw std::runtime_error("pointer preview capture was empty");
+    const QString path = QDir(outputDirectory_)
+                             .filePath(QStringLiteral("pointer-preview-%1.png")
+                                           .arg(*activeReceipt_ + 1));
+    writeFile(path, encodedPng(preview));
+    QJsonArray nodes;
+    QSet<QObject *> visited;
+    collectSemanticNodes(window_, window_, nodes, visited);
+    const QString semanticPath =
+        QDir(outputDirectory_)
+            .filePath(QStringLiteral("pointer-preview-%1.semantic.json")
+                          .arg(*activeReceipt_ + 1));
+    writeFile(semanticPath,
+              QJsonDocument(QJsonObject{
+                                {QStringLiteral("schema"),
+                                 QStringLiteral("kearne.pointer-preview/v1")},
+                                {QStringLiteral("frame"), presentedFrames_},
+                                {QStringLiteral("ui_generation"),
+                                 static_cast<qint64>(session_.generation())},
+                                {QStringLiteral("command_state"),
+                                 session_.commandDraftState()},
+                                {QStringLiteral("nodes"), nodes},
+                            })
+                  .toJson(QJsonDocument::Indented));
+    actionReceipts_[*activeReceipt_].insert(QStringLiteral("preview_image"),
+                                            QFileInfo(path).fileName());
+    actionReceipts_[*activeReceipt_].insert(QStringLiteral("preview_semantic"),
+                                            QFileInfo(semanticPath).fileName());
+    actionReceipts_[*activeReceipt_].insert(QStringLiteral("preview_frame"),
+                                            presentedFrames_);
+    actionReceipts_[*activeReceipt_].insert(
+        QStringLiteral("preview_generation"),
+        static_cast<qint64>(session_.generation()));
+  } catch (const std::exception &error) {
+    std::cerr << error.what() << '\n';
+    QCoreApplication::exit(4);
+  }
+}
+
+void ObservationController::recordPresentedState() {
+  if (!activeReceipt_ || !actionStarted_)
+    return;
+  QJsonObject &receipt = actionReceipts_[*activeReceipt_];
+  QJsonArray frames = receipt.value(QStringLiteral("presented")).toArray();
+  const double elapsed = std::chrono::duration<double, std::milli>(
+                             std::chrono::steady_clock::now() - *actionStarted_)
+                             .count();
+  const QJsonObject frame{
+      {QStringLiteral("frame"), presentedFrames_},
+      {QStringLiteral("elapsed_ms"), elapsed},
+      {QStringLiteral("ui_generation"),
+       static_cast<qint64>(session_.generation())},
+      {QStringLiteral("command_state"), session_.commandDraftState()},
+      {QStringLiteral("project_revision"), session_.projectRevision()},
+      {QStringLiteral("native_scene_current"),
+       !presentationCurrent_ || presentationCurrent_()},
+      {QStringLiteral("sketch_preview_visible"),
+       session_.sketchGesturePreviewVisible()},
+  };
+  const bool changed =
+      frames.isEmpty() ||
+      frames.last().toObject().value(QStringLiteral("ui_generation")) !=
+          frame.value(QStringLiteral("ui_generation")) ||
+      frames.last().toObject().value(QStringLiteral("command_state")) !=
+          frame.value(QStringLiteral("command_state")) ||
+      frames.last().toObject().value(QStringLiteral("project_revision")) !=
+          frame.value(QStringLiteral("project_revision")) ||
+      frames.last().toObject().value(QStringLiteral("native_scene_current")) !=
+          frame.value(QStringLiteral("native_scene_current")) ||
+      frames.last().toObject().value(
+          QStringLiteral("sketch_preview_visible")) !=
+          frame.value(QStringLiteral("sketch_preview_visible"));
+  constexpr qsizetype maximumTraceFrames = 64;
+  if (changed && frames.size() < maximumTraceFrames)
+    frames.push_back(frame);
+  else if (changed) {
+    frames[maximumTraceFrames - 1] = frame;
+    receipt.insert(QStringLiteral("presented_trace_truncated"), true);
+  }
+  receipt.insert(QStringLiteral("presented"), frames);
+}
+
+void ObservationController::finishActiveReceipt() {
+  if (!activeReceipt_ || !actionStarted_)
+    return;
+  QJsonObject &receipt = actionReceipts_[*activeReceipt_];
+  const QString settledRevision = session_.projectRevision();
+  const QJsonArray frames =
+      receipt.value(QStringLiteral("presented")).toArray();
+  const auto currentScene = std::find_if(
+      frames.cbegin(), frames.cend(),
+      [&settledRevision](const QJsonValue &value) {
+        const QJsonObject frame = value.toObject();
+        return frame.value(QStringLiteral("native_scene_current")).toBool() &&
+               frame.value(QStringLiteral("project_revision")).toString() ==
+                   settledRevision;
+      });
+  if (currentScene != frames.cend()) {
+    const QJsonObject frame = currentScene->toObject();
+    const double currentMilliseconds =
+        frame.value(QStringLiteral("elapsed_ms")).toDouble();
+    receipt.insert(QStringLiteral("current_scene_frame"),
+                   frame.value(QStringLiteral("frame")));
+    receipt.insert(QStringLiteral("current_scene_ms"), currentMilliseconds);
+    if (receipt.contains(QStringLiteral("input_complete_ms"))) {
+      receipt.insert(
+          QStringLiteral("current_scene_after_input_ms"),
+          std::max(0.0, currentMilliseconds -
+                            receipt.value(QStringLiteral("input_complete_ms"))
+                                .toDouble()));
+    }
+  }
+  receipt.insert(QStringLiteral("settled_frame"), presentedFrames_);
+  receipt.insert(QStringLiteral("settled_ms"),
+                 std::chrono::duration<double, std::milli>(
+                     std::chrono::steady_clock::now() - *actionStarted_)
+                     .count());
+  receipt.insert(QStringLiteral("settled_generation"),
+                 static_cast<qint64>(session_.generation()));
+  receipt.insert(QStringLiteral("settled_state"), session_.commandDraftState());
+  receipt.insert(QStringLiteral("settled_project_revision"), settledRevision);
+  receipt.insert(QStringLiteral("settled_native_scene_current"),
+                 !presentationCurrent_ || presentationCurrent_());
+  if (inputCompleted_) {
+    receipt.insert(QStringLiteral("settled_after_input_ms"),
+                   std::chrono::duration<double, std::milli>(
+                       std::chrono::steady_clock::now() - *inputCompleted_)
+                       .count());
+  }
+  activeReceipt_.reset();
+  actionStarted_.reset();
+  inputCompleted_.reset();
 }
 
 void ObservationController::performNextOperation() {
@@ -476,40 +674,78 @@ void ObservationController::performNextOperation() {
     }
 
     const qulonglong generationBefore = session_.generation();
+    const auto dispatchedAt = std::chrono::steady_clock::now();
     QVariant accepted;
     const QVariant actionArgument = action;
     const QVariant valueArgument =
         operation.value(QStringLiteral("value")).toVariant();
-    if ((action == QStringLiteral("pointerClick") ||
-         action == QStringLiteral("pointerDrag"))) {
+    if (action == QStringLiteral("pointerClick") ||
+        action == QStringLiteral("pointerDrag") ||
+        action == QStringLiteral("pointerHover")) {
       auto *item = qobject_cast<QQuickItem *>(target);
       const QJsonObject input =
           operation.value(QStringLiteral("value")).toObject();
       if (!item || input.isEmpty())
         throw std::runtime_error(
             "pointer input requires an item and object value");
-      const Qt::MouseButton button = pointerButton(input);
       const Qt::KeyboardModifiers modifiers = pointerModifiers(input);
-      const QString startField = action == QStringLiteral("pointerClick")
-                                     ? QStringLiteral("position")
-                                     : QStringLiteral("from");
+      const bool hoverPath = action == QStringLiteral("pointerHover") &&
+                             input.contains(QStringLiteral("from")) &&
+                             input.contains(QStringLiteral("to"));
+      const QString startField =
+          action == QStringLiteral("pointerDrag") || hoverPath
+              ? QStringLiteral("from")
+              : QStringLiteral("position");
       const QPointF start = pointerPosition(*item, input, startField);
-      const QPointF finish =
-          action == QStringLiteral("pointerClick")
-              ? start
-              : pointerPosition(*item, input, QStringLiteral("to"));
-      sendMouseEvent(window_, QEvent::MouseButtonPress, start, button, button,
-                     modifiers);
-      if (action == QStringLiteral("pointerDrag")) {
-        for (int step = 1; step <= 4; ++step) {
-          const qreal progress = static_cast<qreal>(step) / 4.0;
-          sendMouseEvent(window_, QEvent::MouseMove,
-                         start + (finish - start) * progress, Qt::NoButton,
+      if (hoverPath) {
+        pointerMotion_ =
+            std::make_unique<PendingPointerMotion>(PendingPointerMotion{
+                .start = start,
+                .finish = pointerPosition(*item, input, QStringLiteral("to")),
+                .button = Qt::NoButton,
+                .modifiers = modifiers,
+                .moveDispatched = std::nullopt,
+                .movePresentations = {},
+                .nextMove = 1,
+                .capturePreview = input.value(QStringLiteral("capture_preview"))
+                                      .toBool(false),
+                .previewCaptured = false,
+                .releaseAtEnd = false,
+            });
+      } else if (action == QStringLiteral("pointerHover")) {
+        sendMouseEvent(window_, QEvent::MouseMove, start, Qt::NoButton,
+                       Qt::NoButton, modifiers);
+      } else {
+        const Qt::MouseButton button = pointerButton(input);
+        const QPointF finish =
+            action == QStringLiteral("pointerClick")
+                ? start
+                : pointerPosition(*item, input, QStringLiteral("to"));
+        if (action == QStringLiteral("pointerDrag")) {
+          sendMouseEvent(window_, QEvent::MouseButtonPress, start, button,
                          button, modifiers);
+          pointerMotion_ =
+              std::make_unique<PendingPointerMotion>(PendingPointerMotion{
+                  .start = start,
+                  .finish = finish,
+                  .button = button,
+                  .modifiers = modifiers,
+                  .moveDispatched = std::nullopt,
+                  .movePresentations = {},
+                  .nextMove = 1,
+                  .capturePreview =
+                      input.value(QStringLiteral("capture_preview"))
+                          .toBool(false),
+                  .previewCaptured = false,
+                  .releaseAtEnd = true,
+              });
+        } else {
+          sendMouseEvent(window_, QEvent::MouseButtonPress, start, button,
+                         button, modifiers);
+          sendMouseEvent(window_, QEvent::MouseButtonRelease, finish, button,
+                         Qt::NoButton, modifiers);
         }
       }
-      sendMouseEvent(window_, QEvent::MouseButtonRelease, finish, button,
-                     Qt::NoButton, modifiers);
       accepted = true;
     } else if (!QMetaObject::invokeMethod(target, "performSemanticAction",
                                           Qt::DirectConnection,
@@ -521,6 +757,10 @@ void ObservationController::performNextOperation() {
                                 action + QStringLiteral(": ") + semanticId)
                                    .toStdString());
     }
+    const double dispatchMilliseconds =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - dispatchedAt)
+            .count();
     QJsonObject receipt{
         {QStringLiteral("semantic_id"), semanticId},
         {QStringLiteral("action"), action},
@@ -528,12 +768,27 @@ void ObservationController::performNextOperation() {
          static_cast<qint64>(generationBefore)},
         {QStringLiteral("generation_after"),
          static_cast<qint64>(session_.generation())},
+        {QStringLiteral("dispatch_ms"), dispatchMilliseconds},
+        {QStringLiteral("state_after_dispatch"), session_.commandDraftState()},
+        {QStringLiteral("project_revision_after_dispatch"),
+         session_.projectRevision()},
+        {QStringLiteral("presented_frame_before"), presentedFrames_},
+        {QStringLiteral("presented"), QJsonArray{}},
     };
     if (operation.contains(QStringLiteral("value")))
       receipt.insert(QStringLiteral("value"),
                      operation.value(QStringLiteral("value")));
+    activeReceipt_ = actionReceipts_.size();
+    actionStarted_ = dispatchedAt;
     actionReceipts_.push_back(receipt);
-    actionScheduled_ = false;
+    pointerPreviewCapturePending_ =
+        action == QStringLiteral("pointerHover") && !pointerMotion_ &&
+        operation.value(QStringLiteral("value"))
+            .toObject()
+            .value(QStringLiteral("capture_preview"))
+            .toBool(false);
+    if (!pointerMotion_)
+      actionScheduled_ = false;
     settledFrames_ = 0;
     lastFrameFingerprint_.clear();
     window_.update();
@@ -541,6 +796,52 @@ void ObservationController::performNextOperation() {
     std::cerr << error.what() << '\n';
     QCoreApplication::exit(4);
   }
+}
+
+void ObservationController::continuePointerMotion() {
+  pointerStepScheduled_ = false;
+  if (!pointerMotion_)
+    return;
+  if (pointerMotion_->nextMove <= PendingPointerMotion::moveCount) {
+    const qreal progress = static_cast<qreal>(pointerMotion_->nextMove) /
+                           static_cast<qreal>(PendingPointerMotion::moveCount);
+    pointerMotion_->moveDispatched = std::chrono::steady_clock::now();
+    sendMouseEvent(
+        window_, QEvent::MouseMove,
+        pointerMotion_->start +
+            (pointerMotion_->finish - pointerMotion_->start) * progress,
+        Qt::NoButton, pointerMotion_->button, pointerMotion_->modifiers);
+    ++pointerMotion_->nextMove;
+    window_.update();
+    return;
+  }
+  const bool releaseAtEnd = pointerMotion_->releaseAtEnd;
+  if (releaseAtEnd) {
+    sendMouseEvent(window_, QEvent::MouseButtonRelease, pointerMotion_->finish,
+                   pointerMotion_->button, Qt::NoButton,
+                   pointerMotion_->modifiers);
+    inputCompleted_ = std::chrono::steady_clock::now();
+  }
+  const QJsonArray movePresentations = pointerMotion_->movePresentations;
+  pointerMotion_.reset();
+  actionScheduled_ = false;
+  if (activeReceipt_) {
+    QJsonObject &receipt = actionReceipts_[*activeReceipt_];
+    receipt.insert(QStringLiteral("generation_after"),
+                   static_cast<qint64>(session_.generation()));
+    if (releaseAtEnd)
+      receipt.insert(QStringLiteral("state_after_input"),
+                     session_.commandDraftState());
+    receipt.insert(QStringLiteral("pointer_move_presentations"),
+                   movePresentations.size());
+    receipt.insert(QStringLiteral("pointer_move_frames"), movePresentations);
+    if (inputCompleted_)
+      receipt.insert(QStringLiteral("input_complete_ms"),
+                     std::chrono::duration<double, std::milli>(
+                         *inputCompleted_ - *actionStarted_)
+                         .count());
+  }
+  window_.update();
 }
 
 void ObservationController::capture() {
@@ -569,7 +870,7 @@ void ObservationController::capture() {
     QSet<QObject *> visited;
     collectSemanticNodes(window_, window_, nodes, visited);
     const QJsonArray receipts = jsonArray(actionReceipts_);
-    const QJsonObject semantic{
+    QJsonObject semantic{
         {QStringLiteral("schema"), QStringLiteral("kearne.semantic-ui/v1")},
         {QStringLiteral("surface_id"), session_.activeSurfaceId()},
         {QStringLiteral("workspace_id"), session_.activeWorkspaceId()},
@@ -580,6 +881,20 @@ void ObservationController::capture() {
         {QStringLiteral("actions"), receipts},
         {QStringLiteral("nodes"), nodes},
     };
+    if (auto *sourceEditor = qobject_cast<QQuickItem *>(findSemanticObject(
+            window_, QStringLiteral("inspector.source.editor")));
+        sourceEditor && isEffectivelyVisible(*sourceEditor, window_)) {
+      const QVariantMap selectedFunction = session_.selectedFunction();
+      semantic.insert(
+          QStringLiteral("source_snapshot"),
+          QJsonObject{
+              {QStringLiteral("path"),
+               selectedFunction.value(QStringLiteral("sourcePath")).toString()},
+              {QStringLiteral("revision"),
+               selectedFunction.value(QStringLiteral("revision")).toString()},
+              {QStringLiteral("source"), session_.modelSource()},
+          });
+    }
     const QString semanticPath =
         QDir(outputDirectory_).filePath(QStringLiteral("semantic-ui.json"));
     writeFile(semanticPath,

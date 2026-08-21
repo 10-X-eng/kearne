@@ -10,9 +10,12 @@ Rectangle {
     property string semanticName: "Primary model viewport"
     property string semanticRole: "canvas"
     property var semanticActions: ["orbit", "pan", "zoom", "fit", "select",
-                                   "pointerDrag", "pointerClick",
+                                   "pointerDrag", "pointerClick", "pointerHover",
                                    "toggleConstruction"]
-    property string semanticValue: App.camera.state + ":" + App.ui.selectionSummary
+    property string semanticValue: App.camera.state + ":"
+                                   + App.ui.selectionSummary + ":hover="
+                                   + App.ui.sketchHoveredEntityId + "/"
+                                   + App.ui.sketchHoveredPointKey
     property bool structureAvailable: true
     property bool inspectorAvailable: true
     property real modelGridSpacingMillimeters: App.ui.gridSpacingMillimeters
@@ -79,6 +82,17 @@ Rectangle {
         if (event.key === Qt.Key_X
                 && App.ui.sketchEditing) {
             event.accepted = App.ui.toggleSketchConstruction()
+        } else if (event.key === Qt.Key_Backspace
+                   && App.ui.activeCommandId.length > 0) {
+            event.accepted = App.ui.removeLastSketchInput()
+        } else if ((event.key === Qt.Key_Return
+                    || event.key === Qt.Key_Enter)
+                   && App.ui.commandApplySupported) {
+            event.accepted = App.ui.submitActiveCommand(false)
+        } else if (event.key === Qt.Key_Escape
+                   && App.ui.activeCommandId.length > 0) {
+            App.ui.cancelActiveCommand()
+            event.accepted = true
         } else if (event.key === Qt.Key_Home) {
             if (App.ui.sketchEditing)
                 App.sketchCamera.reset()
@@ -130,21 +144,44 @@ Rectangle {
         snapSpacingMillimeters: engineeringGrid.displayedSpacingMillimeters
     }
 
+    Item {
+        width: 0
+        height: 0
+
+        NumberAnimation on rotation {
+            from: 0
+            to: 360
+            duration: 1000
+            loops: Animation.Infinite
+            running: navigationArea.pressed && App.ui.sketchEditing
+        }
+    }
+
     MouseArea {
         id: navigationArea
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
         hoverEnabled: true
-        cursorShape: App.ui.sketchEditing
-                     && App.ui.sketchInputKind !== "none"
-                     ? Qt.CrossCursor : Qt.ArrowCursor
+        cursorShape: Qt.ArrowCursor
         property real previousX: 0
         property real previousY: 0
         property real pressedX: 0
         property real pressedY: 0
         property bool dragged: false
+        property bool curveDragActive: false
 
         onPressed: mouse => {
+            if (App.ui.sketchEditing) {
+                App.ui.clearSketchGesturePreview()
+                if (App.ui.activeCommandId.length === 0
+                        && mouse.button === Qt.LeftButton) {
+                    App.ui.updateSketchPointerHover(mouse.x, mouse.y)
+                    curveDragActive = App.ui.beginSketchCurveDrag(mouse.x,
+                                                                  mouse.y)
+                } else {
+                    curveDragActive = false
+                }
+            }
             previousX = mouse.x
             previousY = mouse.y
             pressedX = mouse.x
@@ -157,8 +194,19 @@ Rectangle {
             const dy = mouse.y - previousY
             previousX = mouse.x
             previousY = mouse.y
-            if (App.ui.sketchEditing)
-                sketchScene.updateCursor(mouse.x, mouse.y, true)
+            if (App.ui.sketchEditing && mouse.buttons === Qt.NoButton) {
+                if (App.ui.sketchInputKind === "plane-point") {
+                    const point = sketchScene.planePoint(mouse.x, mouse.y)
+                    App.ui.previewSketchPoint(point[0], point[1])
+                    App.ui.clearSketchPointerHover()
+                } else {
+                    App.ui.clearSketchGesturePreview()
+                    App.ui.updateSketchPointerHover(mouse.x, mouse.y)
+                }
+            } else if (App.ui.sketchEditing
+                       && App.ui.activeCommandId.length > 0) {
+                App.ui.clearSketchPointerHover()
+            }
             if (Math.abs(dx) > 0 || Math.abs(dy) > 0) {
                 if (App.ui.sketchEditing
                         && (mouse.buttons & Qt.MiddleButton)) {
@@ -168,11 +216,16 @@ Rectangle {
                            && (mouse.buttons & Qt.LeftButton)
                            && Math.hypot(mouse.x - pressedX,
                                          mouse.y - pressedY) >= 4) {
-                    dragged = true
                     const first = sketchScene.planePoint(pressedX, pressedY)
                     const opposite = sketchScene.planePoint(mouse.x, mouse.y)
-                    App.ui.previewSketchDrag(first[0], first[1],
-                                             opposite[0], opposite[1])
+                    if (App.ui.activeCommandId.length > 0) {
+                        dragged = dragged || App.ui.previewSketchDrag(
+                                      first[0], first[1],
+                                      opposite[0], opposite[1])
+                    } else if (curveDragActive) {
+                        App.ui.previewSketchCurveDrag(opposite[0], opposite[1])
+                        dragged = true
+                    }
                 } else if (!App.ui.sketchEditing
                            && App.camera.applyPointerDrag(mouse.buttons,
                                                           mouse.modifiers,
@@ -182,7 +235,7 @@ Rectangle {
             }
         }
         onReleased: mouse => {
-            App.ui.clearSketchDragPreview()
+            App.ui.clearSketchGesturePreview()
             if (mouse.button === Qt.LeftButton
                     && App.ui.sketchEditing) {
                 if (dragged)
@@ -193,9 +246,21 @@ Rectangle {
             } else if (!dragged && mouse.button === Qt.LeftButton) {
                 App.ui.selectEntity("component.navigation-fixture")
             }
+            curveDragActive = false
         }
-        onCanceled: App.ui.clearSketchDragPreview()
-        onExited: sketchScene.updateCursor(0, 0, false)
+        onCanceled: {
+            App.ui.clearSketchGesturePreview()
+            App.ui.cancelSketchCurveDrag()
+            curveDragActive = false
+        }
+        onExited: {
+            App.ui.clearSketchPointerHover()
+            App.ui.clearSketchGesturePreview()
+            if (!pressed) {
+                App.ui.cancelSketchCurveDrag()
+                curveDragActive = false
+            }
+        }
         onWheel: wheel => {
             if (App.ui.sketchEditing)
                 App.sketchCamera.zoomAt(wheel.angleDelta.y / 120,

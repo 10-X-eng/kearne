@@ -11,10 +11,15 @@ from hypothesis import strategies as st
 from kearne._sketch_schema import CONSTRAINT_HELPERS, HELPERS
 from kearne.sketch import (
     ArcEntity,
+    BSplineEntity,
     CircleEntity,
     Constraint,
+    EllipseEntity,
+    EllipticalArcEntity,
     Entity,
+    HyperbolicArcEntity,
     LineEntity,
+    ParabolicArcEntity,
     PointEntity,
     PointRef,
 )
@@ -52,6 +57,11 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
         "circle": uuid7(seed + 4),
         "circle_2": uuid7(seed + 5),
         "arc": uuid7(seed + 6),
+        "ellipse": uuid7(seed + 7),
+        "elliptical_arc": uuid7(seed + 8),
+        "hyperbolic_arc": uuid7(seed + 9),
+        "parabolic_arc": uuid7(seed + 10),
+        "bspline": uuid7(seed + 11),
     }
     entities: tuple[Entity, ...] = (
         PointEntity(ids["point"], (Length(offset), Length(0.002))),
@@ -74,6 +84,51 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
             Length(0.005),
             Angle(0.1),
             Angle(1.7),
+        ),
+        EllipseEntity(
+            ids["ellipse"],
+            (Length(0.07), Length(0.04)),
+            Length(0.012),
+            Length(0.006),
+            Angle(0.3),
+        ),
+        EllipticalArcEntity(
+            ids["elliptical_arc"],
+            (Length(0.08), Length(0.07)),
+            Length(0.014),
+            Length(0.005),
+            Angle(-0.2),
+            Angle(0.4),
+            Angle(2.3),
+        ),
+        HyperbolicArcEntity(
+            ids["hyperbolic_arc"],
+            (Length(0.12), Length(0.07)),
+            Length(0.011),
+            Length(0.017),
+            Angle(0.37),
+            -0.8,
+            1.2 + offset,
+        ),
+        ParabolicArcEntity(
+            ids["parabolic_arc"],
+            (Length(0.15), Length(0.07)),
+            Length(0.006),
+            Angle(-0.41),
+            Length(-0.015),
+            Length(0.021 + offset),
+        ),
+        BSplineEntity(
+            ids["bspline"],
+            (
+                (Length(0.17), Length(0.07)),
+                (Length(0.18), Length(0.09 + offset)),
+                (Length(0.20), Length(0.05)),
+                (Length(0.22), Length(0.075)),
+            ),
+            (0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0),
+            (1.0, 0.75, 1.25, 1.0),
+            3,
         ),
     )
     by_kind = {
@@ -114,6 +169,8 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
                     selected = ids["circle_2"]
                 entity_ids.append(selected)
                 entity_ordinal += 1
+            elif argument.kind == "entity_refs":
+                entity_ids.extend((ids["line"], ids["line_2"]))
         quantity = next(
             (
                 argument.kind
@@ -125,6 +182,11 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
         value = Length(0.025) if quantity == "length" else None
         if quantity == "angle":
             value = Angle(0.5)
+        position = (
+            (Length(0.01), Length(0.02))
+            if any(argument.kind == "point" for argument in spec.positional)
+            else None
+        )
         constraints.append(
             Constraint(
                 uuid7(seed + 100 + ordinal),
@@ -133,6 +195,7 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
                 tuple(entity_ids),
                 value,
                 "internal" if name == "tangent" else None,
+                position,
             )
         )
     return entities, tuple(constraints)
@@ -171,7 +234,17 @@ class SketchSourceProperties(unittest.TestCase):
         assert initial is not None
         self.assertEqual(
             {entry.kind for entry in initial.entities},
-            {"point", "line", "circle", "arc"},
+            {
+                "point",
+                "line",
+                "circle",
+                "arc",
+                "ellipse",
+                "elliptical_arc",
+                "hyperbolic_arc",
+                "parabolic_arc",
+                "bspline",
+            },
         )
 
         namespace = {name: getattr(sketch_api, name) for name in HELPERS}
@@ -218,9 +291,10 @@ class SketchSourceProperties(unittest.TestCase):
             tuple(value.kind for value in constraints),
         )
         self.assertIn('sentinel = "preserve this byte-for-byte"', current)
-        _, decoded_entities, decoded_constraints = values_from_source(
+        _, decoded_objects, decoded_entities, decoded_constraints = values_from_source(
             current, "profile"
         )
+        self.assertEqual(decoded_objects, ())
         self.assertEqual(decoded_entities, entities)
         self.assertEqual(decoded_constraints, constraints)
 

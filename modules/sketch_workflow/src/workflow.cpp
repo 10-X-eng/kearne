@@ -130,7 +130,7 @@ Result<SketchState> Workflow::create(SketchAddress address,
   auto revision = commitSource(address, *source, operation, std::nullopt);
   if (!revision)
     return std::unexpected(std::move(revision.error()));
-  sketch::Definition definition{source->digest, {}, {}};
+  sketch::Definition definition{source->digest, {}, {}, {}};
   return evaluate(std::move(address), std::move(*source), std::move(definition),
                   std::move(*revision), evaluation, cancellation);
 }

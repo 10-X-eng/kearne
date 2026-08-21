@@ -76,6 +76,7 @@ model::Definition definition(std::uint64_t seed, double x, double y,
   const SketchEntityId arcId = id<SketchEntityId>(seed + 4U);
   return {
       digest<ContentDigest>(seed),
+      {},
       {model::PointEntity{pointId, point(x, y, throughMillimetres)},
        model::LineEntity{lineId, point(x, y, throughMillimetres),
                          point(x + scale, y, throughMillimetres)},

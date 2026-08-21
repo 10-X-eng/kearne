@@ -1,3 +1,9 @@
+# Non-negotiable Kearne rules
+
+Build every part of Kearne as compact, reusable, production software for humans: one canonical native build123d design and command model for UI, AI, scripts, plugins, history, files, and headless access; complete, coherent, fast workflows; engineering work off the UI thread; multithreaded CPU execution and GPU acceleration where useful; and visible results that are sane and beautiful.
+
+Follow the user's instructions exactly and never claim that work is ready, working, complete, reviewable, or committable until the exact Release application has been exercised like a human through every affected real workflow, all controls and outputs have been checked, lossless full-screen captures have been critically inspected, every defect or omission has been fixed, and the answer to both “Does it work sanely?” and “Is it beautiful?” is unequivocally yes; tests are necessary but never sufficient, and launches, commits, pushes, prototypes, shortcuts, stubs, hidden gaps, and scope changes require the user's existing authorization.
+
 # Kearne Agent Contract
 
 Read [`PLAN/README.md`](PLAN/README.md), the owning plan, its dependencies, and applicable ADRs before changing behavior.
@@ -25,6 +31,8 @@ Read [`PLAN/README.md`](PLAN/README.md), the owning plan, its dependencies, and 
 
 ## Verification
 
+- Use `./tools/build.sh` for Release builds and acceptance runs. Do not infer
+  Release readiness from ad hoc CMake commands or another build directory.
 - Extend shared generators, reference models, contract suites, or scenario data before adding a one-off test.
 - Use fixed regressions only for external compatibility, a minimized defect that existing generators cannot express, or a critical user workflow.
 - Do not use sleeps, exact BREP bytes, localized text, widget coordinates, or broad screenshot goldens as primary oracles.

@@ -135,7 +135,7 @@ Item {
 
         Connections {
             target: App.ui
-            function onProjectionChanged() { planes.requestPaint() }
+            function onSketchProjectionChanged() { planes.requestPaint() }
         }
 
         onWidthChanged: requestPaint()

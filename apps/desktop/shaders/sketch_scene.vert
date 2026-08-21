@@ -4,6 +4,8 @@ layout(location = 0) in vec2 position;
 layout(location = 1) in vec2 positionLow;
 layout(location = 2) in vec2 extrusion;
 layout(location = 3) in float pathDistanceMetres;
+layout(location = 4) in vec2 coverage;
+layout(location = 5) in vec2 pattern;
 
 layout(std140, binding = 0) uniform Buffer {
     mat4 matrix;
@@ -14,6 +16,8 @@ layout(std140, binding = 0) uniform Buffer {
 } ubuf;
 
 layout(location = 0) out float pathDistance;
+layout(location = 1) out vec2 edgeCoverage;
+layout(location = 2) flat out vec2 strokePattern;
 
 void main()
 {
@@ -29,4 +33,6 @@ void main()
                 -(sine * extrusion.x + cosine * extrusion.y));
     gl_Position = ubuf.matrix * vec4(item, 0.0, 1.0);
     pathDistance = pathDistanceMetres;
+    edgeCoverage = coverage;
+    strokePattern = pattern;
 }

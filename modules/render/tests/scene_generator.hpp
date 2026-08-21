@@ -1,6 +1,7 @@
 #pragma once
 
 #include <kearne/render/sketch_scene.hpp>
+#include <kearne/sketch/nurbs.hpp>
 #include <kearne/testkit/property.hpp>
 
 #include <algorithm>
@@ -122,6 +123,38 @@ scene(std::size_t count, std::uint64_t seed, SceneStamp sceneStamp) {
       primitive.sweepAngleRadians =
           random.between(0.15, 5.5) * (index % 2U == 0U ? 1.0 : -1.0);
       break;
+    case SketchPrimitiveKind::Ellipse:
+    case SketchPrimitiveKind::EllipticalArc:
+      points.push_back(center);
+      primitive.radius = random.between(0.006, 0.014);
+      primitive.secondaryRadius = random.between(0.002, primitive.radius);
+      primitive.rotationAngleRadians =
+          random.between(-std::numbers::pi, std::numbers::pi);
+      if (primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+        primitive.startAngleRadians = random.between(-3.0, 3.0);
+        primitive.sweepAngleRadians =
+            random.between(0.15, 5.5) * (index % 2U == 0U ? 1.0 : -1.0);
+      }
+      break;
+    case SketchPrimitiveKind::HyperbolicArc:
+      points.push_back(center);
+      primitive.radius = random.between(0.003, 0.008);
+      primitive.secondaryRadius = random.between(0.002, 0.010);
+      primitive.rotationAngleRadians =
+          random.between(-std::numbers::pi, std::numbers::pi);
+      primitive.startAngleRadians = random.between(-1.2, -0.2);
+      primitive.sweepAngleRadians = random.between(0.4, 2.4);
+      break;
+    case SketchPrimitiveKind::ParabolicArc:
+      points.push_back(center);
+      primitive.radius = random.between(0.003, 0.008);
+      primitive.rotationAngleRadians =
+          random.between(-std::numbers::pi, std::numbers::pi);
+      primitive.startAngleRadians = random.between(-0.012, -0.002);
+      primitive.sweepAngleRadians = random.between(0.004, 0.024);
+      break;
+    case SketchPrimitiveKind::BSpline:
+      throw std::runtime_error("generic scene generator selected B-spline");
     }
     primitives.push_back(primitive);
   }
@@ -210,6 +243,35 @@ inline Point2d radial(Point2d center, double radius, double angle) {
           center.y + radius * std::sin(angle)};
 }
 
+inline Point2d ellipsePoint(Point2d center, double major, double minor,
+                            double rotation, double parameter) {
+  const double localX = major * std::cos(parameter);
+  const double localY = minor * std::sin(parameter);
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  return {center.x + cosine * localX - sine * localY,
+          center.y + sine * localX + cosine * localY};
+}
+
+inline Point2d hyperbolaPoint(Point2d center, double major, double minor,
+                              double rotation, double parameter) {
+  const double localX = major * std::cosh(parameter);
+  const double localY = minor * std::sinh(parameter);
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  return {center.x + cosine * localX - sine * localY,
+          center.y + sine * localX + cosine * localY};
+}
+
+inline Point2d parabolaPoint(Point2d vertex, double focalLength,
+                             double rotation, double parameter) {
+  const double localX = parameter * parameter / (4.0 * focalLength);
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  return {vertex.x + cosine * localX - sine * parameter,
+          vertex.y + sine * localX + cosine * parameter};
+}
+
 inline std::vector<SketchPickQuery> queries(const SketchSceneSnapshot &scene,
                                             std::size_t count,
                                             std::uint64_t seed) {
@@ -237,6 +299,28 @@ inline std::vector<SketchPickQuery> queries(const SketchSceneSnapshot &scene,
           radial(first, primitive.radius,
                  primitive.startAngleRadians +
                      primitive.sweepAngleRadians * random.between(0.0, 1.0));
+    } else if (primitive.kind == SketchPrimitiveKind::Ellipse ||
+               primitive.kind == SketchPrimitiveKind::EllipticalArc) {
+      const double parameter =
+          primitive.kind == SketchPrimitiveKind::Ellipse
+              ? random.between(0.0, 2.0 * std::numbers::pi)
+              : primitive.startAngleRadians +
+                    primitive.sweepAngleRadians * random.between(0.0, 1.0);
+      target = ellipsePoint(first, primitive.radius, primitive.secondaryRadius,
+                            primitive.rotationAngleRadians, parameter);
+    } else if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+      const double parameter =
+          primitive.startAngleRadians +
+          primitive.sweepAngleRadians * random.between(0.0, 1.0);
+      target =
+          hyperbolaPoint(first, primitive.radius, primitive.secondaryRadius,
+                         primitive.rotationAngleRadians, parameter);
+    } else if (primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+      const double parameter =
+          primitive.startAngleRadians +
+          primitive.sweepAngleRadians * random.between(0.0, 1.0);
+      target = parabolaPoint(first, primitive.radius,
+                             primitive.rotationAngleRadians, parameter);
     }
     const double tolerance = random.between(0.0005, 0.004);
     target.x += random.between(-0.45, 0.45) * tolerance;
@@ -292,6 +376,8 @@ inline std::optional<Point2d>
 oracleSemanticPoint(const SketchSceneSnapshot &scene,
                     const PackedSketchPrimitive &primitive,
                     sketch::PointKey key) {
+  if (primitive.kind == SketchPrimitiveKind::BSpline)
+    return semanticPoint(scene, primitive, key);
   const Point2d center = scene.points()[primitive.firstPoint];
   if (primitive.kind == SketchPrimitiveKind::Point &&
       key == sketch::PointKey::Point)
@@ -313,12 +399,100 @@ oracleSemanticPoint(const SketchSceneSnapshot &scene,
       key == sketch::PointKey::End)
     return radial(center, primitive.radius,
                   primitive.startAngleRadians + primitive.sweepAngleRadians);
+  if ((primitive.kind == SketchPrimitiveKind::Ellipse ||
+       primitive.kind == SketchPrimitiveKind::EllipticalArc) &&
+      key == sketch::PointKey::Center)
+    return center;
+  if ((primitive.kind == SketchPrimitiveKind::Ellipse ||
+       primitive.kind == SketchPrimitiveKind::EllipticalArc) &&
+      key == sketch::PointKey::Major)
+    return ellipsePoint(center, primitive.radius, primitive.secondaryRadius,
+                        primitive.rotationAngleRadians, 0.0);
+  if ((primitive.kind == SketchPrimitiveKind::Ellipse ||
+       primitive.kind == SketchPrimitiveKind::EllipticalArc) &&
+      key == sketch::PointKey::Minor)
+    return ellipsePoint(center, primitive.radius, primitive.secondaryRadius,
+                        primitive.rotationAngleRadians, std::numbers::pi / 2.0);
+  if (primitive.kind == SketchPrimitiveKind::EllipticalArc &&
+      key == sketch::PointKey::Start)
+    return ellipsePoint(center, primitive.radius, primitive.secondaryRadius,
+                        primitive.rotationAngleRadians,
+                        primitive.startAngleRadians);
+  if (primitive.kind == SketchPrimitiveKind::EllipticalArc &&
+      key == sketch::PointKey::End)
+    return ellipsePoint(center, primitive.radius, primitive.secondaryRadius,
+                        primitive.rotationAngleRadians,
+                        primitive.startAngleRadians +
+                            primitive.sweepAngleRadians);
+  if (primitive.kind == SketchPrimitiveKind::HyperbolicArc) {
+    if (key == sketch::PointKey::Center)
+      return center;
+    if (key == sketch::PointKey::Major)
+      return hyperbolaPoint(center, primitive.radius, primitive.secondaryRadius,
+                            primitive.rotationAngleRadians, 0.0);
+    if (key == sketch::PointKey::Minor) {
+      const double cosine = std::cos(primitive.rotationAngleRadians);
+      const double sine = std::sin(primitive.rotationAngleRadians);
+      return Point2d{center.x + cosine * primitive.radius -
+                         sine * primitive.secondaryRadius,
+                     center.y + sine * primitive.radius +
+                         cosine * primitive.secondaryRadius};
+    }
+    if (key == sketch::PointKey::Focus) {
+      const double focus =
+          std::hypot(primitive.radius, primitive.secondaryRadius);
+      return Point2d{
+          center.x + std::cos(primitive.rotationAngleRadians) * focus,
+          center.y + std::sin(primitive.rotationAngleRadians) * focus};
+    }
+    if (key == sketch::PointKey::Start)
+      return hyperbolaPoint(center, primitive.radius, primitive.secondaryRadius,
+                            primitive.rotationAngleRadians,
+                            primitive.startAngleRadians);
+    if (key == sketch::PointKey::End)
+      return hyperbolaPoint(center, primitive.radius, primitive.secondaryRadius,
+                            primitive.rotationAngleRadians,
+                            primitive.startAngleRadians +
+                                primitive.sweepAngleRadians);
+  }
+  if (primitive.kind == SketchPrimitiveKind::ParabolicArc) {
+    if (key == sketch::PointKey::Center)
+      return center;
+    if (key == sketch::PointKey::Focus)
+      return Point2d{center.x + std::cos(primitive.rotationAngleRadians) *
+                                    primitive.radius,
+                     center.y + std::sin(primitive.rotationAngleRadians) *
+                                    primitive.radius};
+    if (key == sketch::PointKey::Start)
+      return parabolaPoint(center, primitive.radius,
+                           primitive.rotationAngleRadians,
+                           primitive.startAngleRadians);
+    if (key == sketch::PointKey::End)
+      return parabolaPoint(
+          center, primitive.radius, primitive.rotationAngleRadians,
+          primitive.startAngleRadians + primitive.sweepAngleRadians);
+  }
   return std::nullopt;
 }
 
 inline OraclePickRefinement
 oracleCurveRefinement(const SketchSceneSnapshot &scene,
                       const PackedSketchPrimitive &primitive, Point2d query) {
+  if (primitive.kind == SketchPrimitiveKind::BSpline) {
+    const PackedSketchSpline &spline = scene.splines()[primitive.spline];
+    const std::size_t count = spline.controlPointCount;
+    const sketch::NurbsProjection projection = sketch::projectToNurbs(
+        {scene.splineControlPointCoordinates().subspan(
+             static_cast<std::size_t>(spline.firstControlPoint) * 2U,
+             count * 2U),
+         scene.splineKnots().subspan(spline.firstKnot,
+                                     count + spline.degree + 1U),
+         scene.splineWeights().subspan(spline.firstWeight, count),
+         spline.degree},
+        {query.x, query.y});
+    return {{projection.point.x, projection.point.y},
+            distance(query, {projection.point.x, projection.point.y})};
+  }
   const Point2d center = scene.points()[primitive.firstPoint];
   if (primitive.kind == SketchPrimitiveKind::Line)
     return oracleLineRefinement(query, center,
@@ -374,7 +548,7 @@ bruteForcePick(const SketchSceneSnapshot &scene, const SketchPickQuery &query) {
       continue;
     const std::uint16_t layer = scene.styles()[primitive.style].layer;
     if (hasTarget(query.targets, SketchPickTargets::Points)) {
-      std::array<sketch::PointKey, 3> keys{};
+      std::array<sketch::PointKey, 6> keys{};
       std::size_t keyCount = 0;
       switch (primitive.kind) {
       case SketchPrimitiveKind::Point:
@@ -395,6 +569,41 @@ bruteForcePick(const SketchSceneSnapshot &scene, const SketchPickQuery &query) {
         keys[1] = sketch::PointKey::Start;
         keys[2] = sketch::PointKey::End;
         keyCount = 3;
+        break;
+      case SketchPrimitiveKind::Ellipse:
+        keys[0] = sketch::PointKey::Center;
+        keys[1] = sketch::PointKey::Major;
+        keys[2] = sketch::PointKey::Minor;
+        keyCount = 3;
+        break;
+      case SketchPrimitiveKind::EllipticalArc:
+        keys[0] = sketch::PointKey::Center;
+        keys[1] = sketch::PointKey::Major;
+        keys[2] = sketch::PointKey::Minor;
+        keys[3] = sketch::PointKey::Start;
+        keys[4] = sketch::PointKey::End;
+        keyCount = 5;
+        break;
+      case SketchPrimitiveKind::HyperbolicArc:
+        keys[0] = sketch::PointKey::Center;
+        keys[1] = sketch::PointKey::Major;
+        keys[2] = sketch::PointKey::Minor;
+        keys[3] = sketch::PointKey::Focus;
+        keys[4] = sketch::PointKey::Start;
+        keys[5] = sketch::PointKey::End;
+        keyCount = 6;
+        break;
+      case SketchPrimitiveKind::ParabolicArc:
+        keys[0] = sketch::PointKey::Center;
+        keys[1] = sketch::PointKey::Focus;
+        keys[2] = sketch::PointKey::Start;
+        keys[3] = sketch::PointKey::End;
+        keyCount = 4;
+        break;
+      case SketchPrimitiveKind::BSpline:
+        keys[0] = sketch::PointKey::Start;
+        keys[1] = sketch::PointKey::End;
+        keyCount = 2;
         break;
       }
       for (std::size_t keyIndex = 0; keyIndex < keyCount; ++keyIndex) {

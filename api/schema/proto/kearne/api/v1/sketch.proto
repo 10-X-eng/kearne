@@ -11,12 +11,38 @@ enum SketchPointKey {
   SKETCH_POINT_KEY_START = 2;
   SKETCH_POINT_KEY_END = 3;
   SKETCH_POINT_KEY_CENTER = 4;
+  SKETCH_POINT_KEY_MAJOR = 5;
+  SKETCH_POINT_KEY_MINOR = 6;
+  SKETCH_POINT_KEY_FOCUS = 7;
 }
 
 enum SketchTangency {
   SKETCH_TANGENCY_UNSPECIFIED = 0;
   SKETCH_TANGENCY_EXTERNAL = 1;
   SKETCH_TANGENCY_INTERNAL = 2;
+}
+
+enum SketchObjectKind {
+  SKETCH_OBJECT_KIND_UNSPECIFIED = 0;
+  SKETCH_OBJECT_KIND_RECTANGLE = 1;
+  SKETCH_OBJECT_KIND_POINT = 2;
+  SKETCH_OBJECT_KIND_LINE = 3;
+  SKETCH_OBJECT_KIND_CIRCLE = 4;
+  SKETCH_OBJECT_KIND_ARC = 5;
+  SKETCH_OBJECT_KIND_SLOT = 6;
+  SKETCH_OBJECT_KIND_ARC_SLOT = 7;
+  SKETCH_OBJECT_KIND_POLYLINE = 8;
+  SKETCH_OBJECT_KIND_REGULAR_POLYGON = 9;
+  SKETCH_OBJECT_KIND_OBLONG = 10;
+  SKETCH_OBJECT_KIND_ELLIPSE = 11;
+  SKETCH_OBJECT_KIND_ELLIPTICAL_ARC = 12;
+  SKETCH_OBJECT_KIND_HYPERBOLIC_ARC = 13;
+  SKETCH_OBJECT_KIND_PARABOLIC_ARC = 14;
+  SKETCH_OBJECT_KIND_BSPLINE = 15;
+  SKETCH_OBJECT_KIND_FILLET = 16;
+  SKETCH_OBJECT_KIND_CHAMFER = 17;
+  SKETCH_OBJECT_KIND_OFFSET = 18;
+  SKETCH_OBJECT_KIND_JOINED_CURVE = 19;
 }
 
 message SketchPoint2 {
@@ -111,12 +137,203 @@ message SketchArcGeometry {
   } ];
 }
 
+message SketchEllipseGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.ellipse"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 96
+  };
+  SketchPoint2 center = 1 [ (field_rules) = {required : true} ];
+  double major_radius = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double minor_radius = 3 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double rotation = 4 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchEllipticalArcGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.elliptical_arc"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 128
+  };
+  SketchPoint2 center = 1 [ (field_rules) = {required : true} ];
+  double major_radius = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double minor_radius = 3 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double rotation = 4 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double start_parameter = 5 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double end_parameter = 6 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchHyperbolicArcGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.hyperbolic_arc"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 128
+  };
+  SketchPoint2 center = 1 [ (field_rules) = {required : true} ];
+  double major_radius = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double minor_radius = 3 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double rotation = 4 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double start_parameter = 5 [ (field_rules) = {
+    required : true
+    dimension : "Dimensionless"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double end_parameter = 6 [ (field_rules) = {
+    required : true
+    dimension : "Dimensionless"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchParabolicArcGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.parabolic_arc"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 112
+  };
+  SketchPoint2 vertex = 1 [ (field_rules) = {required : true} ];
+  double focal_length = 2 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  double rotation = 3 [ (field_rules) = {
+    required : true
+    dimension : "Angle"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double start_parameter = 4 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  double end_parameter = 5 [ (field_rules) = {
+    required : true
+    dimension : "Length"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
+message SketchBSplineGeometry {
+  option (message_rules) = {
+    stable_name : "sketch.geometry.bspline"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 65536
+  };
+  repeated SketchPoint2 control_points = 1
+      [ (field_rules) = {max_items : 1024} ];
+  repeated double knots = 2 [ (field_rules) = {
+    max_items : 1050
+    dimension : "Dimensionless"
+    has_numeric_range : true
+    minimum : -1.7976931348623157e+308
+    maximum : 1.7976931348623157e+308
+  } ];
+  repeated double weights = 3 [ (field_rules) = {
+    max_items : 1024
+    dimension : "Dimensionless"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+  uint32 degree = 4 [ (field_rules) = {
+    required : true
+    has_numeric_range : true
+    minimum : 1
+    maximum : 25
+  } ];
+  bool periodic = 5 [ (field_rules) = {required : true} ];
+}
+
 message SketchEntity {
   option (message_rules) = {
     stable_name : "sketch.entity"
     schema_version : 1
     surface : SURFACE_KIND_WIRE
-    max_serialized_bytes : 160
+    max_serialized_bytes : 65536
     required_oneof : "geometry"
   };
   UuidV7 id = 1
@@ -127,6 +344,11 @@ message SketchEntity {
     SketchLineGeometry line = 21;
     SketchCircleGeometry circle = 22;
     SketchArcGeometry arc = 23;
+    SketchEllipseGeometry ellipse = 24;
+    SketchEllipticalArcGeometry elliptical_arc = 25;
+    SketchHyperbolicArcGeometry hyperbolic_arc = 26;
+    SketchParabolicArcGeometry parabolic_arc = 27;
+    SketchBSplineGeometry bspline = 28;
   }
 }
 
@@ -205,6 +427,54 @@ message SketchMidpointConstraint {
       [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
 }
 
+message SketchPointCurveConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.point_curve"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 104
+  };
+  SketchPointReference point = 1 [ (field_rules) = {required : true} ];
+  UuidV7 curve = 2
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchSymmetricConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.symmetric"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 152
+  };
+  SketchPointReference first = 1 [ (field_rules) = {required : true} ];
+  SketchPointReference second = 2 [ (field_rules) = {required : true} ];
+  UuidV7 axis = 3
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchPointPositionConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.point_position"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 128
+  };
+  SketchPointReference point = 1 [ (field_rules) = {required : true} ];
+  SketchPoint2 position = 2 [ (field_rules) = {required : true} ];
+}
+
+message SketchPointTripleConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.point_triple"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 176
+  };
+  SketchPointReference first = 1 [ (field_rules) = {required : true} ];
+  SketchPointReference second = 2 [ (field_rules) = {required : true} ];
+  SketchPointReference center = 3 [ (field_rules) = {required : true} ];
+}
+
 message SketchEntityConstraint {
   option (message_rules) = {
     stable_name : "sketch.constraint.entity"
@@ -214,6 +484,18 @@ message SketchEntityConstraint {
   };
   UuidV7 entity = 1
       [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchEntitySetConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.entity_set"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 65536
+  };
+  repeated UuidV7 entities = 1 [ (field_rules) = {
+    max_items : 1024
+  } ];
 }
 
 message SketchPointPairLengthConstraint {
@@ -277,7 +559,7 @@ message SketchConstraint {
     stable_name : "sketch.constraint"
     schema_version : 1
     surface : SURFACE_KIND_WIRE
-    max_serialized_bytes : 240
+    max_serialized_bytes : 65536
     required_oneof : "relation"
   };
   UuidV7 id = 1 [
@@ -293,7 +575,7 @@ message SketchConstraint {
     SketchEntityPairConstraint concentric = 26;
     SketchEntityPairConstraint equal = 27;
     SketchMidpointConstraint midpoint = 28;
-    SketchEntityConstraint fixed = 29;
+    SketchEntityConstraint block = 29;
     SketchEntityPairConstraint collinear = 30;
     SketchPointPairLengthConstraint distance = 31;
     SketchPointPairLengthConstraint horizontal_distance = 32;
@@ -301,13 +583,54 @@ message SketchConstraint {
     SketchCurveLengthConstraint radius = 34;
     SketchCurveLengthConstraint diameter = 35;
     SketchEntityPairAngleConstraint angle = 36;
+    SketchPointCurveConstraint point_on_object = 37;
+    SketchSymmetricConstraint symmetric = 38;
+    SketchPointPositionConstraint lock = 39;
+    SketchPointTripleConstraint symmetric_about_point = 40;
+    SketchEntitySetConstraint group = 41;
   }
+}
+
+message SketchObjectMember {
+  option (message_rules) = {
+    stable_name : "sketch.object.member"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 96
+  };
+  string role = 1 [ (field_rules) = {
+    required : true
+    min_length : 1
+    max_length : 32
+  } ];
+  UuidV7 entity = 2
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+}
+
+message SketchObject {
+  option (message_rules) = {
+    stable_name : "sketch.object"
+    schema_version : 1
+    surface : SURFACE_KIND_WIRE
+    max_serialized_bytes : 4194304
+  };
+  UuidV7 id = 1
+      [ (field_rules) = {required : true semantic_type : "SketchObjectId"} ];
+  string label = 2 [ (field_rules) = {
+    required : true
+    min_length : 1
+    max_length : 128
+  } ];
+  SketchObjectKind kind = 3
+      [ (field_rules) = {required : true disallow_default : true} ];
+  repeated SketchObjectMember members = 4
+      [ (field_rules) = {max_items : 65536} ];
 }
 
 message SketchDefinition {
   option (message_rules) = {
     stable_name : "sketch.definition"
-    schema_version : 1
+    schema_version : 2
     surface : SURFACE_KIND_WORKER_JOB
     max_serialized_bytes : 16777216
   };
@@ -317,4 +640,5 @@ message SketchDefinition {
   repeated SketchEntity entities = 2 [ (field_rules) = {max_items : 65536} ];
   repeated SketchConstraint constraints = 3
       [ (field_rules) = {max_items : 65536} ];
+  repeated SketchObject objects = 4 [ (field_rules) = {max_items : 65536} ];
 }

@@ -14,7 +14,7 @@
 namespace kearne::sketch {
 namespace {
 
-constexpr std::size_t maximumSourceEditBatch = 32;
+constexpr std::size_t maximumSourceEditBatch = 65'536U;
 
 template <typename Values, typename Id, typename GetId>
 auto findById(Values &values, const Id &id, GetId getId) {
@@ -25,16 +25,21 @@ std::string targetKey(const Edit &edit) {
   return std::visit(
       []<typename Value>(const Value &value) {
         using Type = std::remove_cvref_t<Value>;
-        if constexpr (std::is_same_v<Type, AppendEntity> ||
-                      std::is_same_v<Type, ReplaceEntity>) {
-          return entityId(value.value).toString();
+        if constexpr (std::is_same_v<Type, AppendObject> ||
+                      std::is_same_v<Type, ReplaceObject>) {
+          return "object:" + value.value.id.toString();
+        } else if constexpr (std::is_same_v<Type, DeleteObject>) {
+          return "object:" + value.id.toString();
+        } else if constexpr (std::is_same_v<Type, AppendEntity> ||
+                             std::is_same_v<Type, ReplaceEntity>) {
+          return "entity:" + entityId(value.value).toString();
         } else if constexpr (std::is_same_v<Type, DeleteEntity>) {
-          return value.id.toString();
+          return "entity:" + value.id.toString();
         } else if constexpr (std::is_same_v<Type, AppendConstraint> ||
                              std::is_same_v<Type, ReplaceConstraint>) {
-          return constraintId(value.value).toString();
+          return "constraint:" + constraintId(value.value).toString();
         } else {
-          return value.id.toString();
+          return "constraint:" + value.id.toString();
         }
       },
       edit);
@@ -49,7 +54,35 @@ Result<SourceEditIntent> apply(Definition &target, const Edit &edit) {
   return std::visit(
       [&]<typename Value>(const Value &value) -> Result<SourceEditIntent> {
         using Type = std::remove_cvref_t<Value>;
-        if constexpr (std::is_same_v<Type, AppendEntity>) {
+        if constexpr (std::is_same_v<Type, AppendObject>) {
+          const SketchObjectId id = value.value.id;
+          if (findById(target.objects, id, &SketchObject::id) !=
+              target.objects.end())
+            return std::unexpected(diagnostic("sketch.edit.object-exists",
+                                              "Sketch object already exists"));
+          target.objects.push_back(value.value);
+          return intent(SourceEditAction::Append, SourceSection::Objects, id);
+        } else if constexpr (std::is_same_v<Type, ReplaceObject>) {
+          const SketchObjectId id = value.value.id;
+          auto found = findById(target.objects, id, &SketchObject::id);
+          if (found == target.objects.end())
+            return std::unexpected(diagnostic("sketch.edit.object-missing",
+                                              "Sketch object is missing"));
+          if (found->kind != value.value.kind)
+            return std::unexpected(
+                diagnostic("sketch.edit.object-kind",
+                           "Sketch object replacement changes its kind"));
+          *found = value.value;
+          return intent(SourceEditAction::Replace, SourceSection::Objects, id);
+        } else if constexpr (std::is_same_v<Type, DeleteObject>) {
+          auto found = findById(target.objects, value.id, &SketchObject::id);
+          if (found == target.objects.end())
+            return std::unexpected(diagnostic("sketch.edit.object-missing",
+                                              "Sketch object is missing"));
+          target.objects.erase(found);
+          return intent(SourceEditAction::Delete, SourceSection::Objects,
+                        value.id);
+        } else if constexpr (std::is_same_v<Type, AppendEntity>) {
           const SketchEntityId id = entityId(value.value);
           if (findById(target.entities, id, entityId) != target.entities.end())
             return std::unexpected(diagnostic("sketch.edit.entity-exists",
@@ -130,12 +163,31 @@ bool setEntityPoint(Entity &entity, PointKey key, Point2 point) {
             return false;
           return true;
         } else if constexpr (std::is_same_v<Type, CircleEntity> ||
-                             std::is_same_v<Type, ArcEntity>) {
+                             std::is_same_v<Type, ArcEntity> ||
+                             std::is_same_v<Type, EllipseEntity> ||
+                             std::is_same_v<Type, EllipticalArcEntity> ||
+                             std::is_same_v<Type, HyperbolicArcEntity>) {
           if (key != PointKey::Center)
             return false;
           value.center = point;
           return true;
-        }
+        } else if constexpr (std::is_same_v<Type, ParabolicArcEntity>) {
+          if (key != PointKey::Center)
+            return false;
+          value.vertex = point;
+          return true;
+        } else if constexpr (std::is_same_v<Type, BSplineEntity>) {
+          if (value.periodic || value.controlPoints.empty())
+            return false;
+          if (key == PointKey::Start)
+            value.controlPoints.front() = point;
+          else if (key == PointKey::End)
+            value.controlPoints.back() = point;
+          else
+            return false;
+          return true;
+        } else
+          return false;
       },
       entity);
 }
@@ -214,6 +266,128 @@ Result<AppliedEdits> dragCurve(const Definition &current,
             value.radius = *radius;
         },
         replacement);
+    const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
+    return applyEdits(current, edits, profile);
+  }
+
+  if (std::holds_alternative<EllipseEntity>(*selected) ||
+      std::holds_alternative<EllipticalArcEntity>(*selected)) {
+    Entity replacement = *selected;
+    auto scaled = std::visit(
+        [&drag, &profile](auto &value) -> Result<void> {
+          using Type = std::remove_cvref_t<decltype(value)>;
+          if constexpr (std::is_same_v<Type, EllipseEntity> ||
+                        std::is_same_v<Type, EllipticalArcEntity>) {
+            const double offsetX = drag.current.x.si() - value.center.x.si();
+            const double offsetY = drag.current.y.si() - value.center.y.si();
+            const double cosine = std::cos(value.rotation.si());
+            const double sine = std::sin(value.rotation.si());
+            const double localX = cosine * offsetX + sine * offsetY;
+            const double localY = -sine * offsetX + cosine * offsetY;
+            const double scale = std::hypot(localX / value.majorRadius.si(),
+                                            localY / value.minorRadius.si());
+            if (!std::isfinite(scale) ||
+                value.minorRadius.si() * scale < profile.minimumLengthMeters)
+              return std::unexpected(
+                  diagnostic("sketch.edit.drag-degenerate",
+                             "curve drag produced a degenerate ellipse"));
+            auto major = length(value.majorRadius.si() * scale);
+            auto minor = length(value.minorRadius.si() * scale);
+            if (!major)
+              return std::unexpected(std::move(major.error()));
+            if (!minor)
+              return std::unexpected(std::move(minor.error()));
+            value.majorRadius = *major;
+            value.minorRadius = *minor;
+            return {};
+          }
+          return std::unexpected(diagnostic("sketch.edit.drag-not-curve",
+                                            "Sketch entity is not a curve"));
+        },
+        replacement);
+    if (!scaled)
+      return std::unexpected(std::move(scaled.error()));
+    const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
+    return applyEdits(current, edits, profile);
+  }
+
+  if (std::holds_alternative<HyperbolicArcEntity>(*selected)) {
+    auto replacement = std::get<HyperbolicArcEntity>(*selected);
+    const double offsetX = drag.current.x.si() - replacement.center.x.si();
+    const double offsetY = drag.current.y.si() - replacement.center.y.si();
+    const double cosine = std::cos(replacement.rotation.si());
+    const double sine = std::sin(replacement.rotation.si());
+    const double localX = cosine * offsetX + sine * offsetY;
+    const double localY = -sine * offsetX + cosine * offsetY;
+    const double scaleSquared =
+        std::pow(localX / replacement.majorRadius.si(), 2.0) -
+        std::pow(localY / replacement.minorRadius.si(), 2.0);
+    if (!std::isfinite(scaleSquared) || scaleSquared <= 0.0)
+      return std::unexpected(
+          diagnostic("sketch.edit.drag-degenerate",
+                     "curve drag produced a degenerate hyperbola"));
+    const double scale = std::sqrt(scaleSquared);
+    if (!std::isfinite(scale) ||
+        replacement.majorRadius.si() * scale < profile.minimumLengthMeters ||
+        replacement.minorRadius.si() * scale < profile.minimumLengthMeters)
+      return std::unexpected(
+          diagnostic("sketch.edit.drag-degenerate",
+                     "curve drag produced a degenerate hyperbola"));
+    auto major = length(replacement.majorRadius.si() * scale);
+    auto minor = length(replacement.minorRadius.si() * scale);
+    if (!major)
+      return std::unexpected(std::move(major.error()));
+    if (!minor)
+      return std::unexpected(std::move(minor.error()));
+    replacement.majorRadius = *major;
+    replacement.minorRadius = *minor;
+    const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
+    return applyEdits(current, edits, profile);
+  }
+
+  if (std::holds_alternative<ParabolicArcEntity>(*selected)) {
+    auto replacement = std::get<ParabolicArcEntity>(*selected);
+    const double offsetX = drag.current.x.si() - replacement.vertex.x.si();
+    const double offsetY = drag.current.y.si() - replacement.vertex.y.si();
+    const double cosine = std::cos(replacement.rotation.si());
+    const double sine = std::sin(replacement.rotation.si());
+    const double localX = cosine * offsetX + sine * offsetY;
+    const double localY = -sine * offsetX + cosine * offsetY;
+    const double scale =
+        localY * localY / (4.0 * replacement.focalLength.si() * localX);
+    if (!std::isfinite(scale) || localX <= 0.0 ||
+        replacement.focalLength.si() * scale < profile.minimumLengthMeters)
+      return std::unexpected(
+          diagnostic("sketch.edit.drag-degenerate",
+                     "curve drag produced a degenerate parabola"));
+    auto focal = length(replacement.focalLength.si() * scale);
+    auto start = length(replacement.startParameter.si() * scale);
+    auto end = length(replacement.endParameter.si() * scale);
+    if (!focal)
+      return std::unexpected(std::move(focal.error()));
+    if (!start)
+      return std::unexpected(std::move(start.error()));
+    if (!end)
+      return std::unexpected(std::move(end.error()));
+    replacement.focalLength = *focal;
+    replacement.startParameter = *start;
+    replacement.endParameter = *end;
+    const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
+    return applyEdits(current, edits, profile);
+  }
+
+  if (std::holds_alternative<BSplineEntity>(*selected)) {
+    auto replacement = std::get<BSplineEntity>(*selected);
+    const double deltaX = drag.current.x.si() - drag.first.x.si();
+    const double deltaY = drag.current.y.si() - drag.first.y.si();
+    for (Point2 &point : replacement.controlPoints) {
+      auto x = length(point.x.si() + deltaX);
+      auto y = length(point.y.si() + deltaY);
+      if (!x || !y)
+        return std::unexpected(diagnostic(
+            "sketch.edit.drag-range", "curve drag exceeded coordinate range"));
+      point = {*x, *y};
+    }
     const std::array<Edit, 1> edits{ReplaceEntity{std::move(replacement)}};
     return applyEdits(current, edits, profile);
   }
@@ -300,6 +474,49 @@ Result<AppliedEdits> dragCurve(const Definition &current,
     static_cast<void>(entity);
     edits.push_back(ReplaceEntity{std::move(replacement)});
   }
+  return applyEdits(current, edits, profile);
+}
+
+Result<AppliedEdits>
+removeAxisAlignment(const Definition &current,
+                    std::span<const SketchEntityId> entities,
+                    const NumericalProfile &profile) {
+  if (entities.empty() || entities.size() > maximumSourceEditBatch)
+    return std::unexpected(diagnostic(
+        "sketch.edit.axis-selection",
+        "Remove axis alignment needs between one and 1024 selected lines"));
+  std::unordered_set<SketchEntityId, TypedIdHash<SketchEntityIdTag>> selected;
+  selected.reserve(entities.size());
+  for (const SketchEntityId id : entities) {
+    if (!selected.insert(id).second)
+      return std::unexpected(
+          diagnostic("sketch.edit.axis-selection",
+                     "Remove axis alignment needs distinct selected lines"));
+    const auto found = findById(current.entities, id, entityId);
+    if (found == current.entities.end() ||
+        !std::holds_alternative<LineEntity>(*found))
+      return std::unexpected(
+          diagnostic("sketch.edit.axis-selection",
+                     "Remove axis alignment needs selected lines"));
+  }
+  std::vector<Edit> edits;
+  for (const Constraint &constraint : current.constraints) {
+    const SketchEntityId *line = std::visit(
+        [](const auto &value) -> const SketchEntityId * {
+          using Type = std::remove_cvref_t<decltype(value)>;
+          if constexpr (std::is_same_v<Type, Horizontal> ||
+                        std::is_same_v<Type, Vertical>)
+            return &value.line;
+          return nullptr;
+        },
+        constraint);
+    if (line && selected.contains(*line))
+      edits.push_back(DeleteConstraint{constraintId(constraint)});
+  }
+  if (edits.empty())
+    return std::unexpected(diagnostic(
+        "sketch.edit.axis-alignment-missing",
+        "Selected lines have no horizontal or vertical constraints"));
   return applyEdits(current, edits, profile);
 }
 

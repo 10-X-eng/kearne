@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import argparse
-from math import pi
-from pathlib import Path
 import subprocess
 import sys
 import unittest
+from math import pi
+from pathlib import Path
 from uuid import UUID
 
 arguments_parser = argparse.ArgumentParser()
@@ -20,16 +20,22 @@ sys.path.insert(0, str(arguments.sdk_root))
 sys.path.append(str(arguments.python_root))
 
 from build123d import Plane  # noqa: E402
-from hypothesis import given, settings, strategies as st  # noqa: E402
-
+from hypothesis import given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
 from kearne.sketch import (  # noqa: E402
     ArcEntity,
+    BSplineEntity,
     CircleEntity,
     Constraint,
+    EllipseEntity,
+    EllipticalArcEntity,
+    HyperbolicArcEntity,
     LineEntity,
+    ParabolicArcEntity,
     PointEntity,
     PointRef,
     SketchDefinition,
+    SketchObject,
     SketchPlane,
 )
 from kearne.sketch_wire import (  # noqa: E402
@@ -62,6 +68,17 @@ def complete_definition(seed: int) -> SketchDefinition:
     first_circle = uuid7(seed + 4)
     second_circle = uuid7(seed + 5)
     arc_id = uuid7(seed + 6)
+    ellipse_id = uuid7(seed + 7)
+    elliptical_arc_id = uuid7(seed + 8)
+    hyperbolic_arc_id = uuid7(seed + 9)
+    parabolic_arc_id = uuid7(seed + 10)
+    bspline_id = uuid7(seed + 11)
+    rectangle_lines = tuple(uuid7(seed + 20 + index) for index in range(4))
+    slot_curves = tuple(uuid7(seed + 30 + index) for index in range(4))
+    arc_slot_curves = tuple(uuid7(seed + 40 + index) for index in range(4))
+    polyline_segments = tuple(uuid7(seed + 50 + index) for index in range(2))
+    polygon_sides = tuple(uuid7(seed + 60 + index) for index in range(3))
+    oblong_curves = tuple(uuid7(seed + 70 + index) for index in range(4))
     entities = (
         PointEntity(point_id, (Length(offset), Length(0.002))),
         LineEntity(
@@ -83,6 +100,177 @@ def complete_definition(seed: int) -> SketchDefinition:
             Angle(0.1),
             Angle(1.7),
             seed % 2 == 0,
+        ),
+        EllipseEntity(
+            ellipse_id,
+            (Length(0.07), Length(0.04)),
+            Length(0.012),
+            Length(0.006),
+            Angle(0.3),
+            seed % 2 != 0,
+        ),
+        EllipticalArcEntity(
+            elliptical_arc_id,
+            (Length(0.08), Length(0.07)),
+            Length(0.014),
+            Length(0.005),
+            Angle(-0.2),
+            Angle(0.4),
+            Angle(2.3),
+            seed % 2 == 0,
+        ),
+        HyperbolicArcEntity(
+            hyperbolic_arc_id,
+            (Length(0.12), Length(0.07)),
+            Length(0.011),
+            Length(0.017),
+            Angle(0.37),
+            -0.8,
+            1.2 + offset,
+            seed % 2 != 0,
+        ),
+        ParabolicArcEntity(
+            parabolic_arc_id,
+            (Length(0.15), Length(0.07)),
+            Length(0.006),
+            Angle(-0.41),
+            Length(-0.015),
+            Length(0.021 + offset),
+            seed % 2 == 0,
+        ),
+        BSplineEntity(
+            bspline_id,
+            (
+                (Length(0.17), Length(0.07)),
+                (Length(0.18), Length(0.09 + offset)),
+                (Length(0.20), Length(0.05)),
+                (Length(0.22), Length(0.075)),
+            ),
+            (0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0),
+            (1.0, 0.75, 1.25, 1.0),
+            3,
+            construction=seed % 2 != 0,
+        ),
+        LineEntity(
+            rectangle_lines[0],
+            (Length(0.10), Length(0.10)),
+            (Length(0.14), Length(0.10)),
+        ),
+        LineEntity(
+            rectangle_lines[1],
+            (Length(0.14), Length(0.10)),
+            (Length(0.14), Length(0.13)),
+        ),
+        LineEntity(
+            rectangle_lines[2],
+            (Length(0.14), Length(0.13)),
+            (Length(0.10), Length(0.13)),
+        ),
+        LineEntity(
+            rectangle_lines[3],
+            (Length(0.10), Length(0.13)),
+            (Length(0.10), Length(0.10)),
+        ),
+        ArcEntity(
+            slot_curves[0],
+            (Length(0.20), Length(0.10)),
+            Length(0.01),
+            Angle(pi / 2.0),
+            Angle(3.0 * pi / 2.0),
+        ),
+        ArcEntity(
+            slot_curves[1],
+            (Length(0.25), Length(0.10)),
+            Length(0.01),
+            Angle(3.0 * pi / 2.0),
+            Angle(5.0 * pi / 2.0),
+        ),
+        LineEntity(
+            slot_curves[2],
+            (Length(0.20), Length(0.11)),
+            (Length(0.25), Length(0.11)),
+        ),
+        LineEntity(
+            slot_curves[3],
+            (Length(0.20), Length(0.09)),
+            (Length(0.25), Length(0.09)),
+        ),
+        ArcEntity(
+            arc_slot_curves[0],
+            (Length(0.35), Length(0.10)),
+            Length(0.045),
+            Angle(0.0),
+            Angle(pi / 2.0),
+        ),
+        ArcEntity(
+            arc_slot_curves[1],
+            (Length(0.35), Length(0.14)),
+            Length(0.005),
+            Angle(pi / 2.0),
+            Angle(3.0 * pi / 2.0),
+        ),
+        ArcEntity(
+            arc_slot_curves[2],
+            (Length(0.35), Length(0.10)),
+            Length(0.035),
+            Angle(pi / 2.0),
+            Angle(0.0),
+        ),
+        ArcEntity(
+            arc_slot_curves[3],
+            (Length(0.39), Length(0.10)),
+            Length(0.005),
+            Angle(pi),
+            Angle(2.0 * pi),
+        ),
+        LineEntity(
+            polyline_segments[0],
+            (Length(0.40), Length(0.20)),
+            (Length(0.43), Length(0.22)),
+        ),
+        LineEntity(
+            polyline_segments[1],
+            (Length(0.43), Length(0.22)),
+            (Length(0.46), Length(0.20)),
+        ),
+        LineEntity(
+            polygon_sides[0],
+            (Length(0.50), Length(0.20)),
+            (Length(0.54), Length(0.20)),
+        ),
+        LineEntity(
+            polygon_sides[1],
+            (Length(0.54), Length(0.20)),
+            (Length(0.52), Length(0.23464101615137755)),
+        ),
+        LineEntity(
+            polygon_sides[2],
+            (Length(0.52), Length(0.23464101615137755)),
+            (Length(0.50), Length(0.20)),
+        ),
+        ArcEntity(
+            oblong_curves[0],
+            (Length(0.20), Length(0.30)),
+            Length(0.01),
+            Angle(pi / 2.0),
+            Angle(3.0 * pi / 2.0),
+        ),
+        ArcEntity(
+            oblong_curves[1],
+            (Length(0.25), Length(0.30)),
+            Length(0.01),
+            Angle(3.0 * pi / 2.0),
+            Angle(5.0 * pi / 2.0),
+        ),
+        LineEntity(
+            oblong_curves[2],
+            (Length(0.20), Length(0.31)),
+            (Length(0.25), Length(0.31)),
+        ),
+        LineEntity(
+            oblong_curves[3],
+            (Length(0.20), Length(0.29)),
+            (Length(0.25), Length(0.29)),
         ),
     )
     point = PointRef(point_id, "point")
@@ -114,7 +302,7 @@ def complete_definition(seed: int) -> SketchDefinition:
         ),
         Constraint(constraint_id(8), "equal", entities=(first_line, second_line)),
         Constraint(constraint_id(9), "midpoint", (center,), (first_line,)),
-        Constraint(constraint_id(10), "fixed", entities=(arc_id,)),
+        Constraint(constraint_id(10), "block", entities=(arc_id,)),
         Constraint(constraint_id(11), "collinear", entities=(first_line, second_line)),
         Constraint(constraint_id(12), "distance", (point, end), value=Length(0.03)),
         Constraint(
@@ -144,12 +332,103 @@ def complete_definition(seed: int) -> SketchDefinition:
             entities=(first_line, second_line),
             value=Angle(pi / 7.0),
         ),
+        Constraint(
+            constraint_id(18),
+            "point_on_object",
+            (point,),
+            (first_circle,),
+        ),
+        Constraint(
+            constraint_id(19),
+            "symmetric",
+            (point, end),
+            (second_line,),
+        ),
+        Constraint(
+            constraint_id(20),
+            "lock",
+            (point,),
+            position=(Length(offset), Length(0.002)),
+        ),
+        Constraint(
+            constraint_id(21),
+            "symmetric_about_point",
+            (start, end, point),
+        ),
+        Constraint(
+            constraint_id(22),
+            "group",
+            entities=(first_line, first_circle),
+        ),
     )
     if seed % 2 == 0:
         entities = tuple(reversed(entities))
     if seed % 3 == 0:
         constraints = tuple(reversed(constraints))
-    return SketchDefinition(PLANE, entities, constraints)
+    objects = (
+        SketchObject(uuid7(seed + 1_001), "Ellipse 1", "ellipse", (ellipse_id,)),
+        SketchObject(
+            uuid7(seed + 1_002),
+            "Elliptical Arc 1",
+            "elliptical_arc",
+            (elliptical_arc_id,),
+        ),
+        SketchObject(
+            uuid7(seed + 1_003),
+            "Hyperbolic Arc 1",
+            "hyperbolic_arc",
+            (hyperbolic_arc_id,),
+        ),
+        SketchObject(
+            uuid7(seed + 1_004),
+            "Parabolic Arc 1",
+            "parabolic_arc",
+            (parabolic_arc_id,),
+        ),
+        SketchObject(
+            uuid7(seed + 1_005),
+            "B-spline 1",
+            "bspline",
+            (bspline_id,),
+        ),
+        SketchObject(
+            uuid7(seed + 7),
+            "Rectangle 1",
+            "rectangle",
+            rectangle_lines,
+        ),
+        SketchObject(
+            uuid7(seed + 8),
+            "Slot 1",
+            "slot",
+            slot_curves,
+        ),
+        SketchObject(
+            uuid7(seed + 9),
+            "Arc Slot 1",
+            "arc_slot",
+            arc_slot_curves,
+        ),
+        SketchObject(
+            uuid7(seed + 10),
+            "Polyline 1",
+            "polyline",
+            polyline_segments,
+        ),
+        SketchObject(
+            uuid7(seed + 11),
+            "Triangle 1",
+            "regular_polygon",
+            polygon_sides,
+        ),
+        SketchObject(
+            uuid7(seed + 12),
+            "Oblong 1",
+            "oblong",
+            oblong_curves,
+        ),
+    )
+    return SketchDefinition(PLANE, entities, constraints, objects)
 
 
 class PythonSketchWireProperties(unittest.TestCase):
@@ -199,7 +478,7 @@ class PythonSketchWireProperties(unittest.TestCase):
                 definition = complete_definition(seed)
                 digest = source_digest(f"cross-language={seed}\n")
                 message = definition_to_wire(definition, digest)
-                result = subprocess.run(
+                result = subprocess.run(  # noqa: S603 -- configured bridge executable
                     [arguments.bridge],
                     input=message.SerializeToString(),
                     capture_output=True,

@@ -7,6 +7,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -107,6 +108,11 @@ enum class SketchPrimitiveKind : std::uint8_t {
   Line = 2,
   Circle = 3,
   Arc = 4,
+  Ellipse = 5,
+  EllipticalArc = 6,
+  HyperbolicArc = 7,
+  ParabolicArc = 8,
+  BSpline = 9,
 };
 
 enum class SketchStyleRole : std::uint8_t {
@@ -154,8 +160,8 @@ operator|(SketchPrimitiveFlags first, SketchPrimitiveFlags second) {
 }
 
 // Points occupy one contiguous array. Point uses one point; Line uses two;
-// Circle and Arc use their center. Radius is in metres. Arc angles are radians
-// with a signed sweep from start.
+// Curves use their center. Radii are metres. Ellipse rotation and curve
+// parameters are radians; arc sweeps are signed.
 struct PackedSketchPrimitive {
   SketchEntityId entity;
   SketchPrimitiveHandle handle;
@@ -167,7 +173,49 @@ struct PackedSketchPrimitive {
   double radius = 0.0;
   double startAngleRadians = 0.0;
   double sweepAngleRadians = 0.0;
+  double secondaryRadius = 0.0;
+  double rotationAngleRadians = 0.0;
+  std::uint32_t spline = std::numeric_limits<std::uint32_t>::max();
   bool operator==(const PackedSketchPrimitive &) const = default;
+};
+
+struct PackedSketchSpline {
+  std::uint32_t firstControlPoint = 0U;
+  std::uint32_t controlPointCount = 0U;
+  std::uint32_t firstKnot = 0U;
+  std::uint32_t firstWeight = 0U;
+  std::uint32_t degree = 0U;
+  bool periodic = false;
+  bool operator==(const PackedSketchSpline &) const = default;
+};
+
+struct SketchPrimitiveBatch {
+  std::vector<Point2d> points;
+  std::vector<PackedSketchPrimitive> primitives;
+  std::vector<double> splineControlPointCoordinates;
+  std::vector<double> splineKnots;
+  std::vector<double> splineWeights;
+  std::vector<PackedSketchSpline> splines;
+
+  SketchPrimitiveBatch() = default;
+  SketchPrimitiveBatch(std::vector<Point2d> requestedPoints,
+                       std::vector<PackedSketchPrimitive> requestedPrimitives)
+      : points(std::move(requestedPoints)),
+        primitives(std::move(requestedPrimitives)) {}
+  SketchPrimitiveBatch(
+      std::vector<Point2d> requestedPoints,
+      std::vector<PackedSketchPrimitive> requestedPrimitives,
+      std::vector<double> requestedSplineControlPointCoordinates,
+      std::vector<double> requestedSplineKnots,
+      std::vector<double> requestedSplineWeights,
+      std::vector<PackedSketchSpline> requestedSplines)
+      : points(std::move(requestedPoints)),
+        primitives(std::move(requestedPrimitives)),
+        splineControlPointCoordinates(
+            std::move(requestedSplineControlPointCoordinates)),
+        splineKnots(std::move(requestedSplineKnots)),
+        splineWeights(std::move(requestedSplineWeights)),
+        splines(std::move(requestedSplines)) {}
 };
 
 class SketchSceneSnapshot final {
@@ -176,6 +224,9 @@ public:
   create(SceneStamp stamp, std::vector<SketchStyle> styles,
          std::vector<Point2d> points,
          std::vector<PackedSketchPrimitive> primitives);
+  [[nodiscard]] static Result<SketchSceneSnapshot>
+  create(SceneStamp stamp, std::vector<SketchStyle> styles,
+         SketchPrimitiveBatch batch);
 
   [[nodiscard]] const SceneStamp &stamp() const { return stamp_; }
   [[nodiscard]] const Bounds2d &bounds() const { return bounds_; }
@@ -183,6 +234,18 @@ public:
   [[nodiscard]] std::span<const Point2d> points() const { return points_; }
   [[nodiscard]] std::span<const PackedSketchPrimitive> primitives() const {
     return primitives_;
+  }
+  [[nodiscard]] std::span<const double> splineControlPointCoordinates() const {
+    return splineControlPointCoordinates_;
+  }
+  [[nodiscard]] std::span<const double> splineKnots() const {
+    return splineKnots_;
+  }
+  [[nodiscard]] std::span<const double> splineWeights() const {
+    return splineWeights_;
+  }
+  [[nodiscard]] std::span<const PackedSketchSpline> splines() const {
+    return splines_;
   }
   [[nodiscard]] const PackedSketchPrimitive *
   findPrimitive(SketchEntityId entity) const;
@@ -195,6 +258,10 @@ private:
                       std::vector<SketchStyle> styles,
                       std::vector<Point2d> points,
                       std::vector<PackedSketchPrimitive> primitives,
+                      std::vector<double> splineControlPointCoordinates,
+                      std::vector<double> splineKnots,
+                      std::vector<double> splineWeights,
+                      std::vector<PackedSketchSpline> splines,
                       std::vector<std::uint32_t> semanticIndex);
 
   SceneStamp stamp_;
@@ -202,6 +269,10 @@ private:
   std::vector<SketchStyle> styles_;
   std::vector<Point2d> points_;
   std::vector<PackedSketchPrimitive> primitives_;
+  std::vector<double> splineControlPointCoordinates_;
+  std::vector<double> splineKnots_;
+  std::vector<double> splineWeights_;
+  std::vector<PackedSketchSpline> splines_;
   std::vector<std::uint32_t> semanticIndex_;
 };
 
@@ -442,9 +513,8 @@ enum class SketchProvisionalClassification : std::uint8_t {
   Construction = 2,
 };
 
-// Geometry is canonical sketch-plane SI metres. Point, circle, and arc use one
-// point; line uses two. Circle/arc radius is metres and arc angles are radians.
-// Unused point slots and unused curve parameters must be zero.
+// Geometry is canonical sketch-plane SI metres. Curves use one center point;
+// line uses two. Unused point slots and curve parameters must be zero.
 struct PackedSketchProvisionalPrimitive {
   SketchProvisionalPrimitiveHandle handle;
   std::array<Point2d, 2> points;
@@ -455,6 +525,8 @@ struct PackedSketchProvisionalPrimitive {
   double radius = 0.0;
   double startAngleRadians = 0.0;
   double sweepAngleRadians = 0.0;
+  double secondaryRadius = 0.0;
+  double rotationAngleRadians = 0.0;
   bool operator==(const PackedSketchProvisionalPrimitive &) const = default;
 };
 
@@ -808,11 +880,6 @@ private:
   mutable std::mutex mutex_;
   SketchMarkerTarget target_;
   std::shared_ptr<const SketchMarkerPacket> latest_;
-};
-
-struct SketchPrimitiveBatch {
-  std::vector<Point2d> points;
-  std::vector<PackedSketchPrimitive> primitives;
 };
 
 // A delta is cumulative within one session and attachment binding relative to

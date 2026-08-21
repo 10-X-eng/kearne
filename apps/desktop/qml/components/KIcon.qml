@@ -371,6 +371,13 @@ Canvas {
             paintPath(context, [4, 20, 4, 9, 9, 4, 20, 4], false)
             line(context, 4, 9, 9, 4)
             break
+        case "offset":
+            useBase(context)
+            paintPath(context, [4, 18, 4, 9, 9, 4, 18, 4], false)
+            useAccent(context)
+            paintPath(context, [8, 21, 8, 12, 12, 8, 21, 8], false)
+            fillPath(context, [12, 14, 16, 16, 12, 18])
+            break
         case "shell":
             cube(context)
             paintPath(context, [8, 10, 12, 8, 16, 10, 12, 12], true)
@@ -403,6 +410,49 @@ Canvas {
             fillPath(context, [17, 3.5, 16.8, 8, 13.5, 5.9])
             dot(context, 12, 11.5, 1.3)
             break
+        case "translate":
+            useSoft(context)
+            context.fillRect(3.5, 12.5, 7, 7)
+            useBase(context)
+            rect(context, 3.5, 12.5, 7, 7, 1)
+            rect(context, 13.5, 3.5, 7, 7, 1)
+            useAccent(context)
+            line(context, 8, 16, 17, 7)
+            fillPath(context, [17, 7, 12.7, 7.6, 16.4, 11.3])
+            break
+        case "rotate":
+            useSoft(context)
+            context.fillRect(8.5, 8.5, 7, 7)
+            useBase(context)
+            rect(context, 8.5, 8.5, 7, 7, 1)
+            useAccent(context)
+            context.beginPath()
+            context.arc(12, 12, 9, Math.PI * 0.25, Math.PI * 1.72)
+            context.stroke()
+            fillPath(context, [17.8, 5.1, 21.2, 4.7, 19.8, 8])
+            dot(context, 12, 12, 1.25)
+            break
+        case "scale":
+            useSoft(context)
+            context.fillRect(4, 13, 7, 7)
+            useBase(context)
+            rect(context, 4, 13, 7, 7, 1)
+            rect(context, 9, 4, 11, 11, 1)
+            useAccent(context)
+            line(context, 7.5, 16.5, 16.5, 7.5)
+            fillPath(context, [16.5, 7.5, 12.4, 8.2, 15.8, 11.6])
+            fillPath(context, [7.5, 16.5, 11.6, 15.8, 8.2, 12.4])
+            break
+        case "symmetry-transform":
+            useAccent(context)
+            line(context, 12, 2.5, 12, 21.5)
+            useBase(context)
+            paintPath(context, [9.3, 5, 4, 8, 5.8, 18, 9.3, 15], true)
+            useSoft(context)
+            fillPath(context, [14.7, 5, 20, 8, 18.2, 18, 14.7, 15])
+            useBase(context)
+            paintPath(context, [14.7, 5, 20, 8, 18.2, 18, 14.7, 15], true)
+            break
         case "mirror":
             useAccent(context)
             line(context, 12, 3, 12, 21)
@@ -412,6 +462,21 @@ Canvas {
             fillPath(context, [15, 6, 20, 9, 20, 17, 15, 19])
             useBase(context)
             paintPath(context, [15, 6, 20, 9, 20, 17, 15, 19], false)
+            break
+        case "symmetric":
+            useAccent(context)
+            line(context, 12, 3, 12, 21)
+            useBase(context, 0.75)
+            line(context, 5, 12, 19, 12)
+            useSoft(context)
+            dot(context, 6, 12, 3.2)
+            dot(context, 18, 12, 3.2)
+            useBase(context)
+            circle(context, 6, 12, 2.1)
+            circle(context, 18, 12, 2.1)
+            useAccent(context)
+            dot(context, 6, 12, 1.05)
+            dot(context, 18, 12, 1.05)
             break
         case "measure":
             paintPath(context, [4, 17, 17, 4, 21, 8, 8, 21, 4, 17], true)
@@ -461,6 +526,35 @@ Canvas {
             dot(context, 14, 15, 1.6)
             dot(context, 20.5, 5, 1.6)
             break
+        case "polygon":
+        case "triangle":
+        case "square":
+        case "pentagon":
+        case "hexagon":
+        case "octagon": {
+            const sides = name === "triangle" ? 3
+                        : name === "square" ? 4
+                        : name === "pentagon" ? 5
+                        : name === "octagon" ? 8 : 6
+            const radius = sides === 4 ? 8.2 : 9
+            const rotation = sides === 4 ? Math.PI / 4 : -Math.PI / 2
+            context.beginPath()
+            for (let index = 0; index < sides; ++index) {
+                const angle = rotation + index * Math.PI * 2 / sides
+                const x = 12 + radius * Math.cos(angle)
+                const y = 12 + radius * Math.sin(angle)
+                if (index === 0) context.moveTo(x, y)
+                else context.lineTo(x, y)
+            }
+            context.closePath()
+            useSoft(context)
+            context.fill()
+            useBase(context)
+            context.stroke()
+            useAccent(context)
+            dot(context, 12, 12, 1.35)
+            break
+        }
         case "rectangle":
             useSoft(context)
             context.fillRect(4, 6, 16, 12)
@@ -469,6 +563,52 @@ Canvas {
             useAccent(context)
             dot(context, 4, 6, 1.2)
             dot(context, 20, 18, 1.2)
+            break
+        case "oblong":
+            useSoft(context)
+            context.beginPath()
+            context.moveTo(8, 6)
+            context.lineTo(16, 6)
+            context.arc(16, 12, 6, -Math.PI / 2, Math.PI / 2)
+            context.lineTo(8, 18)
+            context.arc(8, 12, 6, Math.PI / 2, 3 * Math.PI / 2)
+            context.closePath()
+            context.fill()
+            useBase(context)
+            context.stroke()
+            useAccent(context)
+            line(context, 8, 12, 16, 12)
+            dot(context, 8, 12, 1.25)
+            dot(context, 16, 12, 1.25)
+            break
+        case "slot":
+            useSoft(context)
+            context.beginPath()
+            context.moveTo(9, 7)
+            context.lineTo(15, 7)
+            context.arc(15, 12, 5, -Math.PI / 2, Math.PI / 2)
+            context.lineTo(9, 17)
+            context.arc(9, 12, 5, Math.PI / 2, 3 * Math.PI / 2)
+            context.closePath()
+            context.fill()
+            useBase(context)
+            context.stroke()
+            useAccent(context)
+            dot(context, 9, 12, 1.2)
+            dot(context, 15, 12, 1.2)
+            break
+        case "arc-slot":
+            useSoft(context)
+            context.beginPath()
+            context.arc(12, 14, 8, Math.PI * 1.12, Math.PI * 1.88)
+            context.arc(12, 14, 4.5, Math.PI * 1.88, Math.PI * 1.12, true)
+            context.closePath()
+            context.fill()
+            useBase(context)
+            context.stroke()
+            useAccent(context)
+            dot(context, 4.6, 11, 1.2)
+            dot(context, 19.4, 11, 1.2)
             break
         case "circle":
             useSoft(context)
@@ -492,6 +632,178 @@ Canvas {
             useAccent(context)
             dot(context, 12, 14, 1.1)
             break
+        case "ellipse":
+            context.save()
+            context.translate(12, 12)
+            context.rotate(-0.32)
+            useSoft(context)
+            context.beginPath()
+            context.moveTo(8, 0)
+            context.bezierCurveTo(8, 3.9, 4.4, 7, 0, 7)
+            context.bezierCurveTo(-4.4, 7, -8, 3.9, -8, 0)
+            context.bezierCurveTo(-8, -3.9, -4.4, -7, 0, -7)
+            context.bezierCurveTo(4.4, -7, 8, -3.9, 8, 0)
+            context.closePath()
+            context.fill()
+            useBase(context)
+            context.stroke()
+            context.restore()
+            useAccent(context)
+            dot(context, 12, 12, 1.3)
+            break
+        case "elliptical-arc":
+            context.save()
+            context.translate(12, 13)
+            context.rotate(-0.32)
+            useBase(context, 0.55)
+            line(context, 0, 0, -7.4, 2.7)
+            line(context, 0, 0, 6.4, -4.1)
+            useAccent(context)
+            context.beginPath()
+            for (let i = 0; i <= 16; ++i) {
+                const angle = 2.78 + 3.05 * i / 16
+                const x = 8 * Math.cos(angle)
+                const y = 6 * Math.sin(angle)
+                if (i === 0)
+                    context.moveTo(x, y)
+                else
+                    context.lineTo(x, y)
+            }
+            context.stroke()
+            context.restore()
+            useAccent(context)
+            dot(context, 12, 13, 1.1)
+            break
+        case "hyperbolic-arc":
+            context.save()
+            context.translate(5, 12)
+            useSoft(context)
+            line(context, 1, -7, 15, 7)
+            line(context, 1, 7, 15, -7)
+            useAccent(context)
+            context.beginPath()
+            for (let i = 0; i <= 18; ++i) {
+                const parameter = -1.05 + 2.1 * i / 18
+                const x = 4.2 * Math.cosh(parameter)
+                const y = 5.0 * Math.sinh(parameter)
+                if (i === 0)
+                    context.moveTo(x, y)
+                else
+                    context.lineTo(x, y)
+            }
+            context.stroke()
+            useBase(context)
+            dot(context, 0, 0, 1.15)
+            context.restore()
+            break
+        case "parabolic-arc":
+            context.save()
+            context.translate(5, 12)
+            useSoft(context)
+            line(context, 0, 0, 15, 0)
+            useAccent(context)
+            context.beginPath()
+            for (let i = 0; i <= 20; ++i) {
+                const parameter = -7 + 14 * i / 20
+                const x = parameter * parameter / 7
+                if (i === 0)
+                    context.moveTo(x, parameter)
+                else
+                    context.lineTo(x, parameter)
+            }
+            context.stroke()
+            useBase(context)
+            dot(context, 0, 0, 1.15)
+            useAccent(context)
+            dot(context, 3.5, 0, 1.15)
+            context.restore()
+            break
+        case "bspline":
+        case "bspline-control":
+        case "bspline-periodic":
+        case "bspline-interpolate":
+        case "bspline-periodic-interpolate": {
+            const closed = icon === "bspline-periodic"
+                           || icon === "bspline-periodic-interpolate"
+            const interpolated = icon === "bspline-interpolate"
+                                 || icon === "bspline-periodic-interpolate"
+            useSoft(context)
+            if (closed)
+                paintPath(context, [5, 13, 8, 5, 17, 5, 20, 13, 13, 20,
+                                    5, 13], true)
+            else
+                paintPath(context, [3.5, 17, 8, 5, 16, 5, 20.5, 16], false)
+            useAccent(context)
+            context.beginPath()
+            if (closed) {
+                context.moveTo(5, 13)
+                context.bezierCurveTo(5.5, 5.5, 16.5, 2.5, 20, 13)
+                context.bezierCurveTo(18.5, 20.5, 9, 22, 5, 13)
+            } else {
+                context.moveTo(3.5, 17)
+                context.bezierCurveTo(5, 7, 14, 2.5, 20.5, 16)
+            }
+            context.stroke()
+            useBase(context)
+            const poles = closed
+                    ? [5, 13, 8, 5, 17, 5, 20, 13, 13, 20]
+                    : [3.5, 17, 8, 5, 16, 5, 20.5, 16]
+            for (let index = 0; index < poles.length; index += 2) {
+                if (interpolated)
+                    circle(context, poles[index], poles[index + 1], 1.1)
+                else
+                    dot(context, poles[index], poles[index + 1], 1.1)
+            }
+            break
+        }
+        case "bspline-degree-up":
+        case "bspline-degree-down": {
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(3, 17)
+            context.bezierCurveTo(5, 7, 13, 3, 18, 13)
+            context.stroke()
+            useBase(context)
+            line(context, 4, 20, 19, 20)
+            const upward = icon === "bspline-degree-up"
+            line(context, 21, upward ? 17 : 7, 21, upward ? 7 : 17)
+            fillPath(context, upward ? [18.5, 9.5, 21, 6, 23.5, 9.5]
+                                     : [18.5, 14.5, 21, 18, 23.5, 14.5])
+            break
+        }
+        case "bspline-knot-up":
+        case "bspline-knot-down":
+        case "bspline-knot-insert": {
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(3, 17)
+            context.bezierCurveTo(5, 7, 13, 3, 21, 16)
+            context.stroke()
+            useBase(context)
+            circle(context, 7, 10.2, 1.4)
+            circle(context, 16.5, 9.2, 1.4)
+            const insert = icon === "bspline-knot-insert"
+            const upward = icon === "bspline-knot-up"
+            useAccent(context)
+            if (insert || upward)
+                line(context, 12, 15, 12, 21)
+            line(context, 9, 18, 15, 18)
+            break
+        }
+        case "bspline-pole-weight":
+            useSoft(context)
+            paintPath(context, [3, 18, 8, 5, 16, 6, 21, 17], false)
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(3, 18)
+            context.bezierCurveTo(6, 8, 14, 2, 21, 17)
+            context.stroke()
+            useBase(context)
+            dot(context, 3, 18, 1)
+            circle(context, 8, 5, 2.2)
+            dot(context, 16, 6, 1)
+            dot(context, 21, 17, 1)
+            break
         case "trim":
             useSoft(context)
             dot(context, 7, 17, 3)
@@ -503,6 +815,15 @@ Canvas {
             line(context, 15, 15, 7, 5)
             useAccent(context)
             line(context, 10.5, 11.5, 13.5, 8.5)
+            break
+        case "extend":
+            useBase(context)
+            line(context, 4, 17, 13, 8)
+            useSoft(context)
+            line(context, 13, 8, 20, 4)
+            useAccent(context)
+            line(context, 11, 10, 19, 2)
+            fillPath(context, [19, 2, 18, 7, 14, 3])
             break
         case "coincident":
             useBase(context)
@@ -531,6 +852,26 @@ Canvas {
             line(context, 12, 4, 12, 20)
             fillPath(context, [12, 4, 9.8, 7.5, 14.2, 7.5])
             fillPath(context, [12, 20, 9.8, 16.5, 14.2, 16.5])
+            break
+        case "horizontal-vertical":
+            useBase(context, 0.75)
+            line(context, 4, 6, 4, 18)
+            line(context, 20, 6, 20, 18)
+            line(context, 6, 4, 18, 4)
+            line(context, 6, 20, 18, 20)
+            useAccent(context)
+            line(context, 3.5, 12, 20.5, 12)
+            line(context, 12, 3.5, 12, 20.5)
+            dot(context, 12, 12, 1.4)
+            break
+        case "remove-axis-alignment":
+            useBase(context, 0.7)
+            line(context, 4, 8, 20, 8)
+            line(context, 8, 4, 8, 20)
+            useAccent(context)
+            paintPath(context, [10, 17, 16.5, 10.5, 20, 14, 13.5, 20.5],
+                      true)
+            line(context, 14.5, 12.5, 18, 16)
             break
         case "equal":
             useBase(context)
@@ -577,7 +918,7 @@ Canvas {
             useAccent(context)
             fillPath(context, [10, 11.5, 13.5, 9.7, 13.5, 13.3])
             break
-        case "fixed":
+        case "block":
             useBase(context)
             line(context, 5, 18, 19, 7)
             dot(context, 5, 18, 1.4)
@@ -586,6 +927,27 @@ Canvas {
             rect(context, 9, 11, 7, 7, 1)
             context.beginPath()
             context.arc(12.5, 11, 2.5, Math.PI, Math.PI * 2)
+            context.stroke()
+            break
+        case "group":
+            useSoft(context)
+            dot(context, 8, 9, 4)
+            dot(context, 16, 15, 4)
+            useBase(context)
+            circle(context, 8, 9, 4)
+            circle(context, 16, 15, 4)
+            useAccent(context)
+            paintPath(context, [5, 13, 5, 20, 19, 20, 19, 11], false)
+            break
+        case "lock":
+            useBase(context, 0.75)
+            line(context, 4, 8, 13, 8)
+            line(context, 8.5, 3.5, 8.5, 12.5)
+            useAccent(context)
+            dot(context, 8.5, 8, 1.7)
+            rect(context, 11, 11, 8, 8, 1)
+            context.beginPath()
+            context.arc(15, 11, 2.8, Math.PI, Math.PI * 2)
             context.stroke()
             break
         case "collinear":

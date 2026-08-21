@@ -1,3 +1,5 @@
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import Kearne.UI
 
@@ -10,17 +12,7 @@ Item {
     property var semanticActions: []
     property string semanticValue: App.ui.activeCommandId + ":"
                                    + App.ui.sketchInputCount
-    property real cursorX: 0
-    property real cursorY: 0
-    property bool cursorVisible: false
     required property real snapSpacingMillimeters
-    readonly property real pixelsPerMillimeter: App.sketchCamera.pixelsPerMetre
-                                                 / 1000
-    readonly property point snappedCursorPosition: {
-        const plane = planePoint(cursorX, cursorY)
-        const screen = screenPoint({"x": plane[0], "y": plane[1]})
-        return Qt.point(screen[0], screen[1])
-    }
 
     activeFocusOnTab: true
     Accessible.name: semanticName
@@ -56,55 +48,22 @@ Item {
         return [planeX, planeY]
     }
 
-    function segmentDistance(x, y, start, end) {
-        const dx = end[0] - start[0]
-        const dy = end[1] - start[1]
-        const lengthSquared = dx * dx + dy * dy
-        const amount = lengthSquared < 0.001 ? 0
-                       : Math.max(0, Math.min(1,
-                           ((x - start[0]) * dx + (y - start[1]) * dy)
-                           / lengthSquared))
-        return Math.hypot(x - start[0] - amount * dx,
-                          y - start[1] - amount * dy)
-    }
-
-    function hitTest(x, y) {
-        const primitives = App.ui.sketchPrimitives
-        const selection = App.ui.sketchSelectionKind
-        for (let index = primitives.length - 1; index >= 0; --index) {
-            const primitive = primitives[index]
-            if (primitive.draft || primitive.points.length === 0)
-                continue
-            if (selection !== "curve") {
-                for (const projectedPoint of primitive.points) {
-                    const point = screenPoint(projectedPoint)
-                    if (Math.hypot(x - point[0], y - point[1]) <= 8)
-                        return {"id": primitive.id,
-                                "key": projectedPoint.key}
-                }
-            }
-            if (selection === "point")
-                continue
-            if (primitive.kind === "line") {
-                const start = screenPoint(primitive.points[0])
-                const end = screenPoint(primitive.points[1])
-                if (segmentDistance(x, y, start, end) <= 7)
-                    return {"id": primitive.id, "key": ""}
-            } else if (primitive.kind === "circle") {
-                const center = screenPoint(primitive.points[0])
-                const radius = primitive.radius * pixelsPerMillimeter
-                if (Math.abs(Math.hypot(x - center[0], y - center[1])
-                             - radius) <= 7)
-                    return {"id": primitive.id, "key": ""}
-            }
+    function dimensionAnchor(anchor, origin, index) {
+        const anchorScreen = screenPoint(anchor)
+        const originScreen = screenPoint(origin)
+        let outwardX = anchorScreen[0] - originScreen[0]
+        let outwardY = anchorScreen[1] - originScreen[1]
+        const magnitude = Math.hypot(outwardX, outwardY)
+        if (magnitude > 0.001) {
+            outwardX /= magnitude
+            outwardY /= magnitude
+        } else {
+            outwardX = 0
+            outwardY = -1
         }
-        return {"id": "", "key": ""}
-    }
-
-    function updateCursor(x, y, visible) {
-        cursorX = x
-        cursorY = y
-        cursorVisible = visible
+        const distance = 22 + index * 25
+        return Qt.point(anchorScreen[0] + outwardX * distance,
+                        anchorScreen[1] + outwardY * distance)
     }
 
     function handleClick(x, y) {
@@ -114,13 +73,7 @@ Item {
         }
         if (App.ui.submitSketchPointerClick(x, y))
             return true
-        const pick = hitTest(x, y)
-        if (pick.id.length === 0)
-            return false
-        if (App.ui.sketchInputKind === "entity")
-            return App.ui.submitSketchEntity(pick.id, pick.key)
-        App.ui.selectEntity(pick.id)
-        return true
+        return false
     }
 
     function handleDrag(firstX, firstY, oppositeX, oppositeY) {
@@ -135,178 +88,139 @@ Item {
         return false
     }
 
-    Canvas {
-        id: sketch
-        anchors.fill: parent
-        renderStrategy: Canvas.Threaded
-        antialiasing: true
+    component PreviewDimension: Rectangle {
+        required property point anchorPoint
+        required property string label
 
-        function drawPrimitive(context, primitive) {
-            const points = primitive.points.map(point => root.screenPoint(point))
+        x: anchorPoint.x - width / 2
+        y: anchorPoint.y - height / 2
+        width: dimensionText.implicitWidth + 14
+        height: 22
+        radius: Theme.radiusSmall
+        color: Theme.surface
+        border.color: Theme.borderStrong
+        border.width: Theme.separatorWidth
+        visible: App.ui.sketchGesturePreviewVisible
+
+        Text {
+            id: dimensionText
+            anchors.centerIn: parent
+            text: parent.label
+            color: Theme.text
+            font.pixelSize: Theme.fontSmall
+            font.weight: Theme.fontWeightStrong
+        }
+    }
+
+    Canvas {
+        id: liveGeometry
+
+        anchors.fill: parent
+        visible: App.ui.sketchGesturePreviewVisible
+        antialiasing: true
+        readonly property var primitives: App.ui.sketchPreviewPrimitives
+
+        function drawPolyline(context, points, closed) {
             if (points.length === 0)
                 return
-            context.setLineDash(primitive.construction ? [7, 5] : [])
-            context.strokeStyle = primitive.selected ? Theme.warning
-                                  : (primitive.draft ? Theme.accentHover
-                                                     : Theme.accent)
-            context.fillStyle = context.strokeStyle
-            context.lineWidth = primitive.selected || primitive.draft ? 2.4 : 1.7
-            if (primitive.kind === "point") {
-                context.beginPath()
-                context.arc(points[0][0], points[0][1], 3.5, 0, Math.PI * 2)
-                context.fill()
-            } else if (primitive.kind === "line" && points.length >= 2) {
-                context.beginPath()
-                context.moveTo(points[0][0], points[0][1])
-                context.lineTo(points[1][0], points[1][1])
-                context.stroke()
-            } else if (primitive.kind === "circle") {
-                context.beginPath()
-                context.arc(points[0][0], points[0][1],
-                            Math.abs(primitive.radius * root.pixelsPerMillimeter),
-                            0, Math.PI * 2)
-                context.stroke()
-            } else if (primitive.kind === "arc" && points.length >= 3) {
-                context.beginPath()
-                context.moveTo(points[0][0], points[0][1])
-                context.quadraticCurveTo(points[1][0], points[1][1],
-                                         points[2][0], points[2][1])
-                context.stroke()
+            const first = root.screenPoint(points[0])
+            context.moveTo(first[0], first[1])
+            for (let index = 1; index < points.length; ++index) {
+                const point = root.screenPoint(points[index])
+                context.lineTo(point[0], point[1])
             }
-            for (let index = 0; index < points.length; ++index) {
-                if (!primitive.points[index].selected)
-                    continue
-                context.fillStyle = Theme.warning
-                context.beginPath()
-                context.arc(points[index][0], points[index][1], 4, 0,
-                            Math.PI * 2)
-                context.fill()
-            }
-            context.setLineDash([])
+            if (closed)
+                context.closePath()
         }
 
-        function drawGesturePreview(context) {
-            if (!App.ui.sketchDragPreviewVisible)
-                return
-            const canonical = [App.ui.sketchDragPreviewFirst,
-                               App.ui.sketchDragPreviewSecond,
-                               App.ui.sketchDragPreviewThird,
-                               App.ui.sketchDragPreviewFourth]
-            const points = canonical
-                           .map(point => root.screenPoint(point))
-            context.setLineDash(App.ui.sketchDragPreviewConstruction
-                                ? [7, 5] : [])
-            context.strokeStyle = Theme.accentHover
-            context.lineWidth = 2.4
-            context.beginPath()
-            context.moveTo(points[0][0], points[0][1])
-            for (let index = 1; index < points.length; ++index)
-                context.lineTo(points[index][0], points[index][1])
-            context.closePath()
-            context.stroke()
-            context.setLineDash([])
-
-            const center = [(points[0][0] + points[2][0]) / 2,
-                            (points[0][1] + points[2][1]) / 2]
-            drawDimensionLabel(
-                        context,
-                        App.ui.formatProjectLength(
-                            Math.abs(canonical[1].x - canonical[0].x)),
-                        points[0], points[1], center)
-            drawDimensionLabel(
-                        context,
-                        App.ui.formatProjectLength(
-                            Math.abs(canonical[2].y - canonical[1].y)),
-                        points[1], points[2], center)
+        function analyticPoints(primitive) {
+            const center = primitive.points[0]
+            const kind = primitive.kind
+            const full = kind === "circle" || kind === "ellipse"
+            const start = full ? 0 : primitive.startAngleRadians
+            const sweep = full ? Math.PI * 2 : primitive.sweepAngleRadians
+            const maximumRadius = Math.max(primitive.radius,
+                                           primitive.secondaryRadius)
+            const radiusPixels = maximumRadius / 1000
+                               * App.sketchCamera.pixelsPerMetre
+            const segments = Math.max(12, Math.min(256,
+                Math.ceil(Math.abs(sweep) * Math.max(1, radiusPixels) / 8)))
+            const cosine = Math.cos(primitive.rotationAngleRadians)
+            const sine = Math.sin(primitive.rotationAngleRadians)
+            const points = []
+            for (let index = 0; index <= segments; ++index) {
+                const parameter = start + sweep * index / segments
+                let localX
+                let localY
+                if (kind === "hyperbolic-arc") {
+                    localX = primitive.radius * Math.cosh(parameter)
+                    localY = primitive.secondaryRadius * Math.sinh(parameter)
+                } else if (kind === "parabolic-arc") {
+                    localX = parameter * parameter / (4 * primitive.radius)
+                    localY = parameter
+                } else {
+                    localX = primitive.radius * Math.cos(parameter)
+                    localY = (kind === "ellipse" || kind === "elliptical-arc")
+                             ? primitive.secondaryRadius * Math.sin(parameter)
+                             : primitive.radius * Math.sin(parameter)
+                }
+                points.push(Qt.point(center.x + cosine * localX - sine * localY,
+                                     center.y + sine * localX + cosine * localY))
+            }
+            return points
         }
 
-        function drawDimensionLabel(context, label, start, end, center) {
-            const midpointX = (start[0] + end[0]) / 2
-            const midpointY = (start[1] + end[1]) / 2
-            let outwardX = midpointX - center[0]
-            let outwardY = midpointY - center[1]
-            const magnitude = Math.hypot(outwardX, outwardY)
-            if (magnitude > 0.001) {
-                outwardX /= magnitude
-                outwardY /= magnitude
-            }
-            const labelX = midpointX + outwardX * 18
-            const labelY = midpointY + outwardY * 18
-            context.font = Theme.fontWeightStrong + " " + Theme.fontSmall
-                           + "px sans-serif"
-            const labelWidth = context.measureText(label).width + 14
-            const labelHeight = 22
-            context.fillStyle = Theme.surface
-            context.strokeStyle = Theme.borderStrong
-            context.lineWidth = 1
-            context.fillRect(labelX - labelWidth / 2,
-                             labelY - labelHeight / 2,
-                             labelWidth, labelHeight)
-            context.strokeRect(labelX - labelWidth / 2,
-                               labelY - labelHeight / 2,
-                               labelWidth, labelHeight)
-            context.fillStyle = Theme.text
-            context.textAlign = "center"
-            context.textBaseline = "middle"
-            context.fillText(label, labelX, labelY)
+        onPrimitivesChanged: requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+
+        Connections {
+            target: App.sketchCamera
+            function onCameraChanged() { liveGeometry.requestPaint() }
         }
 
         onPaint: {
             const context = getContext("2d")
-            context.reset()
             context.clearRect(0, 0, width, height)
-            for (const primitive of App.ui.sketchPrimitives)
-                drawPrimitive(context, primitive)
-            drawGesturePreview(context)
-
+            context.lineWidth = 1.75
+            context.lineCap = "round"
+            context.lineJoin = "round"
+            context.strokeStyle = Theme.accent
+            context.fillStyle = Theme.accent
+            for (const primitive of primitives) {
+                context.setLineDash(primitive.construction ? [7, 5] : [])
+                context.beginPath()
+                if (primitive.kind === "point") {
+                    const point = root.screenPoint(primitive.points[0])
+                    context.arc(point[0], point[1], 3, 0, Math.PI * 2)
+                    context.fill()
+                } else if (primitive.kind === "line") {
+                    drawPolyline(context, primitive.points, false)
+                    context.stroke()
+                } else {
+                    drawPolyline(context, analyticPoints(primitive), false)
+                    context.stroke()
+                }
+            }
         }
-
-        Connections {
-            target: App.sketchCamera
-            function onCameraChanged() { sketch.requestPaint() }
-        }
-
-        Connections {
-            target: App.themes
-            function onProjectionChanged() { sketch.requestPaint() }
-        }
-
-        Connections {
-            target: App.ui
-            function onProjectionChanged() { sketch.requestPaint() }
-        }
-
-        Connections {
-            target: App.ui
-            function onSketchDragPreviewChanged() { sketch.requestPaint() }
-        }
-
-        onWidthChanged: requestPaint()
-        onHeightChanged: requestPaint()
     }
 
-    Item {
-        width: 15
-        height: 15
-        x: root.snappedCursorPosition.x - width / 2
-        y: root.snappedCursorPosition.y - height / 2
-        visible: root.cursorVisible
-                 && App.ui.sketchInputKind === "plane-point"
+    Repeater {
+        model: App.ui.sketchPreviewMeasurements
 
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width
-            height: Theme.separatorWidth
-            color: Theme.textMuted
-        }
-
-        Rectangle {
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.verticalCenter: parent.verticalCenter
-            width: Theme.separatorWidth
-            height: parent.height
-            color: Theme.textMuted
+        delegate: PreviewDimension {
+            required property var modelData
+            required property int index
+            property string semanticId: visible
+                                        ? "sketch.preview.measurement." + index
+                                        : ""
+            property string semanticName: "Live sketch measurement"
+            property string semanticRole: "label"
+            property var semanticActions: []
+            property string semanticValue: label
+            anchorPoint: root.dimensionAnchor(modelData.anchor,
+                                              modelData.origin, index)
+            label: modelData.label
         }
     }
 

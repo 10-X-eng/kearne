@@ -18,7 +18,7 @@ from kearne._wire import (
 )
 from kearne._worker.sketch_source import process_transform
 
-MAXIMUM_FRAME_BYTES = 132_096
+MAXIMUM_FRAME_BYTES = 33_554_432
 
 
 class ProtocolError(ValueError):

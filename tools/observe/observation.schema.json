@@ -15,13 +15,82 @@
     },
     "actionReceipt": {
       "type": "object",
-      "required": ["semantic_id", "action", "generation_before", "generation_after"],
+      "required": [
+        "semantic_id", "action", "generation_before", "generation_after",
+        "dispatch_ms", "state_after_dispatch", "project_revision_after_dispatch",
+        "presented_frame_before", "presented", "settled_frame", "settled_ms",
+        "settled_generation", "settled_state", "settled_project_revision",
+        "settled_native_scene_current", "current_scene_frame", "current_scene_ms"
+      ],
       "properties": {
         "semantic_id": { "type": "string", "minLength": 1 },
         "action": { "type": "string", "minLength": 1 },
         "value": true,
         "generation_before": { "type": "integer", "minimum": 0 },
-        "generation_after": { "type": "integer", "minimum": 0 }
+        "generation_after": { "type": "integer", "minimum": 0 },
+        "dispatch_ms": { "type": "number", "minimum": 0 },
+        "state_after_dispatch": { "type": "string" },
+        "state_after_input": { "type": "string" },
+        "project_revision_after_dispatch": { "type": "string", "minLength": 1 },
+        "presented_frame_before": { "type": "integer", "minimum": 0 },
+        "presented": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/presentedActionFrame" }
+        },
+        "presented_trace_truncated": { "const": true },
+        "pointer_move_presentations": { "type": "integer", "minimum": 1 },
+        "pointer_move_frames": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/pointerMoveFrame" }
+        },
+        "preview_image": { "type": "string", "minLength": 1 },
+        "preview_semantic": { "type": "string", "minLength": 1 },
+        "preview_frame": { "type": "integer", "minimum": 1 },
+        "preview_generation": { "type": "integer", "minimum": 0 },
+        "input_complete_ms": { "type": "number", "minimum": 0 },
+        "current_scene_frame": { "type": "integer", "minimum": 1 },
+        "current_scene_ms": { "type": "number", "minimum": 0 },
+        "current_scene_after_input_ms": { "type": "number", "minimum": 0 },
+        "settled_after_input_ms": { "type": "number", "minimum": 0 },
+        "settled_frame": { "type": "integer", "minimum": 1 },
+        "settled_ms": { "type": "number", "minimum": 0 },
+        "settled_generation": { "type": "integer", "minimum": 0 },
+        "settled_state": { "type": "string" },
+        "settled_project_revision": { "type": "string", "minLength": 1 },
+        "settled_native_scene_current": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "pointerMoveFrame": {
+      "type": "object",
+      "required": ["move", "frame", "latency_ms", "preview_visible"],
+      "properties": {
+        "move": { "type": "integer", "minimum": 1 },
+        "frame": { "type": "integer", "minimum": 1 },
+        "latency_ms": { "type": "number", "minimum": 0 },
+        "preview_visible": { "type": "boolean" },
+        "hovered_entity": { "type": "string" },
+        "hovered_point": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "presentedActionFrame": {
+      "type": "object",
+      "required": [
+        "frame", "elapsed_ms", "ui_generation", "command_state",
+        "project_revision", "native_scene_current", "sketch_preview_visible"
+      ],
+      "properties": {
+        "frame": { "type": "integer", "minimum": 1 },
+        "elapsed_ms": { "type": "number", "minimum": 0 },
+        "ui_generation": { "type": "integer", "minimum": 0 },
+        "command_state": { "type": "string" },
+        "project_revision": { "type": "string", "minLength": 1 },
+        "native_scene_current": { "type": "boolean" },
+        "sketch_preview_visible": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -98,7 +167,18 @@
         "theme_id": { "type": "string", "minLength": 1 },
         "ui_generation": { "type": "integer", "minimum": 0 },
         "actions": { "type": "array", "items": { "$ref": "#/$defs/actionReceipt" } },
-        "nodes": { "type": "array", "items": { "$ref": "#/$defs/semanticNode" } }
+        "nodes": { "type": "array", "items": { "$ref": "#/$defs/semanticNode" } },
+        "source_snapshot": { "$ref": "#/$defs/sourceSnapshot" }
+      },
+      "additionalProperties": false
+    },
+    "sourceSnapshot": {
+      "type": "object",
+      "required": ["path", "revision", "source"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "revision": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 }
       },
       "additionalProperties": false
     },

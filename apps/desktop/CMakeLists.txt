@@ -85,22 +85,28 @@ target_link_libraries(kearne_local_sketch_session
     PRIVATE
         Kearne::BuildOptions
         Kearne::SketchCeres
+        Kearne::SketchOcc
         Kearne::SketchSourceWorker
         Kearne::SketchWorkflow
 )
 
 add_library(kearne_desktop_frontend STATIC
-    src/development_frontend_port.cpp
-    src/development_frontend_port.hpp
+    src/command_catalog.hpp
+    src/desktop_controller.cpp
+    src/desktop_controller.hpp
     src/frontend_contract.hpp
     src/sketch_gesture_preview.cpp
+    src/sketch_tool_gesture.cpp
     src/sketch_gesture_preview.hpp
+    src/sketch_tool_gesture.hpp
+    src/sketch_provisional_projection.cpp
+    src/sketch_provisional_projection.hpp
 )
 add_library(Kearne::DesktopFrontend ALIAS kearne_desktop_frontend)
 target_include_directories(kearne_desktop_frontend PUBLIC src)
 target_link_libraries(kearne_desktop_frontend
     PUBLIC Kearne::LocalSketchSession Qt6::Core
-    PRIVATE Kearne::BuildOptions
+    PRIVATE Kearne::BuildOptions Kearne::SketchOcc
 )
 
 qt_add_executable(kearne
@@ -169,6 +175,7 @@ qt_add_qml_module(kearne
         qml/components/SurfaceState.qml
         qml/components/ProjectBar.qml
         qml/components/WorkspaceBar.qml
+        qml/components/CommandFamily.qml
         qml/components/CommandStrip.qml
         qml/components/StructurePanel.qml
         qml/components/EngineeringGridScale.qml
@@ -192,12 +199,31 @@ qt_add_qml_module(kearne
 
 get_property(kearne_desktop_generated_python_root GLOBAL PROPERTY
     KEARNE_API_GENERATED_PYTHON_ROOT)
+set(kearne_desktop_python_runtime_root
+    "${CMAKE_CURRENT_BINARY_DIR}/python")
+file(GLOB_RECURSE kearne_desktop_python_sources CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/sdk/python/src/*.py")
+add_custom_target(kearne_desktop_python_runtime ALL
+    COMMAND ${CMAKE_COMMAND} -E rm -rf
+            "${kearne_desktop_python_runtime_root}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${kearne_desktop_python_runtime_root}/sdk"
+            "${kearne_desktop_python_runtime_root}/generated"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${PROJECT_SOURCE_DIR}/sdk/python/src"
+            "${kearne_desktop_python_runtime_root}/sdk"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${kearne_desktop_generated_python_root}"
+            "${kearne_desktop_python_runtime_root}/generated"
+    DEPENDS kearne_api_metadata ${kearne_desktop_python_sources}
+    COMMENT "Staging Kearne Python runtime"
+    VERBATIM
+)
+add_dependencies(kearne kearne_desktop_python_runtime)
 target_compile_definitions(kearne PRIVATE
     KEARNE_VERSION="${PROJECT_VERSION}"
     KEARNE_BUILD_TYPE="$<CONFIG>"
     "KEARNE_LOCAL_PYTHON=\"$<TARGET_FILE:Python3::Interpreter>\""
-    "KEARNE_LOCAL_SDK_ROOT=\"${PROJECT_SOURCE_DIR}/sdk/python/src\""
-    "KEARNE_LOCAL_GENERATED_PYTHON_ROOT=\"${kearne_desktop_generated_python_root}\""
 )
 
 target_include_directories(kearne PRIVATE src)
@@ -225,6 +251,8 @@ install(TARGETS kearne
     BUNDLE DESTINATION .
     RUNTIME DESTINATION bin
 )
+install(DIRECTORY "${kearne_desktop_python_runtime_root}/"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/kearne/python")
 install(PROGRAMS ${PROJECT_SOURCE_DIR}/tools/observe/desktop_matrix.py
         DESTINATION ${CMAKE_INSTALL_DATADIR}/kearne/observe)
 install(FILES ${PROJECT_SOURCE_DIR}/tools/observe/observation.schema.json
@@ -253,6 +281,24 @@ if(BUILD_TESTING)
              COMMAND kearne_local_sketch_session_contract_tests)
     set_tests_properties(local-sketch-session-contracts PROPERTIES
         LABELS "desktop;sketch;workflow;contract;concurrency"
+        TIMEOUT 60)
+
+    add_executable(kearne_sketch_provisional_projection_contract_tests
+        tests/sketch_provisional_projection_contract.cpp
+        tests/sketch_scene_fixture.hpp
+    )
+    target_link_libraries(
+        kearne_sketch_provisional_projection_contract_tests PRIVATE
+        Kearne::DesktopFrontend
+        Kearne::Testkit
+        Kearne::BuildOptions
+        Qt6::Core
+        Qt6::Gui
+    )
+    add_test(NAME sketch-provisional-projection-contracts
+             COMMAND kearne_sketch_provisional_projection_contract_tests)
+    set_tests_properties(sketch-provisional-projection-contracts PROPERTIES
+        LABELS "desktop;sketch;render;contract;generated"
         TIMEOUT 60)
 
     add_executable(kearne_local_sketch_session_benchmark
@@ -528,16 +574,16 @@ if(BUILD_TESTING)
              COMMAND kearne_ui_contract_tests)
     set_tests_properties(theme-preference-contracts PROPERTIES TIMEOUT 30)
 
-    qt_add_executable(kearne_frontend_port_contract_tests
-        tests/frontend_port_contract.cpp
+    qt_add_executable(kearne_desktop_controller_contract_tests
+        tests/desktop_controller_contract.cpp
     )
-    target_link_libraries(kearne_frontend_port_contract_tests PRIVATE
+    target_link_libraries(kearne_desktop_controller_contract_tests PRIVATE
         Kearne::DesktopFrontend Qt6::Core)
-    target_link_libraries(kearne_frontend_port_contract_tests PRIVATE
+    target_link_libraries(kearne_desktop_controller_contract_tests PRIVATE
         Kearne::BuildOptions)
-    add_test(NAME frontend-port-contracts
-             COMMAND kearne_frontend_port_contract_tests)
-    set_tests_properties(frontend-port-contracts PROPERTIES TIMEOUT 30)
+    add_test(NAME desktop-controller-contracts
+             COMMAND kearne_desktop_controller_contract_tests)
+    set_tests_properties(desktop-controller-contracts PROPERTIES TIMEOUT 30)
 
     add_test(
         NAME qml-static-analysis
@@ -584,6 +630,20 @@ if(BUILD_TESTING)
     )
     set_tests_properties(installed-desktop-observation PROPERTIES
         FIXTURES_REQUIRED installed-desktop
+        TIMEOUT 60
+    )
+
+    add_test(
+        NAME installed-design-engine-observation
+        COMMAND ${Python3_EXECUTABLE}
+                ${KEARNE_TEST_INSTALL_PREFIX}/${CMAKE_INSTALL_DATADIR}/kearne/observe/desktop_matrix.py
+                --executable ${KEARNE_TEST_INSTALL_PREFIX}/bin/kearne${CMAKE_EXECUTABLE_SUFFIX}
+                --mode proof
+                --scenario proof-sketch-plane-preselection
+    )
+    set_tests_properties(installed-design-engine-observation PROPERTIES
+        FIXTURES_REQUIRED installed-desktop
+        LABELS "desktop;worker;workflow;contract"
         TIMEOUT 60
     )
 endif()

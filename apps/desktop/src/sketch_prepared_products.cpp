@@ -163,6 +163,16 @@ sourceKind(render::SketchPrimitiveKind kind) noexcept {
     return SketchStrokeSourceKind::Circle;
   case render::SketchPrimitiveKind::Arc:
     return SketchStrokeSourceKind::Arc;
+  case render::SketchPrimitiveKind::Ellipse:
+    return SketchStrokeSourceKind::Ellipse;
+  case render::SketchPrimitiveKind::EllipticalArc:
+    return SketchStrokeSourceKind::EllipticalArc;
+  case render::SketchPrimitiveKind::HyperbolicArc:
+    return SketchStrokeSourceKind::HyperbolicArc;
+  case render::SketchPrimitiveKind::ParabolicArc:
+    return SketchStrokeSourceKind::ParabolicArc;
+  case render::SketchPrimitiveKind::BSpline:
+    return SketchStrokeSourceKind::BSpline;
   }
   return SketchStrokeSourceKind::Point;
 }
@@ -183,35 +193,29 @@ provisionalPrimitiveAt(const void *context, std::size_t index) noexcept {
           primitive.points[1],
           primitive.radius,
           primitive.startAngleRadians,
-          primitive.sweepAngleRadians};
+          primitive.sweepAngleRadians,
+          0U,
+          primitive.secondaryRadius,
+          primitive.rotationAngleRadians};
 }
 
 [[nodiscard]] SketchStrokeSourceBounds
-provisionalBounds(const render::SketchProvisionalGeometry &source) noexcept {
+provisionalBounds(const render::SketchProvisionalGeometry &source) {
   SketchStrokeSourceBounds bounds;
-  const auto include = [&bounds](render::Point2d point) {
+  for (std::size_t index = 0U; index < source.primitives().size(); ++index) {
+    const SketchStrokeSourcePrimitive primitive =
+        provisionalPrimitiveAt(&source, index);
+    auto current = sketchStrokePrimitiveBounds(primitive);
+    if (!current)
+      return {};
     if (bounds.empty) {
-      bounds.minimum = point;
-      bounds.maximum = point;
-      bounds.empty = false;
-      return;
+      bounds = *current;
+      continue;
     }
-    bounds.minimum.x = std::min(bounds.minimum.x, point.x);
-    bounds.minimum.y = std::min(bounds.minimum.y, point.y);
-    bounds.maximum.x = std::max(bounds.maximum.x, point.x);
-    bounds.maximum.y = std::max(bounds.maximum.y, point.y);
-  };
-  for (const auto &primitive : source.primitives()) {
-    include(primitive.points[0]);
-    if (primitive.kind == render::SketchPrimitiveKind::Line)
-      include(primitive.points[1]);
-    if (primitive.kind == render::SketchPrimitiveKind::Circle ||
-        primitive.kind == render::SketchPrimitiveKind::Arc) {
-      include({primitive.points[0].x - primitive.radius,
-               primitive.points[0].y - primitive.radius});
-      include({primitive.points[0].x + primitive.radius,
-               primitive.points[0].y + primitive.radius});
-    }
+    bounds.minimum.x = std::min(bounds.minimum.x, current->minimum.x);
+    bounds.minimum.y = std::min(bounds.minimum.y, current->minimum.y);
+    bounds.maximum.x = std::max(bounds.maximum.x, current->maximum.x);
+    bounds.maximum.y = std::max(bounds.maximum.y, current->maximum.y);
   }
   return bounds;
 }

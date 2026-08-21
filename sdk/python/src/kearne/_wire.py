@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Protocol, cast
 from uuid import UUID
 
@@ -59,6 +59,8 @@ class WireMessage(Protocol):
 
 class RepeatedComposite(Protocol):
     def add(self) -> WireMessage: ...
+
+    def extend(self, values: Iterable[object]) -> None: ...
 
     def __iter__(self) -> Iterator[WireMessage]: ...
 

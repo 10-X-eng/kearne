@@ -37,7 +37,7 @@ struct SketchScenePalette {
   QRgb selected = qRgb(18, 146, 230);
   QRgb preview = qRgb(24, 154, 116);
   QRgb diagnostic = qRgb(210, 66, 74);
-  QRgb hovered = qRgb(42, 132, 198);
+  QRgb hovered = qRgb(245, 158, 11);
   bool operator==(const SketchScenePalette &) const = default;
 
   [[nodiscard]] QRgb color(render::SketchStyleRole role) const;

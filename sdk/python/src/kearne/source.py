@@ -16,14 +16,15 @@ from kearne._sketch_schema import (
     CONSTRAINT_HELPERS,
     ENTITY_HELPERS,
     HELPERS,
+    OBJECT_HELPERS,
     HelperSpec,
 )
 
-Section: TypeAlias = Literal["entities", "constraints"]
+Section: TypeAlias = Literal["objects", "entities", "constraints"]
 OWNED_NAMES = frozenset({"SketchDefinition", *HELPERS})
 UNIT_NAMES = frozenset({"m", "mm", "inch", "rad", "deg"})
 DIRECT_HELPER_BINDINGS: Mapping[str, str] = {name: name for name in HELPERS}
-MAXIMUM_SOURCE_EDIT_BATCH = 32
+MAXIMUM_SOURCE_EDIT_BATCH = 65_536
 _UUID7 = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 ).fullmatch
@@ -61,6 +62,7 @@ class RecognizedCall:
 class Recognition:
     function: str
     plane_code: str
+    objects: tuple[RecognizedCall, ...]
     entities: tuple[RecognizedCall, ...]
     constraints: tuple[RecognizedCall, ...]
     source_digest: str
@@ -181,8 +183,10 @@ class _ParsedSection:
 class _ParsedRecognition:
     public: Recognition | None
     source: _Source
+    objects_section: _ParsedSection | None
     entities_section: _ParsedSection
     constraints_section: _ParsedSection
+    objects: tuple[_ParsedCall, ...]
     entities: tuple[_ParsedCall, ...]
     constraints: tuple[_ParsedCall, ...]
     bindings: Mapping[str, str]
@@ -524,6 +528,17 @@ def _validate_call(
     for node, argument in zip(call.args, spec.positional, strict=True):
         if argument.kind == "stable_id":
             declared = _stable_id(node, code)
+        elif argument.kind == "label":
+            label = _literal_string(node, code)
+            if (
+                not label.strip()
+                or len(label.encode()) > 128
+                or any(
+                    ord(character) < 0x20 or ord(character) == 0x7F
+                    for character in label
+                )
+            ):
+                raise SourceError(code, "Sketch object label is invalid")
         elif argument.kind == "entity_ref":
             reference = _stable_id(node, code)
             references.append((reference, argument.entity_kinds))
@@ -590,7 +605,10 @@ def _keywords(definition: ast.Call) -> dict[str, ast.expr]:
         if keyword.arg is None or keyword.arg in result:
             raise _Unrecognized
         result[keyword.arg] = keyword.value
-    if set(result) != {"plane", "entities", "constraints"}:
+    if set(result) not in (
+        {"plane", "entities", "constraints"},
+        {"plane", "objects", "entities", "constraints"},
+    ):
         raise _Unrecognized
     return result
 
@@ -655,6 +673,10 @@ def _parse(
         return None
     try:
         keywords = _keywords(definition)
+        if "objects" in keywords:
+            objects_section, object_nodes = _elements(source, keywords["objects"])
+        else:
+            objects_section, object_nodes = None, ()
         entities_section, entity_nodes = _elements(source, keywords["entities"])
         constraints_section, constraint_nodes = _elements(
             source, keywords["constraints"]
@@ -708,12 +730,13 @@ def _parse(
         return tuple(result)
 
     try:
+        objects = parsed_calls(object_nodes, OBJECT_HELPERS, "objects")
         entities = parsed_calls(entity_nodes, ENTITY_HELPERS, "entities")
         constraints = parsed_calls(constraint_nodes, CONSTRAINT_HELPERS, "constraints")
     except _Unrecognized:
         return None
     entity_kinds = {entry.id: entry.spec.entity_kind for entry in entities}
-    for entry in constraints:
+    for entry in (*objects, *constraints):
         if any(reference not in entity_kinds for reference, _ in entry.references):
             raise SourceError(
                 "source.sketch.missing-entity", "constraint references a missing entity"
@@ -746,6 +769,7 @@ def _parse(
         public = Recognition(
             function,
             source.code(keywords["plane"]),
+            tuple(entry.public for entry in objects if entry.public is not None),
             tuple(entry.public for entry in entities if entry.public is not None),
             tuple(entry.public for entry in constraints if entry.public is not None),
             _source_digest_bytes(source.data),
@@ -753,8 +777,10 @@ def _parse(
     return _ParsedRecognition(
         public,
         source,
+        objects_section,
         entities_section,
         constraints_section,
+        objects,
         entities,
         constraints,
         bindings,
@@ -783,7 +809,11 @@ def _replacement(
     span = source.span(expression)
     if span != _Span(0, len(raw)):
         raise SourceError("source.edit.invalid-call", "replacement is not one call")
-    allowed = ENTITY_HELPERS if section == "entities" else CONSTRAINT_HELPERS
+    allowed = {
+        "objects": OBJECT_HELPERS,
+        "entities": ENTITY_HELPERS,
+        "constraints": CONSTRAINT_HELPERS,
+    }[section]
     name = _call_name(expression)
     spec = HELPERS.get(name or "")
     if spec is None or name not in allowed:
@@ -953,8 +983,10 @@ class _BatchEntry:
 @dataclass(slots=True)
 class _BatchState:
     source: bytes
+    objects_section: _ParsedSection | None
     entities_section: _ParsedSection
     constraints_section: _ParsedSection
+    objects: list[_BatchEntry]
     entities: list[_BatchEntry]
     constraints: list[_BatchEntry]
 
@@ -962,13 +994,22 @@ class _BatchState:
     def create(parsed: _ParsedRecognition) -> _BatchState:
         return _BatchState(
             parsed.source.data,
+            parsed.objects_section,
             parsed.entities_section,
             parsed.constraints_section,
+            [_BatchEntry(entry.id, entry.span) for entry in parsed.objects],
             [_BatchEntry(entry.id, entry.span) for entry in parsed.entities],
             [_BatchEntry(entry.id, entry.span) for entry in parsed.constraints],
         )
 
     def selected(self, section: Section) -> tuple[_ParsedSection, list[_BatchEntry]]:
+        if section == "objects":
+            if self.objects_section is None:
+                raise SourceError(
+                    "source.edit.object-schema",
+                    "legacy Sketch source must be migrated before adding objects",
+                )
+            return self.objects_section, self.objects
         if section == "entities":
             return self.entities_section, self.entities
         return self.constraints_section, self.constraints
@@ -981,7 +1022,7 @@ class _BatchState:
                 if end <= position
             )
 
-        for entries in (self.entities, self.constraints):
+        for entries in (self.objects, self.entities, self.constraints):
             for entry in entries:
                 offset = shift(entry.span.start) - entry.span.start
                 entry.span = _Span(entry.span.start + offset, entry.span.end + offset)
@@ -991,6 +1032,8 @@ class _BatchState:
             close = shift(value.close)
             return _ParsedSection(value.kind, _Span(start, close + 1), close)
 
+        if self.objects_section is not None:
+            self.objects_section = section(self.objects_section)
         self.entities_section = section(self.entities_section)
         self.constraints_section = section(self.constraints_section)
 
@@ -1009,7 +1052,7 @@ def _apply_operation(
     bindings: Mapping[str, str],
     edit: SourceEdit,
 ) -> None:
-    if edit.section not in {"entities", "constraints"}:
+    if edit.section not in {"objects", "entities", "constraints"}:
         raise SourceError("source.edit.invalid-section", "edit section is invalid")
     section, entries = state.selected(edit.section)
     spans = tuple(entry.span for entry in entries)
@@ -1118,7 +1161,7 @@ def apply_edit(
     prior_digest = _source_digest_bytes(parsed_source.data)
     if prior_digest != expected_digest:
         raise SourceError("source.edit.stale", "source changed after it was observed")
-    if edit.section not in {"entities", "constraints"}:
+    if edit.section not in {"objects", "entities", "constraints"}:
         raise SourceError("source.edit.invalid-section", "edit section is invalid")
     parsed = _parse(
         source, function, materialize_public=False, prepared_source=parsed_source

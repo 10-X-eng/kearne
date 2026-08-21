@@ -164,6 +164,7 @@ struct ModelCallIdTag;
 struct ModelBindingIdTag;
 struct ArtifactIdTag;
 struct WorkerInstanceIdTag;
+struct SketchObjectIdTag;
 struct SketchEntityIdTag;
 struct SketchConstraintIdTag;
 
@@ -182,6 +183,7 @@ using ModelCallId = TypedId<ModelCallIdTag>;
 using ModelBindingId = TypedId<ModelBindingIdTag>;
 using ArtifactId = TypedId<ArtifactIdTag>;
 using WorkerInstanceId = TypedId<WorkerInstanceIdTag>;
+using SketchObjectId = TypedId<SketchObjectIdTag>;
 using SketchEntityId = TypedId<SketchEntityIdTag>;
 using SketchConstraintId = TypedId<SketchConstraintIdTag>;
 

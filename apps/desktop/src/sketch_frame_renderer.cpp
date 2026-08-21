@@ -1006,8 +1006,13 @@ struct SketchFrameRenderer::Impl {
          {0, 2, QRhiVertexInputAttribute::Float2,
           static_cast<quint32>(offsetof(SketchMeshVertex, extrusionX))},
          {0, 3, QRhiVertexInputAttribute::Float,
+          static_cast<quint32>(offsetof(SketchMeshVertex, pathDistanceMetres))},
+         {0, 4, QRhiVertexInputAttribute::Float2,
           static_cast<quint32>(
-              offsetof(SketchMeshVertex, pathDistanceMetres))}});
+              offsetof(SketchMeshVertex, coverageDistancePixels))},
+         {0, 5, QRhiVertexInputAttribute::Float2,
+          static_cast<quint32>(
+              offsetof(SketchMeshVertex, patternOnLogicalPixels))}});
     out->setVertexInputLayout(input);
     QRhiGraphicsPipeline::Flags flags = QRhiGraphicsPipeline::UsesScissor;
     if (stencil) {

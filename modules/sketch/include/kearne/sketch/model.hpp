@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <variant>
 #include <vector>
 
@@ -12,6 +13,7 @@ namespace kearne::sketch {
 
 using LengthValue = Quantity<Length>;
 using AngleValue = Quantity<Angle>;
+using DimensionlessValue = Quantity<Dimensionless>;
 
 struct EvaluatedPlaneIdentity {
   ModelBindingId attachmentBinding;
@@ -58,13 +60,77 @@ struct ArcEntity {
   auto operator<=>(const ArcEntity &) const = default;
 };
 
-using Entity = std::variant<PointEntity, LineEntity, CircleEntity, ArcEntity>;
+struct EllipseEntity {
+  SketchEntityId id;
+  Point2 center;
+  LengthValue majorRadius;
+  LengthValue minorRadius;
+  AngleValue rotation;
+  bool construction = false;
+  auto operator<=>(const EllipseEntity &) const = default;
+};
+
+struct EllipticalArcEntity {
+  SketchEntityId id;
+  Point2 center;
+  LengthValue majorRadius;
+  LengthValue minorRadius;
+  AngleValue rotation;
+  AngleValue startParameter;
+  AngleValue endParameter;
+  bool construction = false;
+  auto operator<=>(const EllipticalArcEntity &) const = default;
+};
+
+struct HyperbolicArcEntity {
+  SketchEntityId id;
+  Point2 center;
+  LengthValue majorRadius;
+  LengthValue minorRadius;
+  AngleValue rotation;
+  DimensionlessValue startParameter;
+  DimensionlessValue endParameter;
+  bool construction = false;
+  auto operator<=>(const HyperbolicArcEntity &) const = default;
+};
+
+struct ParabolicArcEntity {
+  SketchEntityId id;
+  Point2 vertex;
+  LengthValue focalLength;
+  AngleValue rotation;
+  LengthValue startParameter;
+  LengthValue endParameter;
+  bool construction = false;
+  auto operator<=>(const ParabolicArcEntity &) const = default;
+};
+
+// Canonical finite NURBS representation. Knots are the full nondecreasing
+// sequence, including repetitions, so every runtime evaluates the same curve.
+struct BSplineEntity {
+  SketchEntityId id;
+  std::vector<Point2> controlPoints;
+  std::vector<DimensionlessValue> knots;
+  std::vector<DimensionlessValue> weights;
+  std::uint32_t degree = 3U;
+  bool periodic = false;
+  bool construction = false;
+  auto operator<=>(const BSplineEntity &) const = default;
+};
+
+using Entity =
+    std::variant<PointEntity, LineEntity, CircleEntity, ArcEntity,
+                 EllipseEntity, EllipticalArcEntity, HyperbolicArcEntity,
+                 ParabolicArcEntity, BSplineEntity>;
 
 enum class PointKey : std::uint8_t {
   Point = 1,
   Start = 2,
   End = 3,
-  Center = 4
+  Center = 4,
+  Major = 5,
+  Minor = 6,
+  Focus = 7,
 };
 
 struct PointRef {
@@ -137,10 +203,46 @@ struct Midpoint {
   auto operator<=>(const Midpoint &) const = default;
 };
 
-struct Fixed {
+struct PointOnObject {
+  SketchConstraintId id;
+  PointRef point;
+  SketchEntityId curve;
+  auto operator<=>(const PointOnObject &) const = default;
+};
+
+struct Symmetric {
+  SketchConstraintId id;
+  PointRef first;
+  PointRef second;
+  SketchEntityId axis;
+  auto operator<=>(const Symmetric &) const = default;
+};
+
+struct SymmetricAboutPoint {
+  SketchConstraintId id;
+  PointRef first;
+  PointRef second;
+  PointRef center;
+  auto operator<=>(const SymmetricAboutPoint &) const = default;
+};
+
+struct Lock {
+  SketchConstraintId id;
+  PointRef point;
+  Point2 position;
+  auto operator<=>(const Lock &) const = default;
+};
+
+struct Block {
   SketchConstraintId id;
   SketchEntityId entity;
-  auto operator<=>(const Fixed &) const = default;
+  auto operator<=>(const Block &) const = default;
+};
+
+struct Group {
+  SketchConstraintId id;
+  std::vector<SketchEntityId> entities;
+  auto operator<=>(const Group &) const = default;
 };
 
 struct Collinear {
@@ -198,12 +300,50 @@ struct AngleBetween {
 
 using Constraint =
     std::variant<Coincident, Horizontal, Vertical, Parallel, Perpendicular,
-                 Tangent, Concentric, Equal, Midpoint, Fixed, Collinear,
-                 Distance, HorizontalDistance, VerticalDistance, Radius,
-                 Diameter, AngleBetween>;
+                 Tangent, Concentric, Equal, Midpoint, Block, Group, Collinear,
+                 PointOnObject, Symmetric, SymmetricAboutPoint, Lock, Distance,
+                 HorizontalDistance, VerticalDistance, Radius, Diameter,
+                 AngleBetween>;
+
+enum class SketchObjectKind : std::uint8_t {
+  Rectangle = 1,
+  Point = 2,
+  Line = 3,
+  Circle = 4,
+  Arc = 5,
+  Slot = 6,
+  ArcSlot = 7,
+  Polyline = 8,
+  RegularPolygon = 9,
+  Oblong = 10,
+  Ellipse = 11,
+  EllipticalArc = 12,
+  HyperbolicArc = 13,
+  ParabolicArc = 14,
+  BSpline = 15,
+  Fillet = 16,
+  Chamfer = 17,
+  Offset = 18,
+  JoinedCurve = 19,
+};
+
+struct SketchObjectMember {
+  std::string role;
+  SketchEntityId entity;
+  auto operator<=>(const SketchObjectMember &) const = default;
+};
+
+struct SketchObject {
+  SketchObjectId id;
+  std::string label;
+  SketchObjectKind kind = SketchObjectKind::Rectangle;
+  std::vector<SketchObjectMember> members;
+  bool operator==(const SketchObject &) const = default;
+};
 
 struct Definition {
   ContentDigest sourceDigest;
+  std::vector<SketchObject> objects;
   std::vector<Entity> entities;
   std::vector<Constraint> constraints;
   bool operator==(const Definition &) const = default;
@@ -282,6 +422,10 @@ struct SolveResult {
 
 [[nodiscard]] SketchEntityId entityId(const Entity &entity);
 [[nodiscard]] SketchConstraintId constraintId(const Constraint &constraint);
+[[nodiscard]] std::vector<SketchEntityId>
+constraintEntityIds(const Constraint &constraint);
+[[nodiscard]] Result<Point2> resolvePoint(const Definition &definition,
+                                          PointRef reference);
 [[nodiscard]] std::size_t closedProfileCount(const Definition &definition);
 [[nodiscard]] Result<void> validate(const Definition &definition,
                                     const NumericalProfile &profile);

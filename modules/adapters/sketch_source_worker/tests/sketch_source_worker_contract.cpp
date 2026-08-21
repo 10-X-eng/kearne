@@ -52,6 +52,7 @@ sketch::LengthValue length(double value) {
 
 sketch::RectangleToolIds rectangleIds(std::uint64_t seed) {
   return {
+      id<SketchObjectId>(seed),
       {id<SketchEntityId>(seed + 1U), id<SketchEntityId>(seed + 2U),
        id<SketchEntityId>(seed + 3U), id<SketchEntityId>(seed + 4U)},
       {id<SketchConstraintId>(seed + 20U), id<SketchConstraintId>(seed + 21U),
@@ -80,7 +81,7 @@ sketch::AppliedEdits rectangle(ContentDigest source, std::uint64_t seed,
   const sketch::Point2 first{length(0.0), length(0.0)};
   const sketch::Point2 opposite{length(width), length(height)};
   auto applied = sketch::applyTool(
-      sketch::Definition{std::move(source), {}, {}},
+      sketch::Definition{std::move(source), {}, {}, {}},
       sketch::RectangleToolInput{rectangleIds(seed), first, opposite});
   require(applied.has_value(), "rectangle tool input was invalid");
   return std::move(*applied);

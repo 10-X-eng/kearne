@@ -62,8 +62,18 @@ std::optional<Diagnostic> schemaCoverageError() {
                        std::array{1, 2}) &&
         hasExactFields(*wire::SketchArcGeometry::descriptor(),
                        std::array{1, 2, 3, 4}) &&
+        hasExactFields(*wire::SketchEllipseGeometry::descriptor(),
+                       std::array{1, 2, 3, 4}) &&
+        hasExactFields(*wire::SketchEllipticalArcGeometry::descriptor(),
+                       std::array{1, 2, 3, 4, 5, 6}) &&
+        hasExactFields(*wire::SketchHyperbolicArcGeometry::descriptor(),
+                       std::array{1, 2, 3, 4, 5, 6}) &&
+        hasExactFields(*wire::SketchParabolicArcGeometry::descriptor(),
+                       std::array{1, 2, 3, 4, 5}) &&
+        hasExactFields(*wire::SketchBSplineGeometry::descriptor(),
+                       std::array{1, 2, 3, 4, 5}) &&
         hasExactFields(*wire::SketchEntity::descriptor(),
-                       std::array{1, 2, 20, 21, 22, 23}) &&
+                       std::array{1, 2, 20, 21, 22, 23, 24, 25, 26, 27, 28}) &&
         hasExactFields(*wire::SketchPointReference::descriptor(),
                        std::array{1, 2}) &&
         hasExactFields(*wire::SketchPointPairConstraint::descriptor(),
@@ -76,7 +86,17 @@ std::optional<Diagnostic> schemaCoverageError() {
                        std::array{1, 2, 3}) &&
         hasExactFields(*wire::SketchMidpointConstraint::descriptor(),
                        std::array{1, 2}) &&
+        hasExactFields(*wire::SketchPointCurveConstraint::descriptor(),
+                       std::array{1, 2}) &&
+        hasExactFields(*wire::SketchSymmetricConstraint::descriptor(),
+                       std::array{1, 2, 3}) &&
+        hasExactFields(*wire::SketchPointPositionConstraint::descriptor(),
+                       std::array{1, 2}) &&
+        hasExactFields(*wire::SketchPointTripleConstraint::descriptor(),
+                       std::array{1, 2, 3}) &&
         hasExactFields(*wire::SketchEntityConstraint::descriptor(),
+                       std::array{1}) &&
+        hasExactFields(*wire::SketchEntitySetConstraint::descriptor(),
                        std::array{1}) &&
         hasExactFields(*wire::SketchPointPairLengthConstraint::descriptor(),
                        std::array{1, 2, 3}) &&
@@ -85,19 +105,26 @@ std::optional<Diagnostic> schemaCoverageError() {
         hasExactFields(*wire::SketchEntityPairAngleConstraint::descriptor(),
                        std::array{1, 2, 3}) &&
         hasExactFields(*wire::SketchConstraint::descriptor(),
-                       std::array{1, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-                                  31, 32, 33, 34, 35, 36}) &&
+                       std::array{1,  20, 21, 22, 23, 24, 25, 26,
+                                  27, 28, 29, 30, 31, 32, 33, 34,
+                                  35, 36, 37, 38, 39, 40, 41}) &&
+        hasExactFields(*wire::SketchObjectMember::descriptor(),
+                       std::array{1, 2}) &&
+        hasExactFields(*wire::SketchObject::descriptor(),
+                       std::array{1, 2, 3, 4}) &&
         hasExactFields(*wire::SketchDefinition::descriptor(),
-                       std::array{1, 2, 3});
+                       std::array{1, 2, 3, 4});
     const protobuf::OneofDescriptor *geometry =
         wire::SketchEntity::descriptor()->FindOneofByName("geometry");
     const protobuf::OneofDescriptor *relation =
         wire::SketchConstraint::descriptor()->FindOneofByName("relation");
     if (complete && geometry != nullptr &&
-        hasExactFields(*geometry, std::array{20, 21, 22, 23}) &&
+        hasExactFields(*geometry,
+                       std::array{20, 21, 22, 23, 24, 25, 26, 27, 28}) &&
         relation != nullptr &&
-        hasExactFields(*relation, std::array{20, 21, 22, 23, 24, 25, 26, 27, 28,
-                                             29, 30, 31, 32, 33, 34, 35, 36}))
+        hasExactFields(*relation,
+                       std::array{20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                                  31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41}))
       return std::optional<Diagnostic>{};
     return std::optional<Diagnostic>{diagnostic(
         "sketch.wire.conversion-registry-stale",
@@ -139,6 +166,10 @@ Result<sketch::AngleValue> readAngle(double value) {
   return sketch::AngleValue::fromSi(value);
 }
 
+Result<sketch::DimensionlessValue> readDimensionless(double value) {
+  return sketch::DimensionlessValue::fromSi(value);
+}
+
 Result<sketch::Point2> readPoint(const wire::SketchPoint2 &value) {
   auto x = readLength(value.x());
   auto y = readLength(value.y());
@@ -164,6 +195,12 @@ Result<sketch::PointKey> readPointKey(wire::SketchPointKey value) {
     return sketch::PointKey::End;
   case wire::SKETCH_POINT_KEY_CENTER:
     return sketch::PointKey::Center;
+  case wire::SKETCH_POINT_KEY_MAJOR:
+    return sketch::PointKey::Major;
+  case wire::SKETCH_POINT_KEY_MINOR:
+    return sketch::PointKey::Minor;
+  case wire::SKETCH_POINT_KEY_FOCUS:
+    return sketch::PointKey::Focus;
   default:
     return std::unexpected(diagnostic("sketch.wire.invalid-point-key",
                                       "wire point key is unsupported"));
@@ -180,6 +217,12 @@ wire::SketchPointKey writePointKey(sketch::PointKey value) {
     return wire::SKETCH_POINT_KEY_END;
   case sketch::PointKey::Center:
     return wire::SKETCH_POINT_KEY_CENTER;
+  case sketch::PointKey::Major:
+    return wire::SKETCH_POINT_KEY_MAJOR;
+  case sketch::PointKey::Minor:
+    return wire::SKETCH_POINT_KEY_MINOR;
+  case sketch::PointKey::Focus:
+    return wire::SKETCH_POINT_KEY_FOCUS;
   }
   std::terminate();
 }
@@ -203,6 +246,129 @@ void writePointReference(const sketch::PointRef &value,
 
 Result<SketchEntityId> readEntityId(const wire::UuidV7 &value) {
   return api::readId<SketchEntityId>(value);
+}
+
+Result<sketch::SketchObjectKind> readObjectKind(wire::SketchObjectKind value) {
+  switch (value) {
+  case wire::SKETCH_OBJECT_KIND_RECTANGLE:
+    return sketch::SketchObjectKind::Rectangle;
+  case wire::SKETCH_OBJECT_KIND_POINT:
+    return sketch::SketchObjectKind::Point;
+  case wire::SKETCH_OBJECT_KIND_LINE:
+    return sketch::SketchObjectKind::Line;
+  case wire::SKETCH_OBJECT_KIND_CIRCLE:
+    return sketch::SketchObjectKind::Circle;
+  case wire::SKETCH_OBJECT_KIND_ARC:
+    return sketch::SketchObjectKind::Arc;
+  case wire::SKETCH_OBJECT_KIND_SLOT:
+    return sketch::SketchObjectKind::Slot;
+  case wire::SKETCH_OBJECT_KIND_ARC_SLOT:
+    return sketch::SketchObjectKind::ArcSlot;
+  case wire::SKETCH_OBJECT_KIND_POLYLINE:
+    return sketch::SketchObjectKind::Polyline;
+  case wire::SKETCH_OBJECT_KIND_REGULAR_POLYGON:
+    return sketch::SketchObjectKind::RegularPolygon;
+  case wire::SKETCH_OBJECT_KIND_OBLONG:
+    return sketch::SketchObjectKind::Oblong;
+  case wire::SKETCH_OBJECT_KIND_ELLIPSE:
+    return sketch::SketchObjectKind::Ellipse;
+  case wire::SKETCH_OBJECT_KIND_ELLIPTICAL_ARC:
+    return sketch::SketchObjectKind::EllipticalArc;
+  case wire::SKETCH_OBJECT_KIND_HYPERBOLIC_ARC:
+    return sketch::SketchObjectKind::HyperbolicArc;
+  case wire::SKETCH_OBJECT_KIND_PARABOLIC_ARC:
+    return sketch::SketchObjectKind::ParabolicArc;
+  case wire::SKETCH_OBJECT_KIND_BSPLINE:
+    return sketch::SketchObjectKind::BSpline;
+  case wire::SKETCH_OBJECT_KIND_FILLET:
+    return sketch::SketchObjectKind::Fillet;
+  case wire::SKETCH_OBJECT_KIND_CHAMFER:
+    return sketch::SketchObjectKind::Chamfer;
+  case wire::SKETCH_OBJECT_KIND_OFFSET:
+    return sketch::SketchObjectKind::Offset;
+  case wire::SKETCH_OBJECT_KIND_JOINED_CURVE:
+    return sketch::SketchObjectKind::JoinedCurve;
+  default:
+    break;
+  }
+  return std::unexpected(diagnostic("sketch.wire.invalid-object-kind",
+                                    "wire Sketch object kind is unsupported"));
+}
+
+wire::SketchObjectKind writeObjectKind(sketch::SketchObjectKind value) {
+  switch (value) {
+  case sketch::SketchObjectKind::Rectangle:
+    return wire::SKETCH_OBJECT_KIND_RECTANGLE;
+  case sketch::SketchObjectKind::Point:
+    return wire::SKETCH_OBJECT_KIND_POINT;
+  case sketch::SketchObjectKind::Line:
+    return wire::SKETCH_OBJECT_KIND_LINE;
+  case sketch::SketchObjectKind::Circle:
+    return wire::SKETCH_OBJECT_KIND_CIRCLE;
+  case sketch::SketchObjectKind::Arc:
+    return wire::SKETCH_OBJECT_KIND_ARC;
+  case sketch::SketchObjectKind::Slot:
+    return wire::SKETCH_OBJECT_KIND_SLOT;
+  case sketch::SketchObjectKind::ArcSlot:
+    return wire::SKETCH_OBJECT_KIND_ARC_SLOT;
+  case sketch::SketchObjectKind::Polyline:
+    return wire::SKETCH_OBJECT_KIND_POLYLINE;
+  case sketch::SketchObjectKind::RegularPolygon:
+    return wire::SKETCH_OBJECT_KIND_REGULAR_POLYGON;
+  case sketch::SketchObjectKind::Oblong:
+    return wire::SKETCH_OBJECT_KIND_OBLONG;
+  case sketch::SketchObjectKind::Ellipse:
+    return wire::SKETCH_OBJECT_KIND_ELLIPSE;
+  case sketch::SketchObjectKind::EllipticalArc:
+    return wire::SKETCH_OBJECT_KIND_ELLIPTICAL_ARC;
+  case sketch::SketchObjectKind::HyperbolicArc:
+    return wire::SKETCH_OBJECT_KIND_HYPERBOLIC_ARC;
+  case sketch::SketchObjectKind::ParabolicArc:
+    return wire::SKETCH_OBJECT_KIND_PARABOLIC_ARC;
+  case sketch::SketchObjectKind::BSpline:
+    return wire::SKETCH_OBJECT_KIND_BSPLINE;
+  case sketch::SketchObjectKind::Fillet:
+    return wire::SKETCH_OBJECT_KIND_FILLET;
+  case sketch::SketchObjectKind::Chamfer:
+    return wire::SKETCH_OBJECT_KIND_CHAMFER;
+  case sketch::SketchObjectKind::Offset:
+    return wire::SKETCH_OBJECT_KIND_OFFSET;
+  case sketch::SketchObjectKind::JoinedCurve:
+    return wire::SKETCH_OBJECT_KIND_JOINED_CURVE;
+  }
+  std::terminate();
+}
+
+Result<sketch::SketchObject> readObject(const wire::SketchObject &value) {
+  auto id = api::readId<SketchObjectId>(value.id());
+  auto kind = readObjectKind(value.kind());
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  if (!kind)
+    return std::unexpected(std::move(kind.error()));
+  sketch::SketchObject result{
+      *id, std::string{value.label().data(), value.label().size()}, *kind, {}};
+  result.members.reserve(static_cast<std::size_t>(value.members_size()));
+  for (const wire::SketchObjectMember &member : value.members()) {
+    auto entity = readEntityId(member.entity());
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    result.members.push_back(sketch::SketchObjectMember{
+        std::string{member.role().data(), member.role().size()}, *entity});
+  }
+  return result;
+}
+
+void writeObject(const sketch::SketchObject &value,
+                 wire::SketchObject *result) {
+  api::writeId(value.id, result->mutable_id());
+  result->set_label(value.label);
+  result->set_kind(writeObjectKind(value.kind));
+  for (const sketch::SketchObjectMember &member : value.members) {
+    wire::SketchObjectMember *wireMember = result->add_members();
+    wireMember->set_role(member.role);
+    api::writeId(member.entity, wireMember->mutable_entity());
+  }
 }
 
 struct EntityPair {
@@ -273,6 +439,124 @@ Result<sketch::Entity> readEntity(const wire::SketchEntity &value) {
     return sketch::ArcEntity{*id,    *center, *radius,
                              *start, *end,    value.construction()};
   }
+  case wire::SketchEntity::kEllipse: {
+    auto center = readPoint(value.ellipse().center());
+    auto major = readLength(value.ellipse().major_radius());
+    auto minor = readLength(value.ellipse().minor_radius());
+    auto rotation = readAngle(value.ellipse().rotation());
+    if (!center || !major || !minor || !rotation)
+      return std::unexpected(!center  ? std::move(center.error())
+                             : !major ? std::move(major.error())
+                             : !minor ? std::move(minor.error())
+                                      : std::move(rotation.error()));
+    return sketch::EllipseEntity{*id,    *center,   *major,
+                                 *minor, *rotation, value.construction()};
+  }
+  case wire::SketchEntity::kEllipticalArc: {
+    auto center = readPoint(value.elliptical_arc().center());
+    auto major = readLength(value.elliptical_arc().major_radius());
+    auto minor = readLength(value.elliptical_arc().minor_radius());
+    auto rotation = readAngle(value.elliptical_arc().rotation());
+    auto start = readAngle(value.elliptical_arc().start_parameter());
+    auto end = readAngle(value.elliptical_arc().end_parameter());
+    if (!center || !major || !minor || !rotation || !start || !end) {
+      if (!center)
+        return std::unexpected(std::move(center.error()));
+      if (!major)
+        return std::unexpected(std::move(major.error()));
+      if (!minor)
+        return std::unexpected(std::move(minor.error()));
+      if (!rotation)
+        return std::unexpected(std::move(rotation.error()));
+      if (!start)
+        return std::unexpected(std::move(start.error()));
+      return std::unexpected(std::move(end.error()));
+    }
+    return sketch::EllipticalArcEntity{
+        *id,       *center, *major, *minor,
+        *rotation, *start,  *end,   value.construction()};
+  }
+  case wire::SketchEntity::kHyperbolicArc: {
+    const auto &payload = value.hyperbolic_arc();
+    auto center = readPoint(payload.center());
+    auto major = readLength(payload.major_radius());
+    auto minor = readLength(payload.minor_radius());
+    auto rotation = readAngle(payload.rotation());
+    auto start = readDimensionless(payload.start_parameter());
+    auto end = readDimensionless(payload.end_parameter());
+    if (!center || !major || !minor || !rotation || !start || !end) {
+      if (!center)
+        return std::unexpected(std::move(center.error()));
+      if (!major)
+        return std::unexpected(std::move(major.error()));
+      if (!minor)
+        return std::unexpected(std::move(minor.error()));
+      if (!rotation)
+        return std::unexpected(std::move(rotation.error()));
+      if (!start)
+        return std::unexpected(std::move(start.error()));
+      return std::unexpected(std::move(end.error()));
+    }
+    return sketch::HyperbolicArcEntity{
+        *id,       *center, *major, *minor,
+        *rotation, *start,  *end,   value.construction()};
+  }
+  case wire::SketchEntity::kParabolicArc: {
+    const auto &payload = value.parabolic_arc();
+    auto vertex = readPoint(payload.vertex());
+    auto focal = readLength(payload.focal_length());
+    auto rotation = readAngle(payload.rotation());
+    auto start = readLength(payload.start_parameter());
+    auto end = readLength(payload.end_parameter());
+    if (!vertex || !focal || !rotation || !start || !end) {
+      if (!vertex)
+        return std::unexpected(std::move(vertex.error()));
+      if (!focal)
+        return std::unexpected(std::move(focal.error()));
+      if (!rotation)
+        return std::unexpected(std::move(rotation.error()));
+      if (!start)
+        return std::unexpected(std::move(start.error()));
+      return std::unexpected(std::move(end.error()));
+    }
+    return sketch::ParabolicArcEntity{
+        *id, *vertex, *focal, *rotation, *start, *end, value.construction()};
+  }
+  case wire::SketchEntity::kBspline: {
+    const auto &payload = value.bspline();
+    std::vector<sketch::Point2> controlPoints;
+    std::vector<sketch::DimensionlessValue> knots;
+    std::vector<sketch::DimensionlessValue> weights;
+    controlPoints.reserve(
+        static_cast<std::size_t>(payload.control_points_size()));
+    knots.reserve(static_cast<std::size_t>(payload.knots_size()));
+    weights.reserve(static_cast<std::size_t>(payload.weights_size()));
+    for (const wire::SketchPoint2 &point : payload.control_points()) {
+      auto decoded = readPoint(point);
+      if (!decoded)
+        return std::unexpected(std::move(decoded.error()));
+      controlPoints.push_back(*decoded);
+    }
+    for (const double knot : payload.knots()) {
+      auto decoded = readDimensionless(knot);
+      if (!decoded)
+        return std::unexpected(std::move(decoded.error()));
+      knots.push_back(*decoded);
+    }
+    for (const double weight : payload.weights()) {
+      auto decoded = readDimensionless(weight);
+      if (!decoded)
+        return std::unexpected(std::move(decoded.error()));
+      weights.push_back(*decoded);
+    }
+    return sketch::BSplineEntity{*id,
+                                 std::move(controlPoints),
+                                 std::move(knots),
+                                 std::move(weights),
+                                 payload.degree(),
+                                 payload.periodic(),
+                                 value.construction()};
+  }
   default:
     return std::unexpected(diagnostic("sketch.wire.unsupported-entity",
                                       "wire sketch entity is unsupported"));
@@ -292,12 +576,54 @@ void writeEntity(const sketch::Entity &value, wire::SketchEntity *result) {
         } else if constexpr (std::is_same_v<Entity, sketch::CircleEntity>) {
           writePoint(entity.center, result->mutable_circle()->mutable_center());
           result->mutable_circle()->set_radius(entity.radius.si());
-        } else {
-          static_assert(std::is_same_v<Entity, sketch::ArcEntity>);
+        } else if constexpr (std::is_same_v<Entity, sketch::ArcEntity>) {
           writePoint(entity.center, result->mutable_arc()->mutable_center());
           result->mutable_arc()->set_radius(entity.radius.si());
           result->mutable_arc()->set_start_angle(entity.startAngle.si());
           result->mutable_arc()->set_end_angle(entity.endAngle.si());
+        } else if constexpr (std::is_same_v<Entity, sketch::EllipseEntity>) {
+          auto *ellipse = result->mutable_ellipse();
+          writePoint(entity.center, ellipse->mutable_center());
+          ellipse->set_major_radius(entity.majorRadius.si());
+          ellipse->set_minor_radius(entity.minorRadius.si());
+          ellipse->set_rotation(entity.rotation.si());
+        } else if constexpr (std::is_same_v<Entity,
+                                            sketch::EllipticalArcEntity>) {
+          auto *arc = result->mutable_elliptical_arc();
+          writePoint(entity.center, arc->mutable_center());
+          arc->set_major_radius(entity.majorRadius.si());
+          arc->set_minor_radius(entity.minorRadius.si());
+          arc->set_rotation(entity.rotation.si());
+          arc->set_start_parameter(entity.startParameter.si());
+          arc->set_end_parameter(entity.endParameter.si());
+        } else if constexpr (std::is_same_v<Entity,
+                                            sketch::HyperbolicArcEntity>) {
+          auto *arc = result->mutable_hyperbolic_arc();
+          writePoint(entity.center, arc->mutable_center());
+          arc->set_major_radius(entity.majorRadius.si());
+          arc->set_minor_radius(entity.minorRadius.si());
+          arc->set_rotation(entity.rotation.si());
+          arc->set_start_parameter(entity.startParameter.si());
+          arc->set_end_parameter(entity.endParameter.si());
+        } else if constexpr (std::is_same_v<Entity,
+                                            sketch::ParabolicArcEntity>) {
+          auto *arc = result->mutable_parabolic_arc();
+          writePoint(entity.vertex, arc->mutable_vertex());
+          arc->set_focal_length(entity.focalLength.si());
+          arc->set_rotation(entity.rotation.si());
+          arc->set_start_parameter(entity.startParameter.si());
+          arc->set_end_parameter(entity.endParameter.si());
+        } else {
+          static_assert(std::is_same_v<Entity, sketch::BSplineEntity>);
+          auto *spline = result->mutable_bspline();
+          for (const sketch::Point2 &point : entity.controlPoints)
+            writePoint(point, spline->add_control_points());
+          for (const sketch::DimensionlessValue knot : entity.knots)
+            spline->add_knots(knot.si());
+          for (const sketch::DimensionlessValue weight : entity.weights)
+            spline->add_weights(weight.si());
+          spline->set_degree(entity.degree);
+          spline->set_periodic(entity.periodic);
         }
       },
       value);
@@ -428,11 +754,64 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(line.error()));
     return sketch::Midpoint{*id, *point, *line};
   }
-  case wire::SketchConstraint::kFixed: {
-    auto entity = readEntityId(value.fixed().entity());
+  case wire::SketchConstraint::kPointOnObject: {
+    auto point = readPointReference(value.point_on_object().point());
+    auto curve = readEntityId(value.point_on_object().curve());
+    if (!point)
+      return std::unexpected(std::move(point.error()));
+    if (!curve)
+      return std::unexpected(std::move(curve.error()));
+    return sketch::PointOnObject{*id, *point, *curve};
+  }
+  case wire::SketchConstraint::kSymmetric: {
+    auto first = readPointReference(value.symmetric().first());
+    auto second = readPointReference(value.symmetric().second());
+    auto axis = readEntityId(value.symmetric().axis());
+    if (!first)
+      return std::unexpected(std::move(first.error()));
+    if (!second)
+      return std::unexpected(std::move(second.error()));
+    if (!axis)
+      return std::unexpected(std::move(axis.error()));
+    return sketch::Symmetric{*id, *first, *second, *axis};
+  }
+  case wire::SketchConstraint::kLock: {
+    auto point = readPointReference(value.lock().point());
+    auto position = readPoint(value.lock().position());
+    if (!point)
+      return std::unexpected(std::move(point.error()));
+    if (!position)
+      return std::unexpected(std::move(position.error()));
+    return sketch::Lock{*id, *point, *position};
+  }
+  case wire::SketchConstraint::kSymmetricAboutPoint: {
+    auto first = readPointReference(value.symmetric_about_point().first());
+    auto second = readPointReference(value.symmetric_about_point().second());
+    auto center = readPointReference(value.symmetric_about_point().center());
+    if (!first)
+      return std::unexpected(std::move(first.error()));
+    if (!second)
+      return std::unexpected(std::move(second.error()));
+    if (!center)
+      return std::unexpected(std::move(center.error()));
+    return sketch::SymmetricAboutPoint{*id, *first, *second, *center};
+  }
+  case wire::SketchConstraint::kBlock: {
+    auto entity = readEntityId(value.block().entity());
     if (!entity)
       return std::unexpected(std::move(entity.error()));
-    return sketch::Fixed{*id, *entity};
+    return sketch::Block{*id, *entity};
+  }
+  case wire::SketchConstraint::kGroup: {
+    std::vector<SketchEntityId> entities;
+    entities.reserve(static_cast<std::size_t>(value.group().entities_size()));
+    for (const wire::UuidV7 &wireEntity : value.group().entities()) {
+      auto entity = readEntityId(wireEntity);
+      if (!entity)
+        return std::unexpected(std::move(entity.error()));
+      entities.push_back(*entity);
+    }
+    return sketch::Group{*id, std::move(entities)};
   }
   case wire::SketchConstraint::kDistance:
   case wire::SketchConstraint::kHorizontalDistance:
@@ -528,9 +907,36 @@ void writeConstraint(const sketch::Constraint &value,
                               result->mutable_midpoint()->mutable_point());
           api::writeId(constraint.line,
                        result->mutable_midpoint()->mutable_line());
-        } else if constexpr (std::is_same_v<Constraint, sketch::Fixed>) {
+        } else if constexpr (std::is_same_v<Constraint,
+                                            sketch::PointOnObject>) {
+          writePointReference(
+              constraint.point,
+              result->mutable_point_on_object()->mutable_point());
+          api::writeId(constraint.curve,
+                       result->mutable_point_on_object()->mutable_curve());
+        } else if constexpr (std::is_same_v<Constraint, sketch::Symmetric>) {
+          writePointReference(constraint.first,
+                              result->mutable_symmetric()->mutable_first());
+          writePointReference(constraint.second,
+                              result->mutable_symmetric()->mutable_second());
+          api::writeId(constraint.axis,
+                       result->mutable_symmetric()->mutable_axis());
+        } else if constexpr (std::is_same_v<Constraint, sketch::Lock>) {
+          auto *payload = result->mutable_lock();
+          writePointReference(constraint.point, payload->mutable_point());
+          writePoint(constraint.position, payload->mutable_position());
+        } else if constexpr (std::is_same_v<Constraint,
+                                            sketch::SymmetricAboutPoint>) {
+          auto *payload = result->mutable_symmetric_about_point();
+          writePointReference(constraint.first, payload->mutable_first());
+          writePointReference(constraint.second, payload->mutable_second());
+          writePointReference(constraint.center, payload->mutable_center());
+        } else if constexpr (std::is_same_v<Constraint, sketch::Block>) {
           api::writeId(constraint.entity,
-                       result->mutable_fixed()->mutable_entity());
+                       result->mutable_block()->mutable_entity());
+        } else if constexpr (std::is_same_v<Constraint, sketch::Group>) {
+          for (const SketchEntityId entity : constraint.entities)
+            api::writeId(entity, result->mutable_group()->add_entities());
         } else if constexpr (std::is_same_v<Constraint, sketch::Collinear>) {
           writeEntityPair(constraint.first, constraint.second,
                           result->mutable_collinear());
@@ -582,7 +988,14 @@ readSketchDefinition(const wire::SketchDefinition &value,
   auto sourceDigest = api::readDigest<ContentDigest>(value.source_digest());
   if (!sourceDigest)
     return std::unexpected(std::move(sourceDigest.error()));
-  sketch::Definition result{*sourceDigest, {}, {}};
+  sketch::Definition result{*sourceDigest, {}, {}, {}};
+  result.objects.reserve(static_cast<std::size_t>(value.objects_size()));
+  for (const wire::SketchObject &object : value.objects()) {
+    auto converted = readObject(object);
+    if (!converted)
+      return std::unexpected(std::move(converted.error()));
+    result.objects.emplace_back(std::move(*converted));
+  }
   result.entities.reserve(static_cast<std::size_t>(value.entities_size()));
   for (const wire::SketchEntity &entity : value.entities()) {
     auto converted = readEntity(entity);
@@ -611,7 +1024,8 @@ Result<void> writeSketchDefinition(const sketch::Definition &definition,
                    "sketch wire output pointer is null");
   if (const auto coverage = schemaCoverageError(); coverage)
     return std::unexpected(*coverage);
-  if (definition.entities.size() > maximumSketchDefinitionEntities ||
+  if (definition.objects.size() > maximumSketchDefinitionObjects ||
+      definition.entities.size() > maximumSketchDefinitionEntities ||
       definition.constraints.size() > maximumSketchDefinitionConstraints)
     return invalid("sketch.wire.count-limit",
                    "sketch definition exceeds a wire count limit");
@@ -619,6 +1033,8 @@ Result<void> writeSketchDefinition(const sketch::Definition &definition,
     return std::unexpected(std::move(valid.error()));
   result->Clear();
   api::writeDigest(definition.sourceDigest, result->mutable_source_digest());
+  for (const sketch::SketchObject &object : definition.objects)
+    writeObject(object, result->add_objects());
   for (const sketch::Entity &entity : definition.entities)
     writeEntity(entity, result->add_entities());
   for (const sketch::Constraint &constraint : definition.constraints)

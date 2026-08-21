@@ -82,6 +82,16 @@ void require(bool condition, const char *message) {
     throw std::runtime_error(message);
 }
 
+Point2d generatedEllipsePoint(Point2d center, double major, double minor,
+                              double rotation, double parameter) {
+  const double localX = major * std::cos(parameter);
+  const double localY = minor * std::sin(parameter);
+  const double cosine = std::cos(rotation);
+  const double sine = std::sin(rotation);
+  return {center.x + cosine * localX - sine * localY,
+          center.y + sine * localX + cosine * localY};
+}
+
 SketchSceneEnvelope
 fullEnvelope(std::shared_ptr<const SketchSceneSnapshot> snapshot) {
   auto envelope = SketchSceneEnvelope::full(std::move(snapshot));
@@ -682,10 +692,17 @@ void verifySketchProjection(const testkit::PropertyProfile &profile) {
         const SketchEntityId entityId = id<SketchEntityId>(index + 100U);
         const double x = random.between(-1.0e3, 1.0e3);
         const double y = random.between(-1.0e3, 1.0e3);
+        const double rotation =
+            random.between(-std::numbers::pi, std::numbers::pi);
         const bool construction = index % 5U == 0U;
         std::vector<sketch::Entity> geometry;
         SketchPrimitiveKind expectedKind = SketchPrimitiveKind::Point;
-        switch (index % 4U) {
+        double expectedRadius = 0.0;
+        double expectedSecondaryRadius = 0.0;
+        double expectedRotation = 0.0;
+        double expectedStart = 0.0;
+        double expectedSweep = 0.0;
+        switch (index % 8U) {
         case 0:
           geometry.push_back(
               sketch::PointEntity{entityId,
@@ -702,6 +719,7 @@ void verifySketchProjection(const testkit::PropertyProfile &profile) {
           break;
         case 2:
           expectedKind = SketchPrimitiveKind::Circle;
+          expectedRadius = 0.5;
           geometry.push_back(
               sketch::CircleEntity{entityId,
                                    {quantity<Length>(x), quantity<Length>(y)},
@@ -710,6 +728,9 @@ void verifySketchProjection(const testkit::PropertyProfile &profile) {
           break;
         case 3:
           expectedKind = SketchPrimitiveKind::Arc;
+          expectedRadius = 0.5;
+          expectedStart = -std::numbers::pi / 3.0;
+          expectedSweep = std::numbers::pi / 2.0 - expectedStart;
           geometry.push_back(
               sketch::ArcEntity{entityId,
                                 {quantity<Length>(x), quantity<Length>(y)},
@@ -717,6 +738,68 @@ void verifySketchProjection(const testkit::PropertyProfile &profile) {
                                 quantity<Angle>(-std::numbers::pi / 3.0),
                                 quantity<Angle>(std::numbers::pi / 2.0),
                                 construction});
+          break;
+        case 4:
+          expectedKind = SketchPrimitiveKind::Ellipse;
+          expectedRadius = 0.75;
+          expectedSecondaryRadius = 0.25;
+          expectedRotation = rotation;
+          geometry.push_back(
+              sketch::EllipseEntity{entityId,
+                                    {quantity<Length>(x), quantity<Length>(y)},
+                                    quantity<Length>(0.75),
+                                    quantity<Length>(0.25),
+                                    quantity<Angle>(rotation),
+                                    construction});
+          break;
+        case 5:
+          expectedKind = SketchPrimitiveKind::EllipticalArc;
+          expectedRadius = 0.75;
+          expectedSecondaryRadius = 0.25;
+          expectedRotation = rotation;
+          expectedStart = -std::numbers::pi / 3.0;
+          expectedSweep = std::numbers::pi / 2.0 - expectedStart;
+          geometry.push_back(sketch::EllipticalArcEntity{
+              entityId,
+              {quantity<Length>(x), quantity<Length>(y)},
+              quantity<Length>(0.75),
+              quantity<Length>(0.25),
+              quantity<Angle>(rotation),
+              quantity<Angle>(-std::numbers::pi / 3.0),
+              quantity<Angle>(std::numbers::pi / 2.0),
+              construction});
+          break;
+        case 6:
+          expectedKind = SketchPrimitiveKind::HyperbolicArc;
+          expectedRadius = 0.75;
+          expectedSecondaryRadius = 0.35;
+          expectedRotation = rotation;
+          expectedStart = -0.8;
+          expectedSweep = 2.0;
+          geometry.push_back(sketch::HyperbolicArcEntity{
+              entityId,
+              {quantity<Length>(x), quantity<Length>(y)},
+              quantity<Length>(0.75),
+              quantity<Length>(0.35),
+              quantity<Angle>(rotation),
+              quantity<Dimensionless>(-0.8),
+              quantity<Dimensionless>(1.2),
+              construction});
+          break;
+        case 7:
+          expectedKind = SketchPrimitiveKind::ParabolicArc;
+          expectedRadius = 0.5;
+          expectedRotation = rotation;
+          expectedStart = -0.25;
+          expectedSweep = 0.75;
+          geometry.push_back(sketch::ParabolicArcEntity{
+              entityId,
+              {quantity<Length>(x), quantity<Length>(y)},
+              quantity<Length>(0.5),
+              quantity<Angle>(rotation),
+              quantity<Length>(-0.25),
+              quantity<Length>(0.5),
+              construction});
           break;
         }
         auto projected = projectSketchScene(
@@ -732,8 +815,360 @@ void verifySketchProjection(const testkit::PropertyProfile &profile) {
                 projected->styles().size() == 2U &&
                 projected->styles()[0].role == SketchStyleRole::Regular &&
                 projected->styles()[1].role == SketchStyleRole::Construction &&
-                projected->points().front() == Point2d{x, y},
+                projected->points().front() == Point2d{x, y} &&
+                primitive.radius == expectedRadius &&
+                primitive.secondaryRadius == expectedSecondaryRadius &&
+                primitive.rotationAngleRadians == expectedRotation &&
+                primitive.startAngleRadians == expectedStart &&
+                primitive.sweepAngleRadians == expectedSweep,
             "typed sketch projection changed semantic geometry");
+      });
+}
+
+void verifyExactConicProjectionAndPicking(
+    const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "exact conic bounds semantic points and picking", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const Point2d center{random.between(-100.0, 100.0),
+                             random.between(-100.0, 100.0)};
+        const double major = random.between(0.01, 10.0);
+        const double minor = major * random.between(0.05, 1.0);
+        const double rotation =
+            random.between(-std::numbers::pi, std::numbers::pi);
+        const double start =
+            random.between(-std::numbers::pi, std::numbers::pi);
+        const double sweepMagnitude = random.between(0.05, 5.9);
+        const double sweep =
+            index % 2U == 0U ? sweepMagnitude : -sweepMagnitude;
+        const bool arc = index % 3U == 0U;
+        const SketchEntityId entityId = id<SketchEntityId>(index + 10'000U);
+        std::vector<sketch::Entity> geometry;
+        if (arc) {
+          geometry.push_back(sketch::EllipticalArcEntity{
+              entityId,
+              {quantity<Length>(center.x), quantity<Length>(center.y)},
+              quantity<Length>(major),
+              quantity<Length>(minor),
+              quantity<Angle>(rotation),
+              quantity<Angle>(start),
+              quantity<Angle>(start + sweep),
+              false});
+        } else {
+          geometry.push_back(sketch::EllipseEntity{
+              entityId,
+              {quantity<Length>(center.x), quantity<Length>(center.y)},
+              quantity<Length>(major),
+              quantity<Length>(minor),
+              quantity<Angle>(rotation),
+              false});
+        }
+        auto projected = projectSketchScene(
+            stamp(10, index + 1U, 1, 10, 10, index + 1U), geometry);
+        require(projected.has_value(), "valid exact conic was not projected");
+        const PackedSketchPrimitive &primitive =
+            projected->primitives().front();
+        const double parameterTolerance =
+            16.0 * std::numeric_limits<double>::epsilon() *
+            std::max({1.0, std::abs(start), std::abs(sweep)});
+        require(primitive.kind == (arc ? SketchPrimitiveKind::EllipticalArc
+                                       : SketchPrimitiveKind::Ellipse) &&
+                    primitive.radius == major &&
+                    primitive.secondaryRadius == minor &&
+                    primitive.rotationAngleRadians == rotation &&
+                    primitive.startAngleRadians == (arc ? start : 0.0) &&
+                    std::abs(primitive.sweepAngleRadians -
+                             (arc ? sweep : 0.0)) <= parameterTolerance,
+                "conic projection changed exact parameters");
+
+        const Bounds2d bounds = projected->bounds();
+        const double boundTolerance =
+            256.0 * std::numeric_limits<double>::epsilon() *
+            std::max({1.0, std::abs(center.x), std::abs(center.y), major});
+        constexpr std::size_t sampleCount = 128U;
+        for (std::size_t sample = 0; sample <= sampleCount; ++sample) {
+          const double fraction =
+              static_cast<double>(sample) / static_cast<double>(sampleCount);
+          const double parameter = arc ? start + sweep * fraction
+                                       : 2.0 * std::numbers::pi * fraction;
+          const Point2d point =
+              generatedEllipsePoint(center, major, minor, rotation, parameter);
+          require(point.x >= bounds.minimum.x - boundTolerance &&
+                      point.x <= bounds.maximum.x + boundTolerance &&
+                      point.y >= bounds.minimum.y - boundTolerance &&
+                      point.y <= bounds.maximum.y + boundTolerance,
+                  "exact conic bounds excluded generated geometry");
+        }
+
+        const auto semanticCenter =
+            semanticPoint(*projected, primitive, sketch::PointKey::Center);
+        const auto semanticMajor =
+            semanticPoint(*projected, primitive, sketch::PointKey::Major);
+        const auto semanticMinor =
+            semanticPoint(*projected, primitive, sketch::PointKey::Minor);
+        require(semanticCenter && semanticMajor && semanticMinor &&
+                    *semanticCenter == center &&
+                    *semanticMajor == generatedEllipsePoint(center, major,
+                                                            minor, rotation,
+                                                            0.0) &&
+                    *semanticMinor ==
+                        generatedEllipsePoint(center, major, minor, rotation,
+                                              std::numbers::pi / 2.0),
+                "conic semantic handles lost exact axis geometry");
+        if (arc) {
+          const auto semanticStart =
+              semanticPoint(*projected, primitive, sketch::PointKey::Start);
+          const auto semanticEnd =
+              semanticPoint(*projected, primitive, sketch::PointKey::End);
+          require(semanticStart && semanticEnd &&
+                      *semanticStart == generatedEllipsePoint(center, major,
+                                                              minor, rotation,
+                                                              start) &&
+                      *semanticEnd == generatedEllipsePoint(center, major,
+                                                            minor, rotation,
+                                                            start + sweep),
+                  "elliptical arc endpoint handles are not exact");
+        }
+
+        auto snapshot =
+            std::make_shared<const SketchSceneSnapshot>(std::move(*projected));
+        auto pickIndex = SketchPickIndex::build(snapshot);
+        require(pickIndex.has_value(), "exact conic pick index was rejected");
+        const double parameter =
+            arc ? start + 0.37 * sweep
+                : random.between(-std::numbers::pi, std::numbers::pi);
+        const Point2d curvePoint =
+            generatedEllipsePoint(center, major, minor, rotation, parameter);
+        const double pickTolerance =
+            4'096.0 * std::numeric_limits<double>::epsilon() *
+            std::max({1.0, std::abs(center.x), std::abs(center.y), major});
+        const auto picked = pickIndex->pick(
+            {curvePoint, pickTolerance, SketchPickTargets::Curves});
+        require(picked && *picked && (*picked)->entity == entityId &&
+                    !(*picked)->pointKey &&
+                    (*picked)->distance <= pickTolerance &&
+                    std::hypot((*picked)->closestPoint.x - curvePoint.x,
+                               (*picked)->closestPoint.y - curvePoint.y) <=
+                        pickTolerance,
+                "exact conic point could not be picked on its curve");
+      });
+}
+
+void verifyExactUnboundedConicProjectionAndPicking(
+    const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "exact hyperbolic and parabolic bounds semantic points and picking",
+      profile, [](testkit::Random &random, std::uint64_t index) {
+        const bool hyperbolic = index % 2U == 0U;
+        const Point2d anchor{random.between(-100.0, 100.0),
+                             random.between(-100.0, 100.0)};
+        const double radius = random.between(0.01, 10.0);
+        const double secondary = random.between(0.01, 10.0);
+        const double rotation =
+            random.between(-std::numbers::pi, std::numbers::pi);
+        const double start =
+            hyperbolic ? random.between(-1.5, 1.5) : random.between(-5.0, 5.0);
+        const double magnitude =
+            hyperbolic ? random.between(0.05, 2.0) : random.between(0.05, 5.0);
+        const double sweep = index % 4U < 2U ? magnitude : -magnitude;
+        const double end = start + sweep;
+        const double projectedSweep = end - start;
+        const SketchEntityId entityId = id<SketchEntityId>(index + 20'000U);
+        std::vector<sketch::Entity> geometry;
+        if (hyperbolic) {
+          geometry.push_back(sketch::HyperbolicArcEntity{
+              entityId,
+              {quantity<Length>(anchor.x), quantity<Length>(anchor.y)},
+              quantity<Length>(radius),
+              quantity<Length>(secondary),
+              quantity<Angle>(rotation),
+              quantity<Dimensionless>(start),
+              quantity<Dimensionless>(end),
+              false});
+        } else {
+          geometry.push_back(sketch::ParabolicArcEntity{
+              entityId,
+              {quantity<Length>(anchor.x), quantity<Length>(anchor.y)},
+              quantity<Length>(radius),
+              quantity<Angle>(rotation),
+              quantity<Length>(start),
+              quantity<Length>(end),
+              false});
+        }
+        auto projected = projectSketchScene(
+            stamp(11, index + 1U, 1, 11, 11, index + 1U), geometry);
+        require(projected.has_value(),
+                "valid exact unbounded conic was not projected");
+        const PackedSketchPrimitive &primitive =
+            projected->primitives().front();
+        require(primitive.kind == (hyperbolic
+                                       ? SketchPrimitiveKind::HyperbolicArc
+                                       : SketchPrimitiveKind::ParabolicArc) &&
+                    primitive.radius == radius &&
+                    primitive.secondaryRadius ==
+                        (hyperbolic ? secondary : 0.0) &&
+                    primitive.rotationAngleRadians == rotation &&
+                    primitive.startAngleRadians == start &&
+                    primitive.sweepAngleRadians == projectedSweep,
+                "unbounded conic projection changed exact parameters");
+
+        const auto pointAt = [&](double parameter) {
+          return hyperbolic
+                     ? hyperbolaPoint(anchor, radius, secondary, rotation,
+                                      parameter)
+                     : parabolaPoint(anchor, radius, rotation, parameter);
+        };
+        const Bounds2d bounds = projected->bounds();
+        const double scale = std::max(
+            {1.0, std::abs(bounds.minimum.x), std::abs(bounds.minimum.y),
+             std::abs(bounds.maximum.x), std::abs(bounds.maximum.y)});
+        const double tolerance =
+            512.0 * std::numeric_limits<double>::epsilon() * scale;
+        constexpr std::size_t sampleCount = 128U;
+        for (std::size_t sample = 0U; sample <= sampleCount; ++sample) {
+          const double amount =
+              static_cast<double>(sample) / static_cast<double>(sampleCount);
+          const Point2d point = pointAt(std::lerp(start, end, amount));
+          require(point.x >= bounds.minimum.x - tolerance &&
+                      point.x <= bounds.maximum.x + tolerance &&
+                      point.y >= bounds.minimum.y - tolerance &&
+                      point.y <= bounds.maximum.y + tolerance,
+                  "unbounded conic bounds excluded generated geometry");
+        }
+
+        const auto semanticCenter =
+            semanticPoint(*projected, primitive, sketch::PointKey::Center);
+        const auto semanticFocus =
+            semanticPoint(*projected, primitive, sketch::PointKey::Focus);
+        const auto semanticStart =
+            semanticPoint(*projected, primitive, sketch::PointKey::Start);
+        const auto semanticEnd =
+            semanticPoint(*projected, primitive, sketch::PointKey::End);
+        const double focusDistance =
+            hyperbolic ? std::hypot(radius, secondary) : radius;
+        const Point2d expectedFocus{
+            anchor.x + std::cos(rotation) * focusDistance,
+            anchor.y + std::sin(rotation) * focusDistance};
+        require(semanticCenter && semanticFocus && semanticStart &&
+                    semanticEnd && *semanticCenter == anchor &&
+                    *semanticFocus == expectedFocus &&
+                    *semanticStart == pointAt(start) &&
+                    *semanticEnd == pointAt(end),
+                "unbounded conic semantic points are not exact");
+        if (hyperbolic) {
+          const auto semanticMajor =
+              semanticPoint(*projected, primitive, sketch::PointKey::Major);
+          const auto semanticMinor =
+              semanticPoint(*projected, primitive, sketch::PointKey::Minor);
+          require(semanticMajor && semanticMinor,
+                  "hyperbolic arc axis points are missing");
+        }
+
+        auto snapshot =
+            std::make_shared<const SketchSceneSnapshot>(std::move(*projected));
+        auto pickIndex = SketchPickIndex::build(snapshot);
+        require(pickIndex.has_value(),
+                "unbounded conic pick index was rejected");
+        const Point2d query = pointAt(std::lerp(start, end, 0.37));
+        const double pickTolerance = std::max(1.0e-10, tolerance * 8.0);
+        const auto picked =
+            pickIndex->pick({query, pickTolerance, SketchPickTargets::Curves});
+        require(picked && *picked && (*picked)->entity == entityId &&
+                    !(*picked)->pointKey &&
+                    (*picked)->distance <= pickTolerance,
+                "unbounded conic point could not be picked on its curve");
+      });
+}
+
+void verifyExactBSplineProjectionAndPicking(
+    const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "exact rational B-spline projection bounds semantics and picking",
+      profile, [](testkit::Random &random, std::uint64_t index) {
+        const double x = random.between(-100.0, 100.0);
+        const double y = random.between(-100.0, 100.0);
+        const double extent = random.between(0.01, 10.0);
+        const std::array<Point2d, 4U> points{
+            Point2d{x, y}, Point2d{x + extent, y + extent * 1.5},
+            Point2d{x + extent * 2.0, y - extent},
+            Point2d{x + extent * 3.0, y + extent * 0.25}};
+        const std::array<double, 8U> knots{0.0, 0.0, 0.0, 0.0,
+                                           1.0, 1.0, 1.0, 1.0};
+        const std::array<double, 4U> weights{1.0, random.between(0.25, 4.0),
+                                             random.between(0.25, 4.0), 1.0};
+        std::array<double, 8U> coordinates{};
+        std::vector<sketch::Point2> controlPoints;
+        std::vector<sketch::DimensionlessValue> typedKnots;
+        std::vector<sketch::DimensionlessValue> typedWeights;
+        controlPoints.reserve(points.size());
+        typedKnots.reserve(knots.size());
+        typedWeights.reserve(weights.size());
+        for (std::size_t point = 0U; point < points.size(); ++point) {
+          coordinates[point * 2U] = points[point].x;
+          coordinates[point * 2U + 1U] = points[point].y;
+          controlPoints.push_back({quantity<Length>(points[point].x),
+                                   quantity<Length>(points[point].y)});
+        }
+        for (double knot : knots)
+          typedKnots.push_back(quantity<Dimensionless>(knot));
+        for (double weight : weights)
+          typedWeights.push_back(quantity<Dimensionless>(weight));
+
+        const SketchEntityId entityId = id<SketchEntityId>(index + 30'000U);
+        const std::vector<sketch::Entity> geometry{sketch::BSplineEntity{
+            entityId, std::move(controlPoints), std::move(typedKnots),
+            std::move(typedWeights), 3U, false, index % 5U == 0U}};
+        auto projected = projectSketchScene(
+            stamp(12, index + 1U, 1, 12, 12, index + 1U), geometry);
+        require(projected.has_value(),
+                "valid exact rational B-spline was not projected");
+        const PackedSketchPrimitive &primitive =
+            projected->primitives().front();
+        const PackedSketchSpline &spline = projected->splines().front();
+        require(
+            primitive.kind == SketchPrimitiveKind::BSpline &&
+                primitive.spline == 0U && spline.degree == 3U &&
+                spline.controlPointCount == points.size() &&
+                projected->points().empty() &&
+                std::ranges::equal(projected->splineControlPointCoordinates(),
+                                   coordinates) &&
+                std::ranges::equal(projected->splineKnots(), knots) &&
+                std::ranges::equal(projected->splineWeights(), weights),
+            "rational B-spline projection changed canonical data");
+
+        const sketch::NurbsView curve{coordinates, knots, weights, 3U};
+        const Bounds2d bounds = projected->bounds();
+        for (std::size_t sample = 0U; sample <= 128U; ++sample) {
+          const double parameter = static_cast<double>(sample) / 128.0;
+          const sketch::NurbsPoint point =
+              sketch::evaluateNurbs(curve, parameter);
+          require(point.x >= bounds.minimum.x && point.x <= bounds.maximum.x &&
+                      point.y >= bounds.minimum.y &&
+                      point.y <= bounds.maximum.y,
+                  "rational B-spline bounds excluded exact geometry");
+        }
+        const auto start =
+            semanticPoint(*projected, primitive, sketch::PointKey::Start);
+        const auto end =
+            semanticPoint(*projected, primitive, sketch::PointKey::End);
+        require(start && end && *start == points.front() &&
+                    *end == points.back(),
+                "rational B-spline semantic endpoints are not exact");
+
+        const double parameter = random.between(0.05, 0.95);
+        const sketch::NurbsPoint expected =
+            sketch::evaluateNurbs(curve, parameter);
+        auto snapshot =
+            std::make_shared<const SketchSceneSnapshot>(std::move(*projected));
+        auto pickIndex = SketchPickIndex::build(snapshot);
+        require(pickIndex.has_value(),
+                "rational B-spline pick index was rejected");
+        const double tolerance = 1.0e-7 * std::max(1.0, extent);
+        const auto picked = pickIndex->pick(
+            {{expected.x, expected.y}, tolerance, SketchPickTargets::Curves});
+        require(picked && *picked && (*picked)->entity == entityId &&
+                    !(*picked)->pointKey && (*picked)->distance <= tolerance,
+                "exact rational B-spline could not be picked on its curve");
       });
 }
 
@@ -3070,6 +3505,9 @@ int main() {
   try {
     const auto profile = kearne::testkit::propertyProfile();
     verifySketchProjection(profile);
+    verifyExactConicProjectionAndPicking(profile);
+    verifyExactUnboundedConicProjectionAndPicking(profile);
+    verifyExactBSplineProjectionAndPicking(profile);
     verifySketchPresentation(profile);
     verifySketchPresentationScaling();
     verifyLatestSketchPresentation(profile);

@@ -42,12 +42,16 @@ enum class PreferenceKind { Choice, Toggle, Text };
 using PreferenceValue = std::variant<QString, bool>;
 
 struct PreferenceCategory {
+  bool operator==(const PreferenceCategory &) const = default;
+
   QString id;
   QString label;
   QString icon;
 };
 
 struct PreferenceDescriptor {
+  bool operator==(const PreferenceDescriptor &) const = default;
+
   QString id;
   QString categoryId;
   QString label;
@@ -62,7 +66,17 @@ enum class FieldKind { Text, Choice, Reference, Expression, Toggle };
 enum class SourceEditMode { Preview, Apply };
 enum class CommandDraftMode { Preview, Apply };
 enum class SketchInputKind { None, PlanePoint, Entity };
-enum class SketchPrimitiveKind { Point, Line, Circle, Arc };
+enum class SketchPrimitiveKind {
+  Point,
+  Line,
+  Circle,
+  Arc,
+  Ellipse,
+  EllipticalArc,
+  HyperbolicArc,
+  ParabolicArc,
+  BSpline
+};
 enum class SketchSelectionKind { Any, Point, Curve };
 enum class CommandDraftState {
   None,
@@ -86,6 +100,8 @@ struct FieldDescriptor {
         effectiveValue(std::move(fieldEffectiveValue)),
         options(std::move(fieldOptions)), readOnly(fieldReadOnly) {}
 
+  bool operator==(const FieldDescriptor &) const = default;
+
   QString id;
   QString label;
   FieldKind kind = FieldKind::Text;
@@ -96,17 +112,23 @@ struct FieldDescriptor {
 };
 
 struct CommandDescriptor {
+  bool operator==(const CommandDescriptor &) const = default;
+
   QString id;
   QString label;
   QString icon;
   QString group;
+  QString menu;
   QString workspaceId;
   QString shortcut;
+  bool primary = false;
   bool available = true;
   QString unavailableReason;
 };
 
 struct CommandDraftSummary {
+  bool operator==(const CommandDraftSummary &) const = default;
+
   QString commandId;
   QString baseRevision;
   CommandDraftState state = CommandDraftState::None;
@@ -126,11 +148,15 @@ struct CommandDraftRequest {
 };
 
 struct PlanePoint {
+  bool operator==(const PlanePoint &) const = default;
+
   double xMetres = 0.0;
   double yMetres = 0.0;
 };
 
 struct SketchPrimitiveProjection {
+  bool operator==(const SketchPrimitiveProjection &) const = default;
+
   QString id;
   SketchPrimitiveKind kind = SketchPrimitiveKind::Point;
   std::vector<PlanePoint> points;
@@ -140,9 +166,15 @@ struct SketchPrimitiveProjection {
   bool construction = false;
   bool selected = false;
   bool draft = false;
+  double startAngleRadians = 0.0;
+  double sweepAngleRadians = 0.0;
+  double secondaryRadiusMetres = 0.0;
+  double rotationAngleRadians = 0.0;
 };
 
 struct SketchProjection {
+  bool operator==(const SketchProjection &) const = default;
+
   QString sourceRevision;
   QString functionId;
   QString planeId;
@@ -153,6 +185,8 @@ struct SketchProjection {
 };
 
 struct SketchInteractionSummary {
+  bool operator==(const SketchInteractionSummary &) const = default;
+
   QString commandId;
   QString expectedRevision;
   SketchInputKind inputKind = SketchInputKind::None;
@@ -161,6 +195,7 @@ struct SketchInteractionSummary {
   int inputCount = 0;
   QString prompt;
   std::vector<SketchSelectionKind> selectionSequence;
+  std::vector<SketchInputKind> inputSequence;
 };
 
 struct SketchInputRequest {
@@ -173,12 +208,16 @@ struct SketchInputRequest {
 };
 
 struct WorkspaceDescriptor {
+  bool operator==(const WorkspaceDescriptor &) const = default;
+
   QString id;
   QString label;
   QString icon;
 };
 
 struct StructureItem {
+  bool operator==(const StructureItem &) const = default;
+
   QString id;
   QString label;
   int depth = 0;
@@ -186,12 +225,16 @@ struct StructureItem {
 };
 
 struct RevisionSummary {
+  bool operator==(const RevisionSummary &) const = default;
+
   QString id;
   QString label;
   QString detail;
 };
 
 struct ParameterSummary {
+  bool operator==(const ParameterSummary &) const = default;
+
   QString id;
   QString name;
   QString expression;
@@ -205,6 +248,8 @@ struct ParameterEditRequest {
 };
 
 struct JobSummary {
+  bool operator==(const JobSummary &) const = default;
+
   QString id;
   QString label;
   QString state;
@@ -212,18 +257,24 @@ struct JobSummary {
 };
 
 struct DiagnosticSummary {
+  bool operator==(const DiagnosticSummary &) const = default;
+
   QString id;
   QString severity;
   QString summary;
 };
 
 struct ProposalSummary {
+  bool operator==(const ProposalSummary &) const = default;
+
   QString id;
   QString summary;
   QString state;
 };
 
 struct ProjectSummary {
+  bool operator==(const ProjectSummary &) const = default;
+
   QString id;
   QString name;
   QString detail;
@@ -233,6 +284,8 @@ struct ProjectSummary {
 };
 
 struct ProjectTemplateDescriptor {
+  bool operator==(const ProjectTemplateDescriptor &) const = default;
+
   QString id;
   QString name;
   QString detail;
@@ -241,6 +294,8 @@ struct ProjectTemplateDescriptor {
 };
 
 struct RecoverySummary {
+  bool operator==(const RecoverySummary &) const = default;
+
   QString id;
   QString name;
   QString detail;
@@ -249,6 +304,8 @@ struct RecoverySummary {
 };
 
 struct OperationSummary {
+  bool operator==(const OperationSummary &) const = default;
+
   QString id;
   QString name;
   QString kind;
@@ -258,12 +315,16 @@ struct OperationSummary {
 };
 
 struct InterfaceStateDescriptor {
+  bool operator==(const InterfaceStateDescriptor &) const = default;
+
   QString id;
   QString label;
   QString icon;
 };
 
 struct FunctionPortSummary {
+  bool operator==(const FunctionPortSummary &) const = default;
+
   QString id;
   QString label;
   QString type;
@@ -272,6 +333,8 @@ struct FunctionPortSummary {
 };
 
 struct FunctionSummary {
+  bool operator==(const FunctionSummary &) const = default;
+
   QString id;
   QString name;
   QString signature;
@@ -307,6 +370,7 @@ struct FrontendSnapshot {
   QString selectionSummary;
   QString selectedEntityId;
   QString selectedSketchEntityId;
+  std::vector<QString> selectedSketchEntityIds;
   QString agentStatus;
   QString modelSource;
   FunctionSummary selectedFunction;
@@ -344,16 +408,17 @@ struct FrontendSnapshot {
   std::vector<InterfaceStateDescriptor> interfaceStates;
   SketchProjection sketchProjection;
   SketchInteractionSummary sketchInteraction;
+  std::vector<PlanePoint> sketchInputPlanePoints;
   std::shared_ptr<const render::SketchSceneSnapshot> sketchScene;
 };
 
 using FrontendSnapshotPtr = std::shared_ptr<const FrontendSnapshot>;
 
-class FrontendPort {
+class FrontendController {
 public:
   using ChangeHandler = std::function<void()>;
 
-  virtual ~FrontendPort() = default;
+  virtual ~FrontendController() = default;
   // Published generations are immutable and may be retained by asynchronous
   // UI consumers. Implementations return the same pointer until state changes.
   [[nodiscard]] virtual FrontendSnapshotPtr snapshot() const = 0;
@@ -370,9 +435,13 @@ public:
   virtual bool submitCommandDraft(const CommandDraftRequest &request,
                                   CommandDraftMode mode) = 0;
   virtual bool submitSketchInput(const SketchInputRequest &request) = 0;
+  virtual bool removeLastSketchInput() = 0;
   virtual bool toggleSketchConstruction() = 0;
   virtual bool dragSketchCurve(const QString &entityId, PlanePoint first,
                                PlanePoint current) = 0;
+  virtual bool previewSketchCurve(const QString &entityId, PlanePoint first,
+                                  PlanePoint current) = 0;
+  virtual void clearSketchCurvePreview() = 0;
   virtual void cancelCommandDraft(const QString &commandId) = 0;
   virtual bool submitParameterEdit(const ParameterEditRequest &request) = 0;
   virtual bool submitSourceEdit(const SourceEditRequest &request,

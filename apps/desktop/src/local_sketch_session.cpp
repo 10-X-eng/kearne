@@ -1,11 +1,15 @@
 #include "local_sketch_session.hpp"
+#include "sketch_tool_gesture.hpp"
 
 #include <kearne/adapters/ceres_sketch_solver.hpp>
+#include <kearne/adapters/occ_bspline.hpp>
 #include <kearne/adapters/sketch_source_worker.hpp>
 #include <kearne/document/canonical.hpp>
 #include <kearne/document/content_store.hpp>
 #include <kearne/engineering/service.hpp>
+#include <kearne/sketch/modify.hpp>
 #include <kearne/sketch/tools.hpp>
+#include <kearne/sketch/transform.hpp>
 #include <kearne/sketch_workflow/workflow.hpp>
 
 #include <QByteArray>
@@ -19,8 +23,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <string>
@@ -61,6 +67,18 @@ Result<std::array<Id, Size>> makeIds() {
   }(std::make_index_sequence<Size>{});
 }
 
+template <typename Id> Result<std::vector<Id>> makeIdVector(std::size_t size) {
+  std::vector<Id> result;
+  result.reserve(size);
+  for (std::size_t index = 0U; index < size; ++index) {
+    auto value = makeId<Id>();
+    if (!value)
+      return std::unexpected(std::move(value.error()));
+    result.push_back(std::move(*value));
+  }
+  return result;
+}
+
 template <typename Digest>
 Result<Digest> operationDigest(std::string_view context, const JobId &job) {
   document::CanonicalWriter writer;
@@ -74,6 +92,34 @@ Result<Digest> operationDigest(std::string_view context, const JobId &job) {
 
 Result<sketch::LengthValue> length(double metres) {
   return sketch::LengthValue::fromSi(metres);
+}
+
+Result<sketch::AngleValue> angle(double radians) {
+  return sketch::AngleValue::fromSi(radians);
+}
+
+Result<sketch::DimensionlessValue> dimensionless(double value) {
+  return sketch::DimensionlessValue::fromSi(value);
+}
+
+Result<sketch::PointKey> pointKey(QStringView value) {
+  if (value == QStringLiteral("point"))
+    return sketch::PointKey::Point;
+  if (value == QStringLiteral("start"))
+    return sketch::PointKey::Start;
+  if (value == QStringLiteral("end"))
+    return sketch::PointKey::End;
+  if (value == QStringLiteral("center"))
+    return sketch::PointKey::Center;
+  if (value == QStringLiteral("major"))
+    return sketch::PointKey::Major;
+  if (value == QStringLiteral("minor"))
+    return sketch::PointKey::Minor;
+  if (value == QStringLiteral("focus"))
+    return sketch::PointKey::Focus;
+  return std::unexpected(
+      diagnostic("desktop.sketch.constraint-point",
+                 "Constraint needs a selected Sketch point"));
 }
 
 adapters::FramedWorkerProcessConfig
@@ -131,6 +177,8 @@ frontendProjection(const sketch_workflow::SketchState &state,
       solveStatus(state.evaluation->solve.status),
       static_cast<int>(state.evaluation->solve.degreesOfFreedom),
       sketch::closedProfileCount(state.definition),
+      state.definition.objects,
+      state.definition.constraints,
       state.evaluation->replacementScene,
   };
 }
@@ -243,49 +291,666 @@ struct Backend final {
   }
 
   Result<LocalSketchProjection>
-  applyRectangle(const LocalRectangleGesture &gesture) {
+  applyTool(const LocalSketchToolGesture &gesture) {
     if (!state)
       return std::unexpected(
           diagnostic("desktop.sketch.not-created",
-                     "create a Sketch before applying a rectangle"));
-    auto firstX = length(gesture.firstXMetres);
-    auto firstY = length(gesture.firstYMetres);
-    auto oppositeX = length(gesture.oppositeXMetres);
-    auto oppositeY = length(gesture.oppositeYMetres);
-    if (!firstX)
-      return std::unexpected(std::move(firstX.error()));
-    if (!firstY)
-      return std::unexpected(std::move(firstY.error()));
-    if (!oppositeX)
-      return std::unexpected(std::move(oppositeX.error()));
-    if (!oppositeY)
-      return std::unexpected(std::move(oppositeY.error()));
+                     "create a Sketch before applying a geometry tool"));
+    auto projected = projectLocalSketchToolGesture(gesture, true);
+    if (!projected)
+      return std::unexpected(std::move(projected.error()));
+    std::vector<sketch::Point2> points;
+    points.reserve(gesture.points.size());
+    for (const LocalSketchToolPoint &point : gesture.points) {
+      auto x = length(point.xMetres);
+      auto y = length(point.yMetres);
+      if (!x)
+        return std::unexpected(std::move(x.error()));
+      if (!y)
+        return std::unexpected(std::move(y.error()));
+      points.push_back({*x, *y});
+    }
 
-    auto edges = makeIds<SketchEntityId, 4U>();
-    auto constraints = makeIds<SketchConstraintId, 8U>();
-    if (!edges)
-      return std::unexpected(std::move(edges.error()));
-    if (!constraints)
-      return std::unexpected(std::move(constraints.error()));
-    sketch::RectangleToolIds ids{std::move(*edges), std::move(*constraints)};
+    std::optional<sketch::ToolInput> input;
+    if (isLocalSketchBSpline(gesture.kind)) {
+      auto object = makeId<SketchObjectId>();
+      auto entity = makeId<SketchEntityId>();
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!entity)
+        return std::unexpected(std::move(entity.error()));
+      auto geometry = adapters::createBSplineGeometry(
+          points,
+          isLocalSketchInterpolatedBSpline(gesture.kind)
+              ? adapters::BSplineCreation::Interpolation
+              : adapters::BSplineCreation::ControlPoints,
+          gesture.degree, isLocalSketchPeriodicBSpline(gesture.kind));
+      if (!geometry)
+        return std::unexpected(std::move(geometry.error()));
+      input.emplace(sketch::BSplineToolInput{{*object, *entity},
+                                             std::move(geometry->controlPoints),
+                                             std::move(geometry->knots),
+                                             std::move(geometry->weights),
+                                             geometry->degree,
+                                             geometry->periodic,
+                                             gesture.construction});
+    } else if (isLocalSketchPolygon(gesture.kind)) {
+      const std::size_t sideCount =
+          localSketchPolygonSideCount(gesture.kind, gesture.sideCount);
+      auto object = makeId<SketchObjectId>();
+      auto sides = makeIdVector<SketchEntityId>(sideCount);
+      auto constraints = makeIdVector<SketchConstraintId>(3U * sideCount - 2U);
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!sides)
+        return std::unexpected(std::move(sides.error()));
+      if (!constraints)
+        return std::unexpected(std::move(constraints.error()));
+      input.emplace(sketch::RegularPolygonToolInput{
+          {*object, std::move(*sides), std::move(*constraints)},
+          points[0],
+          points[1],
+          sideCount,
+          gesture.construction});
+    } else if (gesture.kind == LocalSketchToolKind::Polyline) {
+      auto object = makeId<SketchObjectId>();
+      auto segments = makeIdVector<SketchEntityId>(projected->size());
+      const std::size_t constraintCount =
+          gesture.closed ? projected->size() : projected->size() - 1U;
+      auto constraints = makeIdVector<SketchConstraintId>(constraintCount);
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!segments)
+        return std::unexpected(std::move(segments.error()));
+      if (!constraints)
+        return std::unexpected(std::move(constraints.error()));
+      input.emplace(sketch::PolylineToolInput{
+          {*object, std::move(*segments), std::move(*constraints)},
+          std::move(points),
+          gesture.closed,
+          gesture.construction});
+    } else if (gesture.kind == LocalSketchToolKind::Rectangle ||
+               gesture.kind == LocalSketchToolKind::CenterRectangle) {
+      auto object = makeId<SketchObjectId>();
+      auto edges = makeIds<SketchEntityId, 4U>();
+      auto constraints = makeIds<SketchConstraintId, 8U>();
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!edges)
+        return std::unexpected(std::move(edges.error()));
+      if (!constraints)
+        return std::unexpected(std::move(constraints.error()));
+      sketch::Point2 firstCorner = points[0];
+      if (gesture.kind == LocalSketchToolKind::CenterRectangle) {
+        auto firstX =
+            length(2.0 * gesture.points[0].xMetres - gesture.points[1].xMetres);
+        auto firstY =
+            length(2.0 * gesture.points[0].yMetres - gesture.points[1].yMetres);
+        if (!firstX)
+          return std::unexpected(std::move(firstX.error()));
+        if (!firstY)
+          return std::unexpected(std::move(firstY.error()));
+        firstCorner = {*firstX, *firstY};
+      }
+      input.emplace(sketch::RectangleToolInput{
+          {*object, std::move(*edges), std::move(*constraints)},
+          firstCorner,
+          points[1],
+          gesture.construction});
+    } else if (gesture.kind == LocalSketchToolKind::Slot ||
+               gesture.kind == LocalSketchToolKind::Oblong) {
+      auto object = makeId<SketchObjectId>();
+      auto curves = makeIds<SketchEntityId, 4U>();
+      auto constraints = makeIds<SketchConstraintId, 9U>();
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!curves)
+        return std::unexpected(std::move(curves.error()));
+      if (!constraints)
+        return std::unexpected(std::move(constraints.error()));
+      auto radius = length(projected->front().radiusMetres);
+      if (!radius)
+        return std::unexpected(std::move(radius.error()));
+      input.emplace(sketch::SlotToolInput{
+          {*object, std::move(*curves), std::move(*constraints)},
+          points[0],
+          points[1],
+          *radius,
+          gesture.construction,
+          gesture.kind == LocalSketchToolKind::Oblong
+              ? sketch::SketchObjectKind::Oblong
+              : sketch::SketchObjectKind::Slot});
+    } else if (gesture.kind == LocalSketchToolKind::ArcSlot) {
+      auto object = makeId<SketchObjectId>();
+      auto curves = makeIds<SketchEntityId, 4U>();
+      auto constraints = makeIds<SketchConstraintId, 10U>();
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!curves)
+        return std::unexpected(std::move(curves.error()));
+      if (!constraints)
+        return std::unexpected(std::move(constraints.error()));
+      const SketchPrimitiveProjection &outer = (*projected)[0];
+      const SketchPrimitiveProjection &inner = (*projected)[2];
+      auto centerlineRadius =
+          length((outer.radiusMetres + inner.radiusMetres) / 2.0);
+      auto start = angle(outer.startAngleRadians);
+      auto sweep = angle(outer.sweepAngleRadians);
+      auto slotRadius = length((outer.radiusMetres - inner.radiusMetres) / 2.0);
+      if (!centerlineRadius)
+        return std::unexpected(std::move(centerlineRadius.error()));
+      if (!start)
+        return std::unexpected(std::move(start.error()));
+      if (!sweep)
+        return std::unexpected(std::move(sweep.error()));
+      if (!slotRadius)
+        return std::unexpected(std::move(slotRadius.error()));
+      input.emplace(sketch::ArcSlotToolInput{
+          {*object, std::move(*curves), std::move(*constraints)},
+          points[0],
+          *centerlineRadius,
+          *start,
+          *sweep,
+          *slotRadius,
+          gesture.construction});
+    } else {
+      auto object = makeId<SketchObjectId>();
+      auto entity = makeId<SketchEntityId>();
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!entity)
+        return std::unexpected(std::move(entity.error()));
+      const sketch::PrimitiveToolIds ids{*object, *entity};
+      switch (gesture.kind) {
+      case LocalSketchToolKind::Point:
+        input.emplace(
+            sketch::PointToolInput{ids, points[0], gesture.construction});
+        break;
+      case LocalSketchToolKind::Line:
+        input.emplace(sketch::LineToolInput{ids, points[0], points[1],
+                                            gesture.construction});
+        break;
+      case LocalSketchToolKind::Circle:
+      case LocalSketchToolKind::ThreePointCircle: {
+        auto radius = length(projected->front().radiusMetres);
+        auto centerX = length(projected->front().points.front().xMetres);
+        auto centerY = length(projected->front().points.front().yMetres);
+        if (!radius)
+          return std::unexpected(std::move(radius.error()));
+        if (!centerX)
+          return std::unexpected(std::move(centerX.error()));
+        if (!centerY)
+          return std::unexpected(std::move(centerY.error()));
+        input.emplace(sketch::CircleToolInput{
+            ids, {*centerX, *centerY}, *radius, gesture.construction});
+        break;
+      }
+      case LocalSketchToolKind::Arc:
+      case LocalSketchToolKind::ThreePointArc: {
+        const SketchPrimitiveProjection &arc = projected->front();
+        auto radius = length(arc.radiusMetres);
+        auto start = angle(arc.startAngleRadians);
+        auto end = angle(arc.startAngleRadians + arc.sweepAngleRadians);
+        auto centerX = length(arc.points.front().xMetres);
+        auto centerY = length(arc.points.front().yMetres);
+        if (!radius)
+          return std::unexpected(std::move(radius.error()));
+        if (!start)
+          return std::unexpected(std::move(start.error()));
+        if (!end)
+          return std::unexpected(std::move(end.error()));
+        if (!centerX)
+          return std::unexpected(std::move(centerX.error()));
+        if (!centerY)
+          return std::unexpected(std::move(centerY.error()));
+        input.emplace(sketch::ArcToolInput{ids,
+                                           {*centerX, *centerY},
+                                           *radius,
+                                           *start,
+                                           *end,
+                                           gesture.construction});
+        break;
+      }
+      case LocalSketchToolKind::Ellipse:
+      case LocalSketchToolKind::ThreePointEllipse: {
+        const SketchPrimitiveProjection &ellipse = projected->front();
+        auto major = length(ellipse.radiusMetres);
+        auto minor = length(ellipse.secondaryRadiusMetres);
+        auto rotation = angle(ellipse.rotationAngleRadians);
+        auto centerX = length(ellipse.points.front().xMetres);
+        auto centerY = length(ellipse.points.front().yMetres);
+        if (!major || !minor || !rotation || !centerX || !centerY) {
+          if (!major)
+            return std::unexpected(std::move(major.error()));
+          if (!minor)
+            return std::unexpected(std::move(minor.error()));
+          if (!rotation)
+            return std::unexpected(std::move(rotation.error()));
+          if (!centerX)
+            return std::unexpected(std::move(centerX.error()));
+          return std::unexpected(std::move(centerY.error()));
+        }
+        input.emplace(sketch::EllipseToolInput{ids,
+                                               {*centerX, *centerY},
+                                               *major,
+                                               *minor,
+                                               *rotation,
+                                               gesture.construction});
+        break;
+      }
+      case LocalSketchToolKind::EllipticalArc: {
+        const SketchPrimitiveProjection &arc = projected->front();
+        auto major = length(arc.radiusMetres);
+        auto minor = length(arc.secondaryRadiusMetres);
+        auto rotation = angle(arc.rotationAngleRadians);
+        auto start = angle(arc.startAngleRadians);
+        auto end = angle(arc.startAngleRadians + arc.sweepAngleRadians);
+        auto centerX = length(arc.points.front().xMetres);
+        auto centerY = length(arc.points.front().yMetres);
+        if (!major || !minor || !rotation || !start || !end || !centerX ||
+            !centerY) {
+          if (!major)
+            return std::unexpected(std::move(major.error()));
+          if (!minor)
+            return std::unexpected(std::move(minor.error()));
+          if (!rotation)
+            return std::unexpected(std::move(rotation.error()));
+          if (!start)
+            return std::unexpected(std::move(start.error()));
+          if (!end)
+            return std::unexpected(std::move(end.error()));
+          if (!centerX)
+            return std::unexpected(std::move(centerX.error()));
+          return std::unexpected(std::move(centerY.error()));
+        }
+        input.emplace(sketch::EllipticalArcToolInput{ids,
+                                                     {*centerX, *centerY},
+                                                     *major,
+                                                     *minor,
+                                                     *rotation,
+                                                     *start,
+                                                     *end,
+                                                     gesture.construction});
+        break;
+      }
+      case LocalSketchToolKind::HyperbolicArc: {
+        const SketchPrimitiveProjection &arc = projected->front();
+        auto major = length(arc.radiusMetres);
+        auto minor = length(arc.secondaryRadiusMetres);
+        auto rotation = angle(arc.rotationAngleRadians);
+        auto start = dimensionless(arc.startAngleRadians);
+        auto end = dimensionless(arc.startAngleRadians + arc.sweepAngleRadians);
+        auto centerX = length(arc.points.front().xMetres);
+        auto centerY = length(arc.points.front().yMetres);
+        if (!major || !minor || !rotation || !start || !end || !centerX ||
+            !centerY) {
+          if (!major)
+            return std::unexpected(std::move(major.error()));
+          if (!minor)
+            return std::unexpected(std::move(minor.error()));
+          if (!rotation)
+            return std::unexpected(std::move(rotation.error()));
+          if (!start)
+            return std::unexpected(std::move(start.error()));
+          if (!end)
+            return std::unexpected(std::move(end.error()));
+          if (!centerX)
+            return std::unexpected(std::move(centerX.error()));
+          return std::unexpected(std::move(centerY.error()));
+        }
+        input.emplace(sketch::HyperbolicArcToolInput{ids,
+                                                     {*centerX, *centerY},
+                                                     *major,
+                                                     *minor,
+                                                     *rotation,
+                                                     *start,
+                                                     *end,
+                                                     gesture.construction});
+        break;
+      }
+      case LocalSketchToolKind::ParabolicArc: {
+        const SketchPrimitiveProjection &arc = projected->front();
+        auto focal = length(arc.radiusMetres);
+        auto rotation = angle(arc.rotationAngleRadians);
+        auto start = length(arc.startAngleRadians);
+        auto end = length(arc.startAngleRadians + arc.sweepAngleRadians);
+        auto vertexX = length(arc.points.front().xMetres);
+        auto vertexY = length(arc.points.front().yMetres);
+        if (!focal || !rotation || !start || !end || !vertexX || !vertexY) {
+          if (!focal)
+            return std::unexpected(std::move(focal.error()));
+          if (!rotation)
+            return std::unexpected(std::move(rotation.error()));
+          if (!start)
+            return std::unexpected(std::move(start.error()));
+          if (!end)
+            return std::unexpected(std::move(end.error()));
+          if (!vertexX)
+            return std::unexpected(std::move(vertexX.error()));
+          return std::unexpected(std::move(vertexY.error()));
+        }
+        input.emplace(sketch::ParabolicArcToolInput{ids,
+                                                    {*vertexX, *vertexY},
+                                                    *focal,
+                                                    *rotation,
+                                                    *start,
+                                                    *end,
+                                                    gesture.construction});
+        break;
+      }
+      case LocalSketchToolKind::Rectangle:
+      case LocalSketchToolKind::CenterRectangle:
+      case LocalSketchToolKind::Polyline:
+      case LocalSketchToolKind::Slot:
+      case LocalSketchToolKind::ArcSlot:
+      case LocalSketchToolKind::Oblong:
+      case LocalSketchToolKind::Triangle:
+      case LocalSketchToolKind::Square:
+      case LocalSketchToolKind::Pentagon:
+      case LocalSketchToolKind::Hexagon:
+      case LocalSketchToolKind::Heptagon:
+      case LocalSketchToolKind::Octagon:
+      case LocalSketchToolKind::RegularPolygon:
+      case LocalSketchToolKind::BSpline:
+      case LocalSketchToolKind::PeriodicBSpline:
+      case LocalSketchToolKind::InterpolatedBSpline:
+      case LocalSketchToolKind::PeriodicInterpolatedBSpline:
+        break;
+      }
+    }
+    if (!input)
+      return std::unexpected(diagnostic(
+          "desktop.sketch.tool-kind",
+          "Sketch geometry tool kind is unsupported", Severity::Fatal));
     auto operation = nextOperation();
     if (!operation)
       return std::unexpected(std::move(operation.error()));
     auto identity = nextEvaluation(operation->sourceJob);
     if (!identity)
       return std::unexpected(std::move(identity.error()));
-    auto edited = workflow.applyTool(*state, *operation,
-                                     sketch::RectangleToolInput{
-                                         ids,
-                                         {*firstX, *firstY},
-                                         {*oppositeX, *oppositeY},
-                                         gesture.construction,
-                                     },
-                                     *identity);
+    auto edited = workflow.applyTool(*state, *operation, *input, *identity);
     if (!edited)
       return std::unexpected(std::move(edited.error()));
     publishState(std::move(*edited));
     return projection();
+  }
+
+  Result<LocalSketchProjection>
+  applyConstraint(const LocalSketchConstraintGesture &gesture) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before applying a constraint"));
+    auto constraintId = makeId<SketchConstraintId>();
+    if (!constraintId)
+      return std::unexpected(std::move(constraintId.error()));
+    const auto entity = [&](std::size_t index) -> Result<SketchEntityId> {
+      if (index >= gesture.selections.size())
+        return std::unexpected(
+            diagnostic("desktop.sketch.constraint-selection-count",
+                       "Constraint received the wrong number of selections"));
+      return SketchEntityId::parse(
+          gesture.selections[index].entityId.toStdString());
+    };
+    const auto point = [&](std::size_t index) -> Result<sketch::PointRef> {
+      auto selectedEntity = entity(index);
+      if (!selectedEntity)
+        return std::unexpected(std::move(selectedEntity.error()));
+      auto selectedKey = pointKey(gesture.selections[index].pointKey);
+      if (!selectedKey)
+        return std::unexpected(std::move(selectedKey.error()));
+      return sketch::PointRef{*selectedEntity, *selectedKey};
+    };
+    const LocalSketchConstraintDefinition *definition =
+        localSketchConstraintDefinition(gesture.kind);
+    const std::size_t minimum =
+        definition == nullptr ? 0U : definition->minimumSelectionCount;
+    const std::size_t maximum =
+        definition == nullptr || definition->maximumSelectionCount == 0U
+            ? minimum
+            : definition->maximumSelectionCount;
+    if (definition == nullptr || gesture.selections.size() < minimum ||
+        gesture.selections.size() > maximum)
+      return std::unexpected(
+          diagnostic("desktop.sketch.constraint-selection-count",
+                     "Constraint received the wrong number of selections"));
+
+    if (gesture.kind == LocalSketchConstraintKind::RemoveAxisAlignment) {
+      std::vector<SketchEntityId> entities;
+      entities.reserve(gesture.selections.size());
+      for (std::size_t index = 0U; index < gesture.selections.size(); ++index) {
+        auto selected = entity(index);
+        if (!selected)
+          return std::unexpected(std::move(selected.error()));
+        entities.push_back(*selected);
+      }
+      auto edited = sketch::removeAxisAlignment(state->definition, entities);
+      if (!edited)
+        return std::unexpected(std::move(edited.error()));
+      return applyEdits(std::move(*edited));
+    }
+
+    std::optional<sketch::Constraint> constraint;
+    if (gesture.kind == LocalSketchConstraintKind::Coincident) {
+      auto first = point(0U);
+      auto second = point(1U);
+      if (!first)
+        return std::unexpected(std::move(first.error()));
+      if (!second)
+        return std::unexpected(std::move(second.error()));
+      constraint.emplace(sketch::Coincident{*constraintId, *first, *second});
+    } else if (gesture.kind == LocalSketchConstraintKind::Midpoint) {
+      auto selectedPoint = point(0U);
+      auto line = entity(1U);
+      if (!selectedPoint)
+        return std::unexpected(std::move(selectedPoint.error()));
+      if (!line)
+        return std::unexpected(std::move(line.error()));
+      constraint.emplace(
+          sketch::Midpoint{*constraintId, *selectedPoint, *line});
+    } else if (gesture.kind == LocalSketchConstraintKind::PointOnObject) {
+      auto selectedPoint = point(0U);
+      auto curve = entity(1U);
+      if (!selectedPoint)
+        return std::unexpected(std::move(selectedPoint.error()));
+      if (!curve)
+        return std::unexpected(std::move(curve.error()));
+      constraint.emplace(
+          sketch::PointOnObject{*constraintId, *selectedPoint, *curve});
+    } else if (gesture.kind == LocalSketchConstraintKind::Symmetric) {
+      auto first = point(0U);
+      auto second = point(1U);
+      if (!first)
+        return std::unexpected(std::move(first.error()));
+      if (!second)
+        return std::unexpected(std::move(second.error()));
+      if (gesture.selections[2].pointKey.isEmpty()) {
+        auto axis = entity(2U);
+        if (!axis)
+          return std::unexpected(std::move(axis.error()));
+        constraint.emplace(
+            sketch::Symmetric{*constraintId, *first, *second, *axis});
+      } else {
+        auto center = point(2U);
+        if (!center)
+          return std::unexpected(std::move(center.error()));
+        constraint.emplace(sketch::SymmetricAboutPoint{*constraintId, *first,
+                                                       *second, *center});
+      }
+    } else if (gesture.kind == LocalSketchConstraintKind::Lock) {
+      auto selected = point(0U);
+      if (!selected)
+        return std::unexpected(std::move(selected.error()));
+      auto position = sketch::resolvePoint(state->definition, *selected);
+      if (!position)
+        return std::unexpected(std::move(position.error()));
+      constraint.emplace(sketch::Lock{*constraintId, *selected, *position});
+    } else if (gesture.kind >= LocalSketchConstraintKind::Distance &&
+               gesture.kind <= LocalSketchConstraintKind::Angle) {
+      if (!gesture.valueSi || !std::isfinite(*gesture.valueSi))
+        return std::unexpected(
+            diagnostic("desktop.sketch.dimension-value",
+                       "Dimension needs a finite value with compatible units"));
+      if (gesture.kind == LocalSketchConstraintKind::Angle) {
+        auto first = entity(0U);
+        auto second = entity(1U);
+        auto value = angle(*gesture.valueSi);
+        if (!first)
+          return std::unexpected(std::move(first.error()));
+        if (!second)
+          return std::unexpected(std::move(second.error()));
+        if (!value)
+          return std::unexpected(std::move(value.error()));
+        constraint.emplace(
+            sketch::AngleBetween{*constraintId, *first, *second, *value});
+      } else {
+        if ((gesture.kind == LocalSketchConstraintKind::Distance &&
+             *gesture.valueSi < 0.0) ||
+            ((gesture.kind == LocalSketchConstraintKind::Radius ||
+              gesture.kind == LocalSketchConstraintKind::Diameter) &&
+             *gesture.valueSi <= 0.0))
+          return std::unexpected(
+              diagnostic("desktop.sketch.dimension-range",
+                         "Dimension value is outside the supported range"));
+        auto value = length(*gesture.valueSi);
+        if (!value)
+          return std::unexpected(std::move(value.error()));
+        if (gesture.kind == LocalSketchConstraintKind::Radius ||
+            gesture.kind == LocalSketchConstraintKind::Diameter) {
+          auto curve = entity(0U);
+          if (!curve)
+            return std::unexpected(std::move(curve.error()));
+          if (gesture.kind == LocalSketchConstraintKind::Radius)
+            constraint.emplace(sketch::Radius{*constraintId, *curve, *value});
+          else
+            constraint.emplace(sketch::Diameter{*constraintId, *curve, *value});
+        } else {
+          auto linePoint =
+              [&](sketch::PointKey key) -> Result<sketch::PointRef> {
+            auto line = entity(0U);
+            if (!line)
+              return std::unexpected(std::move(line.error()));
+            return sketch::PointRef{*line, key};
+          };
+          auto first = gesture.selections.size() == 1U
+                           ? linePoint(sketch::PointKey::Start)
+                           : point(0U);
+          auto second = gesture.selections.size() == 1U
+                            ? linePoint(sketch::PointKey::End)
+                            : point(1U);
+          if (!first)
+            return std::unexpected(std::move(first.error()));
+          if (!second)
+            return std::unexpected(std::move(second.error()));
+          if (gesture.kind == LocalSketchConstraintKind::Distance)
+            constraint.emplace(
+                sketch::Distance{*constraintId, *first, *second, *value});
+          else if (gesture.kind ==
+                   LocalSketchConstraintKind::HorizontalDistance)
+            constraint.emplace(sketch::HorizontalDistance{*constraintId, *first,
+                                                          *second, *value});
+          else
+            constraint.emplace(sketch::VerticalDistance{*constraintId, *first,
+                                                        *second, *value});
+        }
+      }
+    } else if (gesture.kind == LocalSketchConstraintKind::Group) {
+      std::vector<SketchEntityId> entities;
+      entities.reserve(gesture.selections.size());
+      for (std::size_t index = 0U; index < gesture.selections.size(); ++index) {
+        auto selected = entity(index);
+        if (!selected)
+          return std::unexpected(std::move(selected.error()));
+        entities.push_back(*selected);
+      }
+      constraint.emplace(sketch::Group{*constraintId, std::move(entities)});
+    } else if (gesture.kind == LocalSketchConstraintKind::HorizontalVertical) {
+      auto selected = entity(0U);
+      if (!selected)
+        return std::unexpected(std::move(selected.error()));
+      const auto found = std::ranges::find(state->definition.entities,
+                                           *selected, sketch::entityId);
+      if (found == state->definition.entities.end())
+        return std::unexpected(
+            diagnostic("sketch.reference.missing-entity",
+                       "constraint references a missing entity"));
+      const auto *line = std::get_if<sketch::LineEntity>(&*found);
+      if (!line)
+        return std::unexpected(
+            diagnostic("sketch.constraint.requires-line",
+                       "Horizontal / Vertical needs a selected line"));
+      const double deltaX = line->end.x.si() - line->start.x.si();
+      const double deltaY = line->end.y.si() - line->start.y.si();
+      if (std::abs(deltaX) >= std::abs(deltaY))
+        constraint.emplace(sketch::Horizontal{*constraintId, *selected});
+      else
+        constraint.emplace(sketch::Vertical{*constraintId, *selected});
+    } else {
+      auto first = entity(0U);
+      if (!first)
+        return std::unexpected(std::move(first.error()));
+      if (gesture.kind == LocalSketchConstraintKind::Horizontal)
+        constraint.emplace(sketch::Horizontal{*constraintId, *first});
+      else if (gesture.kind == LocalSketchConstraintKind::Vertical)
+        constraint.emplace(sketch::Vertical{*constraintId, *first});
+      else if (gesture.kind == LocalSketchConstraintKind::Block)
+        constraint.emplace(sketch::Block{*constraintId, *first});
+      else {
+        auto second = entity(1U);
+        if (!second)
+          return std::unexpected(std::move(second.error()));
+        switch (gesture.kind) {
+        case LocalSketchConstraintKind::Parallel:
+          constraint.emplace(sketch::Parallel{*constraintId, *first, *second});
+          break;
+        case LocalSketchConstraintKind::Perpendicular:
+          constraint.emplace(
+              sketch::Perpendicular{*constraintId, *first, *second});
+          break;
+        case LocalSketchConstraintKind::Tangent:
+          constraint.emplace(sketch::Tangent{*constraintId, *first, *second});
+          break;
+        case LocalSketchConstraintKind::Equal:
+          constraint.emplace(sketch::Equal{*constraintId, *first, *second});
+          break;
+        case LocalSketchConstraintKind::Concentric:
+          constraint.emplace(
+              sketch::Concentric{*constraintId, *first, *second});
+          break;
+        case LocalSketchConstraintKind::Collinear:
+          constraint.emplace(sketch::Collinear{*constraintId, *first, *second});
+          break;
+        case LocalSketchConstraintKind::Coincident:
+        case LocalSketchConstraintKind::Horizontal:
+        case LocalSketchConstraintKind::Vertical:
+        case LocalSketchConstraintKind::Midpoint:
+        case LocalSketchConstraintKind::Block:
+        case LocalSketchConstraintKind::PointOnObject:
+        case LocalSketchConstraintKind::Symmetric:
+        case LocalSketchConstraintKind::Lock:
+        case LocalSketchConstraintKind::Distance:
+        case LocalSketchConstraintKind::HorizontalDistance:
+        case LocalSketchConstraintKind::VerticalDistance:
+        case LocalSketchConstraintKind::Radius:
+        case LocalSketchConstraintKind::Diameter:
+        case LocalSketchConstraintKind::Angle:
+        case LocalSketchConstraintKind::HorizontalVertical:
+        case LocalSketchConstraintKind::Group:
+        case LocalSketchConstraintKind::RemoveAxisAlignment:
+          break;
+        }
+      }
+    }
+    if (!constraint)
+      return std::unexpected(diagnostic("desktop.sketch.constraint-kind",
+                                        "Sketch constraint is unsupported",
+                                        Severity::Fatal));
+    const std::array edits{
+        sketch::Edit{sketch::AppendConstraint{std::move(*constraint)}}};
+    auto edited = sketch::applyEdits(state->definition, edits);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
   }
 
   Result<LocalSketchProjection>
@@ -303,7 +968,333 @@ struct Backend final {
     return applyEdits(std::move(*edited));
   }
 
-  Result<LocalSketchProjection> dragCurve(const LocalSketchCurveDrag &drag) {
+  Result<LocalSketchProjection> editBSpline(const LocalBSplineEdit &edit) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before editing its B-splines"));
+    auto id = SketchEntityId::parse(edit.entityId.toStdString());
+    if (!id)
+      return std::unexpected(std::move(id.error()));
+    const auto found =
+        std::ranges::find(state->definition.entities, *id, sketch::entityId);
+    if (found == state->definition.entities.end() ||
+        !std::holds_alternative<sketch::BSplineEntity>(*found))
+      return std::unexpected(
+          diagnostic("desktop.sketch.bspline-required",
+                     "Select a B-spline for this operation"));
+    const auto operation = [kind = edit.kind] {
+      switch (kind) {
+      case LocalBSplineEditKind::IncreaseDegree:
+        return adapters::BSplineEdit::IncreaseDegree;
+      case LocalBSplineEditKind::DecreaseDegree:
+        return adapters::BSplineEdit::DecreaseDegree;
+      case LocalBSplineEditKind::IncreaseKnotMultiplicity:
+        return adapters::BSplineEdit::IncreaseKnotMultiplicity;
+      case LocalBSplineEditKind::DecreaseKnotMultiplicity:
+        return adapters::BSplineEdit::DecreaseKnotMultiplicity;
+      case LocalBSplineEditKind::InsertKnot:
+        return adapters::BSplineEdit::InsertKnot;
+      case LocalBSplineEditKind::SetPoleWeight:
+        return adapters::BSplineEdit::SetPoleWeight;
+      }
+      std::unreachable();
+    }();
+    auto replacement = adapters::editBSpline(
+        {std::get<sketch::BSplineEntity>(*found), operation, edit.index,
+         edit.value, edit.maximumDeviationMetres});
+    if (!replacement)
+      return std::unexpected(std::move(replacement.error()));
+    const std::array edits{
+        sketch::Edit{sketch::ReplaceEntity{std::move(*replacement)}}};
+    auto applied = sketch::applyEdits(state->definition, edits);
+    if (!applied)
+      return std::unexpected(std::move(applied.error()));
+    return applyEdits(std::move(*applied));
+  }
+
+  Result<LocalSketchProjection> transform(const LocalSketchTransform &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before transforming its geometry"));
+    if (request.transforms.empty())
+      return std::unexpected(diagnostic("desktop.sketch.transform-count",
+                                        "Sketch transform count is invalid"));
+    std::vector<SketchEntityId> entities;
+    entities.reserve(request.entityIds.size());
+    for (const QString &text : request.entityIds) {
+      auto id = SketchEntityId::parse(text.toStdString());
+      if (!id)
+        return std::unexpected(std::move(id.error()));
+      entities.push_back(*id);
+    }
+    const auto convert = [](const LocalSimilarityTransform &source)
+        -> Result<sketch::SimilarityTransform2d> {
+      auto pivotX = length(source.pivotXMetres);
+      auto pivotY = length(source.pivotYMetres);
+      auto translationX = length(source.translationXMetres);
+      auto translationY = length(source.translationYMetres);
+      if (!pivotX)
+        return std::unexpected(std::move(pivotX.error()));
+      if (!pivotY)
+        return std::unexpected(std::move(pivotY.error()));
+      if (!translationX)
+        return std::unexpected(std::move(translationX.error()));
+      if (!translationY)
+        return std::unexpected(std::move(translationY.error()));
+      return sketch::SimilarityTransform2d{{*pivotX, *pivotY},
+                                           {*translationX, *translationY},
+                                           source.rotationRadians,
+                                           source.scale,
+                                           source.reflected};
+    };
+
+    if (request.mode == LocalSketchTransformMode::Replace) {
+      if (request.transforms.size() != 1U)
+        return std::unexpected(diagnostic("desktop.sketch.transform-count",
+                                          "Replace requires one transform"));
+      auto operation = convert(request.transforms.front());
+      if (!operation)
+        return std::unexpected(std::move(operation.error()));
+      if (request.externalConstraints !=
+              LocalExternalConstraintPolicy::Refuse &&
+          request.externalConstraints != LocalExternalConstraintPolicy::Detach)
+        return std::unexpected(
+            diagnostic("desktop.sketch.transform-constraint-policy",
+                       "Sketch transform constraint policy is invalid"));
+      const auto policy =
+          request.externalConstraints == LocalExternalConstraintPolicy::Detach
+              ? sketch::ExternalConstraintPolicy::Detach
+              : sketch::ExternalConstraintPolicy::Refuse;
+      auto edited = sketch::transformSelection(state->definition, entities,
+                                               *operation, policy);
+      if (!edited)
+        return std::unexpected(std::move(edited.error()));
+      return applyEdits(std::move(*edited));
+    }
+    if (request.mode != LocalSketchTransformMode::Copy)
+      return std::unexpected(diagnostic("desktop.sketch.transform-mode",
+                                        "Sketch transform mode is invalid"));
+    if (request.dimensions != LocalDimensionCopyPolicy::Preserve &&
+        request.dimensions != LocalDimensionCopyPolicy::Equalize)
+      return std::unexpected(
+          diagnostic("desktop.sketch.transform-dimension-policy",
+                     "Sketch transform dimension policy is invalid"));
+
+    std::vector<sketch::TransformCopy> copies;
+    copies.reserve(request.transforms.size());
+    sketch::Definition labelState = state->definition;
+    for (const LocalSimilarityTransform &source : request.transforms) {
+      auto operation = convert(source);
+      if (!operation)
+        return std::unexpected(std::move(operation.error()));
+      auto requirements =
+          sketch::copyRequirements(state->definition, entities, *operation);
+      if (!requirements)
+        return std::unexpected(std::move(requirements.error()));
+      sketch::TransformCopy copy{*operation, {}, {}, {}};
+      for (SketchEntityId sourceId : requirements->entities) {
+        auto target = makeId<SketchEntityId>();
+        if (!target)
+          return std::unexpected(std::move(target.error()));
+        copy.entities.push_back({sourceId, *target});
+      }
+      for (SketchConstraintId sourceId : requirements->constraints) {
+        auto target = makeId<SketchConstraintId>();
+        if (!target)
+          return std::unexpected(std::move(target.error()));
+        copy.constraints.push_back({sourceId, *target});
+      }
+      for (SketchObjectId sourceId : requirements->objects) {
+        const auto found = std::ranges::find(labelState.objects, sourceId,
+                                             &sketch::SketchObject::id);
+        if (found == labelState.objects.end())
+          return std::unexpected(
+              diagnostic("desktop.sketch.transform-object",
+                         "Sketch transform object is missing"));
+        auto target = makeId<SketchObjectId>();
+        if (!target)
+          return std::unexpected(std::move(target.error()));
+        std::string label = sketch::nextSketchObjectLabel(
+            labelState, sketch::sketchObjectLabelPrefix(found->kind));
+        copy.objects.push_back({sourceId, *target, label});
+        sketch::SketchObject reserved = *found;
+        reserved.id = *target;
+        reserved.label = std::move(label);
+        labelState.objects.push_back(std::move(reserved));
+      }
+      copies.push_back(std::move(copy));
+    }
+    const auto dimensions =
+        request.dimensions == LocalDimensionCopyPolicy::Equalize
+            ? sketch::DimensionCopyPolicy::Equalize
+            : sketch::DimensionCopyPolicy::Preserve;
+    auto edited =
+        sketch::copySelection(state->definition, entities, copies, dimensions);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSketchProjection> modifyCorner(const LocalCornerEdit &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before modifying its geometry"));
+    if (request.kind != LocalCornerEditKind::Fillet &&
+        request.kind != LocalCornerEditKind::Chamfer)
+      return std::unexpected(diagnostic("desktop.sketch.corner-kind",
+                                        "Corner edit kind is invalid"));
+    const auto curvePick =
+        [](const LocalCurvePick &input) -> Result<sketch::CurvePick> {
+      auto entity = SketchEntityId::parse(input.entityId.toStdString());
+      auto x = length(input.referenceXMetres);
+      auto y = length(input.referenceYMetres);
+      if (!entity)
+        return std::unexpected(std::move(entity.error()));
+      if (!x)
+        return std::unexpected(std::move(x.error()));
+      if (!y)
+        return std::unexpected(std::move(y.error()));
+      return sketch::CurvePick{*entity, {*x, *y}};
+    };
+    auto first = curvePick(request.first);
+    auto second = curvePick(request.second);
+    auto size = length(request.sizeMetres);
+    auto object = makeId<SketchObjectId>();
+    auto curve = makeId<SketchEntityId>();
+    if (!first)
+      return std::unexpected(std::move(first.error()));
+    if (!second)
+      return std::unexpected(std::move(second.error()));
+    if (!size)
+      return std::unexpected(std::move(size.error()));
+    if (!object)
+      return std::unexpected(std::move(object.error()));
+    if (!curve)
+      return std::unexpected(std::move(curve.error()));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(
+          diagnostic("desktop.sketch.corner-constraint-policy",
+                     "Corner edit constraint policy is invalid"));
+    std::vector<SketchConstraintId> generatedConstraints;
+    generatedConstraints.reserve(5U);
+    for (std::size_t index = 0U; index < 5U; ++index) {
+      auto constraint = makeId<SketchConstraintId>();
+      if (!constraint)
+        return std::unexpected(std::move(constraint.error()));
+      generatedConstraints.push_back(*constraint);
+    }
+    const std::array constraints{
+        generatedConstraints[0], generatedConstraints[1],
+        generatedConstraints[2], generatedConstraints[3],
+        generatedConstraints[4]};
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    auto edited = sketch::editLineCorner(
+        state->definition, {request.kind == LocalCornerEditKind::Fillet
+                                ? sketch::CornerEditKind::Fillet
+                                : sketch::CornerEditKind::Chamfer,
+                            *first,
+                            *second,
+                            *size,
+                            {*object, *curve, constraints},
+                            constraintPolicy});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSketchProjection> offset(const LocalOffsetEdit &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before offsetting its geometry"));
+    if (request.sourceMode != LocalOffsetSourceMode::Keep &&
+        request.sourceMode != LocalOffsetSourceMode::Delete)
+      return std::unexpected(diagnostic("desktop.sketch.offset-mode",
+                                        "Offset source mode is invalid"));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(
+          diagnostic("desktop.sketch.offset-constraint-policy",
+                     "Offset constraint policy is invalid"));
+    auto distance = length(request.distanceMetres);
+    if (!distance)
+      return std::unexpected(std::move(distance.error()));
+    const auto sourceMode = request.sourceMode == LocalOffsetSourceMode::Delete
+                                ? sketch::OffsetSourceMode::Delete
+                                : sketch::OffsetSourceMode::Keep;
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    sketch::OffsetEdit edit{{}, *distance, sourceMode, {}, constraintPolicy};
+    edit.curves.reserve(request.entityIds.size());
+    edit.outputs.reserve(request.entityIds.size());
+    for (const QString &text : request.entityIds) {
+      auto source = SketchEntityId::parse(text.toStdString());
+      auto object = makeId<SketchObjectId>();
+      auto curve = makeId<SketchEntityId>();
+      if (!source)
+        return std::unexpected(std::move(source.error()));
+      if (!object)
+        return std::unexpected(std::move(object.error()));
+      if (!curve)
+        return std::unexpected(std::move(curve.error()));
+      edit.curves.push_back(*source);
+      edit.outputs.push_back({*object, *curve});
+    }
+    auto edited = sketch::offsetCurves(state->definition, edit);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSketchProjection> extend(const LocalExtendEdit &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before extending its geometry"));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(
+          diagnostic("desktop.sketch.extend-constraint-policy",
+                     "Extend constraint policy is invalid"));
+    auto entity = SketchEntityId::parse(request.curve.entityId.toStdString());
+    auto referenceX = length(request.curve.referenceXMetres);
+    auto referenceY = length(request.curve.referenceYMetres);
+    auto targetX = length(request.targetXMetres);
+    auto targetY = length(request.targetYMetres);
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    if (!referenceX)
+      return std::unexpected(std::move(referenceX.error()));
+    if (!referenceY)
+      return std::unexpected(std::move(referenceY.error()));
+    if (!targetX)
+      return std::unexpected(std::move(targetX.error()));
+    if (!targetY)
+      return std::unexpected(std::move(targetY.error()));
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    auto edited = sketch::extendCurve(state->definition,
+                                      {{*entity, {*referenceX, *referenceY}},
+                                       {*targetX, *targetY},
+                                       constraintPolicy});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<sketch::AppliedEdits>
+  curveDragEdits(const LocalSketchCurveDrag &drag) const {
     if (!state)
       return std::unexpected(
           diagnostic("desktop.sketch.not-created",
@@ -331,6 +1322,47 @@ struct Backend final {
       return std::unexpected(std::move(currentY.error()));
     auto edited = sketch::dragCurve(
         state->definition, {*id, {*firstX, *firstY}, {*currentX, *currentY}});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return edited;
+  }
+
+  Result<std::shared_ptr<const render::SketchSceneSnapshot>>
+  previewCurveDrag(const LocalSketchCurveDrag &drag) {
+    auto edited = curveDragEdits(drag);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    if (!state || !state->evaluation ||
+        !state->evaluation->replacementScene)
+      return std::unexpected(diagnostic(
+          "desktop.sketch.preview-scene-missing",
+          "Sketch drag preview needs the current evaluated scene"));
+    if (sceneGeneration == std::numeric_limits<std::uint64_t>::max())
+      return std::unexpected(diagnostic(
+          "desktop.sketch.scene-generation-exhausted",
+          "local Sketch scene generation is exhausted", Severity::Fatal));
+    auto generation = render::SceneGeneration::create(++sceneGeneration);
+    auto job = makeId<JobId>();
+    if (!generation)
+      return std::unexpected(std::move(generation.error()));
+    if (!job)
+      return std::unexpected(std::move(job.error()));
+    auto digest = operationDigest<render::SceneDigest>(
+        "kearne.desktop.sketch-drag-preview.v1", *job);
+    if (!digest)
+      return std::unexpected(std::move(digest.error()));
+    auto scene = render::projectSketchScene(
+        {state->evaluation->replacementScene->stamp().target, *generation,
+         *digest},
+        edited->target.entities);
+    if (!scene)
+      return std::unexpected(std::move(scene.error()));
+    return std::make_shared<const render::SketchSceneSnapshot>(
+        std::move(*scene));
+  }
+
+  Result<LocalSketchProjection> dragCurve(const LocalSketchCurveDrag &drag) {
+    auto edited = curveDragEdits(drag);
     if (!edited)
       return std::unexpected(std::move(edited.error()));
     return applyEdits(std::move(*edited));
@@ -563,10 +1595,17 @@ public:
   }
 
   Result<LocalSketchProjection>
-  applyRectangle(const LocalRectangleGesture &gesture) {
+  applyTool(const LocalSketchToolGesture &gesture) {
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
-    return backend_->applyRectangle(gesture);
+    return backend_->applyTool(gesture);
+  }
+
+  Result<LocalSketchProjection>
+  applyConstraint(const LocalSketchConstraintGesture &gesture) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->applyConstraint(gesture);
   }
 
   Result<LocalSketchProjection>
@@ -576,10 +1615,48 @@ public:
     return backend_->toggleConstruction(toggle);
   }
 
+  Result<LocalSketchProjection> editBSpline(const LocalBSplineEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->editBSpline(edit);
+  }
+
+  Result<LocalSketchProjection>
+  transform(const LocalSketchTransform &transform) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->transform(transform);
+  }
+
+  Result<LocalSketchProjection> modifyCorner(const LocalCornerEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->modifyCorner(edit);
+  }
+
+  Result<LocalSketchProjection> offset(const LocalOffsetEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->offset(edit);
+  }
+
+  Result<LocalSketchProjection> extend(const LocalExtendEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->extend(edit);
+  }
+
   Result<LocalSketchProjection> dragCurve(const LocalSketchCurveDrag &drag) {
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
     return backend_->dragCurve(drag);
+  }
+
+  Result<std::shared_ptr<const render::SketchSceneSnapshot>>
+  previewCurveDrag(const LocalSketchCurveDrag &drag) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->previewCurveDrag(drag);
   }
 
   Result<LocalSketchProjection>
@@ -712,6 +1789,76 @@ struct LocalSketchSession::Impl final {
     startPreparation();
   }
 
+  struct PendingCurvePreview {
+    LocalSketchCurveDrag drag;
+    CurvePreviewCompletion completion;
+    std::uint64_t sequence = 0U;
+  };
+
+  bool previewCurveDrag(LocalSketchCurveDrag drag,
+                        CurvePreviewCompletion completion) {
+    if (stopping || !worker || !completion ||
+        previewSequence == std::numeric_limits<std::uint64_t>::max())
+      return false;
+    latestCurvePreview = PendingCurvePreview{
+        std::move(drag), std::move(completion), ++previewSequence};
+    if (!curvePreviewRunning)
+      dispatchCurvePreview();
+    return true;
+  }
+
+  void cancelCurveDragPreview() {
+    latestCurvePreview.reset();
+    if (previewSequence != std::numeric_limits<std::uint64_t>::max())
+      ++previewSequence;
+  }
+
+  void dispatchCurvePreview() {
+    if (curvePreviewRunning || !latestCurvePreview || stopping || !worker)
+      return;
+    PendingCurvePreview request = std::move(*latestCurvePreview);
+    latestCurvePreview.reset();
+    curvePreviewRunning = true;
+    CurvePreviewCompletion dispatchFailure = request.completion;
+    const QPointer<LocalSketchSession> lifetime{&owner};
+    const bool queued = QMetaObject::invokeMethod(
+        worker,
+        [target = worker, lifetime, request = std::move(request)]() mutable {
+          auto result = std::make_shared<Result<std::shared_ptr<
+              const render::SketchSceneSnapshot>>>(
+              target->previewCurveDrag(request.drag));
+          if (!lifetime)
+            return;
+          static_cast<void>(QMetaObject::invokeMethod(
+              lifetime,
+              [lifetime, sequence = request.sequence,
+               completion = std::move(request.completion),
+               result = std::move(result)]() mutable {
+                if (lifetime)
+                  lifetime->impl_->finishCurvePreview(
+                      sequence, std::move(completion), std::move(*result));
+              },
+              Qt::QueuedConnection));
+        },
+        Qt::QueuedConnection);
+    if (!queued) {
+      curvePreviewRunning = false;
+      dispatchFailure(std::unexpected(diagnostic(
+          "desktop.sketch.preview-dispatch",
+          "Sketch drag preview could not be dispatched")));
+    }
+  }
+
+  void finishCurvePreview(
+      std::uint64_t sequence, CurvePreviewCompletion completion,
+      Result<std::shared_ptr<const render::SketchSceneSnapshot>> result) {
+    curvePreviewRunning = false;
+    if (sequence == previewSequence && !latestCurvePreview)
+      completion(std::move(result));
+    if (latestCurvePreview)
+      dispatchCurvePreview();
+  }
+
   ~Impl() {
     stopping = true;
     if (worker && thread.isRunning())
@@ -762,9 +1909,12 @@ struct LocalSketchSession::Impl final {
   SessionWorker *worker;
   std::atomic_size_t pending = 0U;
   std::vector<ReadinessCompletion> readinessCompletions;
+  std::optional<PendingCurvePreview> latestCurvePreview;
   std::optional<Diagnostic> preparationError;
+  std::uint64_t previewSequence = 0U;
   bool preparationQueued = false;
   bool preparationReady = false;
+  bool curvePreviewRunning = false;
   bool stopping = false;
 };
 
@@ -789,11 +1939,20 @@ bool LocalSketchSession::create(LocalSketchCreation creation,
       std::move(completion));
 }
 
-bool LocalSketchSession::applyRectangle(LocalRectangleGesture gesture,
-                                        Completion completion) {
+bool LocalSketchSession::applyTool(LocalSketchToolGesture gesture,
+                                   Completion completion) {
   return impl_->submit(
-      [gesture](SessionWorker &worker) {
-        return worker.applyRectangle(gesture);
+      [gesture = std::move(gesture)](SessionWorker &worker) {
+        return worker.applyTool(gesture);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::applyConstraint(LocalSketchConstraintGesture gesture,
+                                         Completion completion) {
+  return impl_->submit(
+      [gesture = std::move(gesture)](SessionWorker &worker) {
+        return worker.applyConstraint(gesture);
       },
       std::move(completion));
 }
@@ -807,6 +1966,49 @@ bool LocalSketchSession::toggleConstruction(
       std::move(completion));
 }
 
+bool LocalSketchSession::editBSpline(LocalBSplineEdit edit,
+                                     Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.editBSpline(edit);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::transform(LocalSketchTransform transform,
+                                   Completion completion) {
+  return impl_->submit(
+      [transform = std::move(transform)](SessionWorker &worker) {
+        return worker.transform(transform);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::modifyCorner(LocalCornerEdit edit,
+                                      Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.modifyCorner(edit);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::offset(LocalOffsetEdit edit, Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.offset(edit);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::extend(LocalExtendEdit edit, Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.extend(edit);
+      },
+      std::move(completion));
+}
+
 bool LocalSketchSession::dragCurve(LocalSketchCurveDrag drag,
                                    Completion completion) {
   return impl_->submit(
@@ -814,6 +2016,15 @@ bool LocalSketchSession::dragCurve(LocalSketchCurveDrag drag,
         return worker.dragCurve(drag);
       },
       std::move(completion));
+}
+
+bool LocalSketchSession::previewCurveDrag(
+    LocalSketchCurveDrag drag, CurvePreviewCompletion completion) {
+  return impl_->previewCurveDrag(std::move(drag), std::move(completion));
+}
+
+void LocalSketchSession::cancelCurveDragPreview() {
+  impl_->cancelCurveDragPreview();
 }
 
 bool LocalSketchSession::replaceSource(LocalSourceReplacement replacement,

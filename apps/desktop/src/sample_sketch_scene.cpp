@@ -1,4 +1,4 @@
-#include "development_sketch_scene.hpp"
+#include "sample_sketch_scene.hpp"
 
 #include <array>
 #include <cstddef>
@@ -36,7 +36,7 @@ Result<sketch::Point2> point(double x, double y) {
 } // namespace
 
 Result<std::shared_ptr<const render::SketchSceneSnapshot>>
-makeDevelopmentSketchScene() {
+makeSampleSketchScene() {
   auto session = render::RenderSessionHandle::create(1U);
   auto binding = fixtureId<ModelBindingId>(50U);
   auto revision = fixtureDigest<RevisionId>(51U);
@@ -55,14 +55,14 @@ makeDevelopmentSketchScene() {
     return std::unexpected(std::move(generation.error()));
   if (!sceneDigest)
     return std::unexpected(std::move(sceneDigest.error()));
-  return makeDevelopmentSketchScene(
+  return makeSampleSketchScene(
       render::SceneStamp{{*session, {*binding, *revision}, *evaluation},
                          *generation,
                          *sceneDigest});
 }
 
 Result<std::shared_ptr<const render::SketchSceneSnapshot>>
-makeDevelopmentSketchScene(render::SceneStamp stamp) {
+makeSampleSketchScene(render::SceneStamp stamp) {
   constexpr std::array edges{
       std::array{-0.05, -0.03, 0.05, -0.03},
       std::array{0.05, -0.03, 0.05, 0.03},

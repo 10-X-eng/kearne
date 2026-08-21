@@ -124,8 +124,25 @@ snapshotStrokePrimitive(const void *opaque, std::size_t index) noexcept {
   case SketchPrimitiveKind::Arc:
     kind = SketchStrokeSourceKind::Arc;
     break;
+  case SketchPrimitiveKind::Ellipse:
+    kind = SketchStrokeSourceKind::Ellipse;
+    break;
+  case SketchPrimitiveKind::EllipticalArc:
+    kind = SketchStrokeSourceKind::EllipticalArc;
+    break;
+  case SketchPrimitiveKind::HyperbolicArc:
+    kind = SketchStrokeSourceKind::HyperbolicArc;
+    break;
+  case SketchPrimitiveKind::ParabolicArc:
+    kind = SketchStrokeSourceKind::ParabolicArc;
+    break;
+  case SketchPrimitiveKind::BSpline:
+    kind = SketchStrokeSourceKind::BSpline;
+    break;
   }
-  const Point2d first = snapshot.points()[primitive.firstPoint];
+  const Point2d first = primitive.kind == SketchPrimitiveKind::BSpline
+                            ? Point2d{}
+                            : snapshot.points()[primitive.firstPoint];
   const Point2d second = primitive.kind == SketchPrimitiveKind::Line
                              ? snapshot.points()[primitive.firstPoint + 1U]
                              : first;
@@ -137,7 +154,27 @@ snapshotStrokePrimitive(const void *opaque, std::size_t index) noexcept {
           second,
           primitive.radius,
           primitive.startAngleRadians,
-          primitive.sweepAngleRadians};
+          primitive.sweepAngleRadians,
+          0U,
+          primitive.secondaryRadius,
+          primitive.rotationAngleRadians};
+}
+
+sketch::NurbsView snapshotStrokeSpline(const void *opaque,
+                                       std::size_t index) noexcept {
+  const auto &snapshot = *static_cast<const SketchSceneSnapshot *>(opaque);
+  const PackedSketchPrimitive &primitive = snapshot.primitives()[index];
+  if (primitive.kind != SketchPrimitiveKind::BSpline)
+    return {};
+  const PackedSketchSpline &spline = snapshot.splines()[primitive.spline];
+  const std::size_t count = spline.controlPointCount;
+  return {
+      snapshot.splineControlPointCoordinates().subspan(
+          static_cast<std::size_t>(spline.firstControlPoint) * 2U, count * 2U),
+      snapshot.splineKnots().subspan(spline.firstKnot,
+                                     count + spline.degree + 1U),
+      snapshot.splineWeights().subspan(spline.firstWeight, count),
+      spline.degree};
 }
 
 SketchStrokeMeshSource neutralSource(const SketchSceneSnapshot &snapshot) {
@@ -146,7 +183,8 @@ SketchStrokeMeshSource neutralSource(const SketchSceneSnapshot &snapshot) {
           &snapshot,
           snapshot.primitives().size(),
           snapshotStrokePrimitive,
-          {bounds.minimum, bounds.maximum, bounds.empty}};
+          {bounds.minimum, bounds.maximum, bounds.empty},
+          snapshotStrokeSpline};
 }
 
 void requireSameNeutralMesh(const SketchSceneMesh &actual,
@@ -1087,6 +1125,73 @@ void verifyResizeAndPicking(const testkit::PropertyProfile &profile) {
       });
 }
 
+void verifyLogicalPickInvariance(const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "sketch picking preserves logical-pixel tolerance across views", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        auto handle = SketchPrimitiveHandle::create(1U);
+        require(handle.has_value(), "line pick handle was invalid");
+        auto line = SketchSceneSnapshot::create(
+            stamp(18, index + 1U, 18, 18, 18, index + 1U), styles(),
+            {{-0.05, 0.0}, {0.05, 0.0}},
+            {{id<SketchEntityId>(index + 1U), *handle, 0, 0,
+              SketchPrimitiveKind::Line,
+              SketchPrimitiveFlags::Visible | SketchPrimitiveFlags::Selectable,
+              0.0, 0.0, 0.0}});
+        require(line.has_value(), "line pick scene was invalid");
+        const auto shared =
+            std::make_shared<const SketchSceneSnapshot>(std::move(*line));
+        constexpr std::array scales{1.0e-5, 2.0e-4, 4.0e-3};
+        constexpr std::array offsets{0.0, 3.0, 12.0};
+        std::array<bool, offsets.size()> baseline{};
+        for (std::size_t viewIndex = 0U; viewIndex < scales.size();
+             ++viewIndex) {
+          SketchScenePresenter presenter;
+          presenter.retarget(shared->stamp().target);
+          const SketchCamera2d camera{
+              viewIndex + 2U,
+              {0.0, 0.0},
+              scales[viewIndex],
+              random.between(-std::numbers::pi, std::numbers::pi)};
+          require(presenter.publishCamera(camera) ==
+                      SketchCameraDecision::Accepted,
+                  "logical pick camera was rejected");
+          require(presenter
+                      .publish(preparedProductPacket(
+                          preparedScene(shared, presenter.requestedLod())))
+                      .has_value(),
+                  "logical pick scene publication failed");
+          const QSizeF viewport{random.between(320.0, 2560.0),
+                                random.between(240.0, 1600.0)};
+          auto frame = presenter.synchronize(viewport);
+          require(frame.has_value(), "logical pick frame was not synchronized");
+          const QPointF first = (*frame)->transform().toItem({-0.05, 0.0});
+          const QPointF second = (*frame)->transform().toItem({0.05, 0.0});
+          const QPointF delta = second - first;
+          const double length = std::hypot(delta.x(), delta.y());
+          require(std::isfinite(length) && length > 0.0,
+                  "logical pick line collapsed in item space");
+          const QPointF normal{-delta.y() / length, delta.x() / length};
+          const QPointF midpoint = (first + second) * 0.5;
+          for (std::size_t offsetIndex = 0U; offsetIndex < offsets.size();
+               ++offsetIndex) {
+            auto picked =
+                presenter.pick(*frame, midpoint + normal * offsets[offsetIndex],
+                               4.0, SketchPickTargets::Curves);
+            require(picked.has_value(), "logical pick query was rejected");
+            const bool hit = picked->hit.has_value();
+            if (viewIndex == 0U)
+              baseline[offsetIndex] = hit;
+            else
+              require(hit == baseline[offsetIndex],
+                      "zoom, rotation, or logical viewport changed pick reach");
+          }
+        }
+        require(baseline == std::array{true, true, false},
+                "logical pick reach does not match stroke plus tolerance");
+      });
+}
+
 void requireValidPrimitiveTessellationIndex(
     const SketchSceneSnapshot &scene, const SketchSceneMesh &mesh,
     const SketchPrimitiveTessellationIndex &index) {
@@ -1205,7 +1310,12 @@ void requireValidMesh(
                   std::isfinite(vertex.extrusionX) &&
                   std::isfinite(vertex.extrusionY) &&
                   std::isfinite(vertex.pathDistanceMetres) &&
-                  vertex.pathDistanceMetres >= 0.0F,
+                  vertex.pathDistanceMetres >= 0.0F &&
+                  std::isfinite(vertex.patternOnLogicalPixels) &&
+                  std::isfinite(vertex.patternPeriodLogicalPixels) &&
+                  vertex.patternOnLogicalPixels >= 0.0F &&
+                  vertex.patternPeriodLogicalPixels >=
+                      vertex.patternOnLogicalPixels,
               "mesh contains a non-finite vertex");
     for (const std::uint32_t vertexIndex : chunk->indices())
       require(vertexIndex < chunk->vertices().size(),
@@ -1925,6 +2035,60 @@ void verifyLargeCoordinatePrecision() {
           "floating-origin GPU transform lost millimetre geometry");
 }
 
+void verifyRationalBSplineMesh(const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "rational B-spline reaches bounded desktop stroke preparation", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const double x = random.between(-10.0, 10.0);
+        const double y = random.between(-10.0, 10.0);
+        const double extent = random.between(0.0001, 0.01);
+        std::vector<double> coordinates{x,
+                                        y,
+                                        x + extent,
+                                        y + extent * 1.5,
+                                        x + extent * 2.0,
+                                        y - extent,
+                                        x + extent * 3.0,
+                                        y + extent * 0.25};
+        std::vector<double> knots{0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0};
+        std::vector<double> weights{1.0, random.between(0.25, 4.0),
+                                    random.between(0.25, 4.0), 1.0};
+        auto handle = SketchPrimitiveHandle::create(1U);
+        require(handle.has_value(), "B-spline primitive handle failed");
+        PackedSketchPrimitive primitive{id<SketchEntityId>(100'000U + index),
+                                        *handle,
+                                        0U,
+                                        0U,
+                                        SketchPrimitiveKind::BSpline,
+                                        SketchPrimitiveFlags::Visible |
+                                            SketchPrimitiveFlags::Selectable};
+        primitive.spline = 0U;
+        SketchPrimitiveBatch batch{{},
+                                   {primitive},
+                                   std::move(coordinates),
+                                   std::move(knots),
+                                   std::move(weights),
+                                   {{0U, 4U, 0U, 0U, 3U, false}}};
+        auto scene = SketchSceneSnapshot::create(
+            stamp(13, index + 1U, 13, 13, 13, index + 1U), styles(),
+            std::move(batch));
+        require(scene.has_value(), "valid B-spline desktop scene was rejected");
+        const SketchCurveLod lod{};
+        auto mesh = buildSketchSceneMesh(*scene, lod);
+        if (!mesh)
+          throw std::runtime_error(mesh.error().code + ": " +
+                                   mesh.error().summary);
+        require(mesh && mesh->metrics().visiblePrimitives == 1U &&
+                    mesh->metrics().vertices >= 4U &&
+                    mesh->metrics().indices >= 6U && !mesh->chunks().empty(),
+                "rational B-spline did not produce a desktop stroke mesh");
+        for (const auto &chunk : mesh->chunks())
+          require(chunk->bounds().maximumAnalyticDeviationMetres <=
+                      lod.maximumChordErrorMetres(),
+                  "B-spline mesh exceeded its declared LOD error");
+      });
+}
+
 std::shared_ptr<const SketchSceneSnapshot>
 fixedScene(SceneStamp sceneStamp, std::vector<SketchStyle> sceneStyles,
            std::vector<Point2d> points,
@@ -2078,8 +2242,9 @@ void verifyExactRenderedPicking() {
   require(chordMidpointPick && chordMidpointPick->hit &&
               chordMidpointPick->displayedDistanceLogicalPixels == 0.0 &&
               arcFrame->presentedChunks()->maximumAnalyticDeviationMetres() >
-                  arcFrame->presentedChunks()->maximumExtrusionLogicalPixels() *
-                      camera.metresPerLogicalPixel,
+                  0.0 &&
+              arcFrame->presentedChunks()->maximumExtrusionLogicalPixels() >
+                  arcStyle.front().strokeWidthPixels * 0.5F,
           "resident chord deviation was absent from broad-phase coverage");
   const double halfSegment = std::numbers::pi / 12.0;
   const QPointF analyticArc{160.0 + 20.0 * std::cos(halfSegment),
@@ -2100,7 +2265,15 @@ void verifyExactRenderedPicking() {
                           static_cast<double>(vertex.extrusionY));
       });
   require(miter != arcVertices.end(), "rendered arc omitted miter vertices");
-  const QPointF miterPoint = projectedVertex(*arcFrame, *miter);
+  SketchMeshVertex visibleMiter = *miter;
+  const double coverageScale =
+      static_cast<double>(miter->coverageRadiusPixels) /
+      std::abs(static_cast<double>(miter->coverageDistancePixels));
+  visibleMiter.extrusionX =
+      static_cast<float>(visibleMiter.extrusionX * coverageScale);
+  visibleMiter.extrusionY =
+      static_cast<float>(visibleMiter.extrusionY * coverageScale);
+  const QPointF miterPoint = projectedVertex(*arcFrame, visibleMiter);
   auto miterPick =
       displayedPick(arcFrame, miterPoint, 0.05, SketchPickTargets::Curves);
   const double miterExtrusion =
@@ -2441,6 +2614,7 @@ int main(int argc, char *argv[]) {
     verifyGeneratedSpatialChunkProperties(profile);
     verifyBoundedRetargeting();
     verifyResizeAndPicking(preparationProfile);
+    verifyLogicalPickInvariance(preparationProfile);
     verifyPreparationCancellation(preparationProfile);
     verifyNeutralStrokeKernel();
     verifyMeshGeneration(preparationProfile);
@@ -2448,6 +2622,7 @@ int main(int argc, char *argv[]) {
     verifyLodReusesScenePicking();
     verifyRetainedGeometry();
     verifyLargeCoordinatePrecision();
+    verifyRationalBSplineMesh(preparationProfile);
     verifyExactRenderedPicking();
     verifyGeneratedRenderedDifferential();
     verifyProjectionEdgeGuards();

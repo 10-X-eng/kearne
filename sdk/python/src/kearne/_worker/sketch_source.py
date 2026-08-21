@@ -28,7 +28,7 @@ from kearne._wire import (
     set_scalar as _set_scalar,
 )
 from kearne.sketch_source import emit_call, values_from_source
-from kearne.sketch_values import Constraint, Entity
+from kearne.sketch_values import Constraint, Entity, SketchObject
 from kearne.sketch_wire import (
     SketchWireError,
     definition_values_from_wire,
@@ -46,7 +46,7 @@ from kearne.source import (
     source_digest,
 )
 
-MAXIMUM_SOURCE_BYTES = 65_536
+MAXIMUM_SOURCE_BYTES = 8_388_608
 MAXIMUM_TRANSFORM_BYTES = 131_328
 
 
@@ -137,6 +137,7 @@ from kearne.units import m, rad
 def {name}(plane: SketchPlane) -> Sketch:
     return SketchDefinition(
         plane=plane,
+        objects=(),
         entities=(),
         constraints=(),
     ).build()
@@ -153,25 +154,31 @@ def {name}(plane: SketchPlane) -> Sketch:
 def _target_values(
     target: _WireMessage,
 ) -> tuple[
-    dict[str, tuple[str, Entity | Constraint]],
+    dict[str, tuple[str, SketchObject | Entity | Constraint]],
     str,
+    tuple[SketchObject, ...],
     tuple[Entity, ...],
     tuple[Constraint, ...],
 ]:
     decoded = definition_values_from_wire(target)
-    values: dict[str, tuple[str, Entity | Constraint]] = {
+    values: dict[str, tuple[str, SketchObject | Entity | Constraint]] = {
         value.id: ("entities", value) for value in decoded.entities
     }
-    values.update(
-        (value.id, ("constraints", value)) for value in decoded.constraints
+    values.update((value.id, ("objects", value)) for value in decoded.objects)
+    values.update((value.id, ("constraints", value)) for value in decoded.constraints)
+    return (
+        values,
+        decoded.source_digest,
+        decoded.objects,
+        decoded.entities,
+        decoded.constraints,
     )
-    return values, decoded.source_digest, decoded.entities, decoded.constraints
 
 
 def _source_edit(
     message: _WireMessage,
     current: dict[str, str],
-    target: dict[str, tuple[str, Entity | Constraint]],
+    target: dict[str, tuple[str, SketchObject | Entity | Constraint]],
 ) -> tuple[SourceEdit, str | None]:
     if not all(message.HasField(field) for field in ("action", "section", "target_id")):
         raise SourceError("worker.required-field", "source edit is incomplete")
@@ -205,7 +212,13 @@ def _source_edit(
 
 def _edit(
     message: _WireMessage,
-) -> tuple[str, str, tuple[Entity, ...], tuple[Constraint, ...]]:
+) -> tuple[
+    str,
+    str,
+    tuple[SketchObject, ...],
+    tuple[Entity, ...],
+    tuple[Constraint, ...],
+]:
     required = ("source_utf8", "function_name", "expected_prior", "target")
     if not all(message.HasField(field) for field in required):
         raise SourceError("worker.required-field", "source edit batch is incomplete")
@@ -220,7 +233,7 @@ def _edit(
     expected = _digest(_child(message, "expected_prior"))
     if source_digest(source) != expected:
         raise SourceError("source.edit.stale", "source changed after it was observed")
-    target, target_digest, entities, constraints = _target_values(
+    target, target_digest, objects, entities, constraints = _target_values(
         _child(message, "target")
     )
     if target_digest != expected:
@@ -232,9 +245,11 @@ def _edit(
         raise SourceError(
             "source.edit.unrecognized", "function is not a recognized Sketch"
         )
-    current = {value.id: "entities" for value in session.recognition.entities} | {
-        value.id: "constraints" for value in session.recognition.constraints
-    }
+    current = (
+        {value.id: "objects" for value in session.recognition.objects}
+        | {value.id: "entities" for value in session.recognition.entities}
+        | {value.id: "constraints" for value in session.recognition.constraints}
+    )
     messages = tuple(_repeated(message, "edits"))
     if not 1 <= len(messages) <= MAXIMUM_SOURCE_EDIT_BATCH:
         raise SourceError(
@@ -252,12 +267,14 @@ def _edit(
         operations.append(operation)
         edited_code[stable] = code
     updated = session.apply(expected, operations)
-    final = {
-        value.id: ("entities", value.code) for value in updated.recognition.entities
-    } | {
-        value.id: ("constraints", value.code)
-        for value in updated.recognition.constraints
-    }
+    final = (
+        {value.id: ("objects", value.code) for value in updated.recognition.objects}
+        | {value.id: ("entities", value.code) for value in updated.recognition.entities}
+        | {
+            value.id: ("constraints", value.code)
+            for value in updated.recognition.constraints
+        }
+    )
     if set(final) != set(target):
         raise SourceError(
             "source.edit.target-mismatch",
@@ -275,12 +292,18 @@ def _edit(
             )
     if len(updated.source.encode()) > MAXIMUM_SOURCE_BYTES:
         raise SourceError("source.sketch.byte-limit", "Sketch source is too large")
-    return updated.source, updated.source_digest, entities, constraints
+    return updated.source, updated.source_digest, objects, entities, constraints
 
 
 def _replace(
     message: _WireMessage,
-) -> tuple[str, str, tuple[Entity, ...], tuple[Constraint, ...]]:
+) -> tuple[
+    str,
+    str,
+    tuple[SketchObject, ...],
+    tuple[Entity, ...],
+    tuple[Constraint, ...],
+]:
     required = ("source_utf8", "function_name", "expected_prior")
     if not all(message.HasField(field) for field in required):
         raise SourceError("worker.required-field", "source replacement is incomplete")
@@ -293,8 +316,8 @@ def _replace(
         raise SourceError("source.python.encoding", "source is not UTF-8") from error
     function = _function_name(_scalar(message, "function_name"))
     _digest(_child(message, "expected_prior"))
-    digest, entities, constraints = values_from_source(source, function)
-    return source, digest, entities, constraints
+    digest, objects, entities, constraints = values_from_source(source, function)
+    return source, digest, objects, entities, constraints
 
 
 def _failure(code: str) -> _WireMessage:
@@ -326,12 +349,13 @@ def process_transform(job: _WireMessage) -> _WireMessage:
                 raise SourceError("worker.required-field", "create job is incomplete")
             source = create_sketch_source(cast(str, _scalar(create, "function_name")))
             digest = source_digest(source)
+            objects: tuple[SketchObject, ...] = ()
             entities: tuple[Entity, ...] = ()
             constraints: tuple[Constraint, ...] = ()
         elif operation == "edit":
-            source, digest, entities, constraints = _edit(_child(job, "edit"))
+            source, digest, objects, entities, constraints = _edit(_child(job, "edit"))
         elif operation == "replace":
-            source, digest, entities, constraints = _replace(
+            source, digest, objects, entities, constraints = _replace(
                 _child(job, "replace")
             )
         else:
@@ -341,7 +365,7 @@ def process_transform(job: _WireMessage) -> _WireMessage:
         _set_scalar(success, "source_utf8", source.encode())
         _write_digest(_child(success, "source_digest"), digest)
         _child(success, "definition").CopyFrom(
-            definition_values_to_wire(entities, constraints, digest)
+            definition_values_to_wire(entities, constraints, digest, objects)
         )
         return result
     except (SketchWireError, SourceError) as error:

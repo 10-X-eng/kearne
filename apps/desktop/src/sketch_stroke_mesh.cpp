@@ -197,12 +197,24 @@ struct MeshBuilder {
   }
 
   SketchMeshVertex vertex(QPointF point, QPointF extrusion,
-                          double pathDistanceMetres) {
+                          double pathDistanceMetres,
+                          double coverageDistancePixels,
+                          double coverageRadiusPixels,
+                          SketchStrokePattern pattern = {}) {
     constexpr double maximum = std::numeric_limits<float>::max();
     if (!finite(point) || !finite(extrusion) ||
-        !std::isfinite(pathDistanceMetres) || std::abs(point.x()) > maximum ||
+        !std::isfinite(pathDistanceMetres) ||
+        !std::isfinite(coverageDistancePixels) ||
+        !std::isfinite(coverageRadiusPixels) ||
+        !std::isfinite(pattern.onLogicalPixels) ||
+        !std::isfinite(pattern.periodLogicalPixels) ||
+        std::abs(point.x()) > maximum ||
         std::abs(point.y()) > maximum || std::abs(extrusion.x()) > maximum ||
-        std::abs(extrusion.y()) > maximum || pathDistanceMetres > maximum) {
+        std::abs(extrusion.y()) > maximum || pathDistanceMetres > maximum ||
+        std::abs(coverageDistancePixels) > maximum ||
+        coverageRadiusPixels < 0.0 || coverageRadiusPixels > maximum ||
+        pattern.onLogicalPixels < 0.0F ||
+        pattern.periodLogicalPixels < pattern.onLogicalPixels) {
       exhausted = true;
       return {};
     }
@@ -214,11 +226,16 @@ struct MeshBuilder {
             static_cast<float>(point.y() - static_cast<double>(y)),
             static_cast<float>(extrusion.x()),
             static_cast<float>(extrusion.y()),
-            static_cast<float>(pathDistanceMetres)};
+            static_cast<float>(pathDistanceMetres),
+            static_cast<float>(coverageDistancePixels),
+            static_cast<float>(coverageRadiusPixels),
+            pattern.onLogicalPixels,
+            pattern.periodLogicalPixels};
   }
 
   void polyline(SketchMeshBatch &batch, std::uint32_t source,
-                std::span<const QPointF> points, double width, bool closedShape,
+                std::span<const QPointF> points, double width,
+                SketchStrokePattern pattern, bool closedShape,
                 double chordDeviationMetres,
                 std::size_t temporaryScratchBytes = 0U) {
     if (points.size() < 2)
@@ -245,7 +262,9 @@ struct MeshBuilder {
       const double length = std::hypot(dx, dy);
       return QPointF{dx / length, dy / length};
     };
+    constexpr double edgeGuardPixels = 1.0;
     const double halfWidth = width * 0.5;
+    const double outerHalfWidth = halfWidth + edgeGuardPixels;
     double pathDistance = 0.0;
     for (std::size_t index = 0; index < points.size(); ++index) {
       cancellation->checkpoint();
@@ -268,19 +287,21 @@ struct MeshBuilder {
       QPointF miter{previousNormal.x() + nextNormal.x(),
                     previousNormal.y() + nextNormal.y()};
       const double miterLength = std::hypot(miter.x(), miter.y());
-      double offset = halfWidth;
+      double offset = outerHalfWidth;
       if (miterLength > 1.0e-12) {
         miter /= miterLength;
         const double denominator =
             miter.x() * nextNormal.x() + miter.y() * nextNormal.y();
-        offset = std::clamp(halfWidth / std::max(denominator, 0.25), halfWidth,
-                            halfWidth * 4.0);
+        offset = std::clamp(outerHalfWidth / std::max(denominator, 0.25),
+                            outerHalfWidth, outerHalfWidth * 4.0);
       } else {
         miter = nextNormal;
       }
       const QPointF extrusion = miter * offset;
-      batch.vertices.push_back(vertex(points[index], extrusion, pathDistance));
-      batch.vertices.push_back(vertex(points[index], -extrusion, pathDistance));
+      batch.vertices.push_back(vertex(points[index], extrusion, pathDistance,
+                                      outerHalfWidth, halfWidth, pattern));
+      batch.vertices.push_back(vertex(points[index], -extrusion, pathDistance,
+                                      -outerHalfWidth, halfWidth, pattern));
     }
     for (std::size_t index = 0; index < segmentCount; ++index) {
       cancellation->checkpoint();
@@ -322,7 +343,10 @@ struct MeshBuilder {
       return;
     const std::uint32_t base =
         static_cast<std::uint32_t>(batch.vertices.size());
-    batch.vertices.push_back(vertex(center, {}, 0.0));
+    const double radius = diameter * 0.5;
+    constexpr double edgeGuardPixels = 1.0;
+    const double outerRadius = radius + edgeGuardPixels;
+    batch.vertices.push_back(vertex(center, {}, 0.0, 0.0, radius));
     const SketchMeshVertex &packedCenter = batch.vertices.back();
     const double analyticDeviation =
         std::nextafter(std::hypot(static_cast<double>(packedCenter.x) +
@@ -330,13 +354,14 @@ struct MeshBuilder {
                                   static_cast<double>(packedCenter.y) +
                                       packedCenter.yLow - center.y()),
                        std::numeric_limits<double>::infinity());
-    const double radius = diameter * 0.5;
     for (std::size_t index = 0; index < segments; ++index) {
       cancellation->checkpoint();
       const double angle =
           fullTurn * static_cast<double>(index) / static_cast<double>(segments);
-      batch.vertices.push_back(vertex(
-          center, {radius * std::cos(angle), radius * std::sin(angle)}, 0.0));
+      batch.vertices.push_back(
+          vertex(center,
+                 {outerRadius * std::cos(angle), outerRadius * std::sin(angle)},
+                 0.0, outerRadius, radius));
     }
     for (std::size_t index = 0; index < segments; ++index) {
       cancellation->checkpoint();
@@ -359,14 +384,21 @@ struct MeshBuilder {
     }
     if (!allocate(batch, 4U, 6U))
       return;
-    const QPointF normal{-direction.y() / length * width * 0.5,
-                         direction.x() / length * width * 0.5};
+    constexpr double edgeGuardPixels = 1.0;
+    const double halfWidth = width * 0.5;
+    const double outerHalfWidth = halfWidth + edgeGuardPixels;
+    const QPointF normal{-direction.y() / length * outerHalfWidth,
+                         direction.x() / length * outerHalfWidth};
     const std::uint32_t base =
         static_cast<std::uint32_t>(batch.vertices.size());
-    batch.vertices.push_back(vertex(center, first + normal, 0.0));
-    batch.vertices.push_back(vertex(center, first - normal, 0.0));
-    batch.vertices.push_back(vertex(center, second + normal, 0.0));
-    batch.vertices.push_back(vertex(center, second - normal, 0.0));
+    batch.vertices.push_back(
+        vertex(center, first + normal, 0.0, outerHalfWidth, halfWidth));
+    batch.vertices.push_back(
+        vertex(center, first - normal, 0.0, -outerHalfWidth, halfWidth));
+    batch.vertices.push_back(
+        vertex(center, second + normal, 0.0, outerHalfWidth, halfWidth));
+    batch.vertices.push_back(
+        vertex(center, second - normal, 0.0, -outerHalfWidth, halfWidth));
     batch.indices.insert(
         batch.indices.end(),
         {base, base + 1U, base + 2U, base + 2U, base + 1U, base + 3U});
@@ -523,6 +555,63 @@ std::size_t curveSegments(double radius, double sweep, SketchCurveLod lod,
       std::min(requested, static_cast<double>(options.maximumCurveSegments)));
 }
 
+render::Point2d conicPoint(const SketchStrokeSourcePrimitive &primitive,
+                           double parameter) {
+  const double cosine = std::cos(primitive.rotationAngleRadians);
+  const double sine = std::sin(primitive.rotationAngleRadians);
+  double localX = 0.0;
+  double localY = parameter;
+  if (primitive.kind == SketchStrokeSourceKind::HyperbolicArc) {
+    localX = primitive.radius * std::cosh(parameter);
+    localY = primitive.secondaryRadius * std::sinh(parameter);
+  } else {
+    localX = parameter * parameter / (4.0 * primitive.radius);
+  }
+  return {primitive.first.x + cosine * localX - sine * localY,
+          primitive.first.y + sine * localX + cosine * localY};
+}
+
+double
+conicMaximumSecondDerivative(const SketchStrokeSourcePrimitive &primitive) {
+  if (primitive.kind == SketchStrokeSourceKind::ParabolicArc)
+    return 1.0 / (2.0 * primitive.radius);
+  const double end = primitive.startAngleRadians + primitive.sweepAngleRadians;
+  const double parameter =
+      std::max(std::abs(primitive.startAngleRadians), std::abs(end));
+  return std::hypot(primitive.radius * std::cosh(parameter),
+                    primitive.secondaryRadius * std::sinh(parameter));
+}
+
+std::size_t conicSegments(const SketchStrokeSourcePrimitive &primitive,
+                          SketchCurveLod lod,
+                          const SketchTessellationOptions &options) {
+  const double sweep = std::abs(primitive.sweepAngleRadians);
+  const double secondDerivative = conicMaximumSecondDerivative(primitive);
+  const double byError =
+      sweep *
+      std::sqrt(secondDerivative / (8.0 * lod.maximumChordErrorMetres()));
+  const double byStep = primitive.kind == SketchStrokeSourceKind::HyperbolicArc
+                            ? sweep / options.maximumArcStepRadians
+                            : 0.0;
+  const double requested = std::ceil(std::max({2.0, byError, byStep}));
+  return static_cast<std::size_t>(
+      std::min(requested, static_cast<double>(options.maximumCurveSegments)));
+}
+
+double conicDeviation(const SketchStrokeSourcePrimitive &primitive,
+                      std::size_t segments) {
+  const long double step =
+      std::abs(static_cast<long double>(primitive.sweepAngleRadians)) /
+      static_cast<long double>(segments);
+  const long double deviation =
+      static_cast<long double>(conicMaximumSecondDerivative(primitive)) * step *
+      step / 8.0L;
+  return deviation > std::numeric_limits<double>::max()
+             ? std::numeric_limits<double>::infinity()
+             : std::nextafter(static_cast<double>(deviation),
+                              std::numeric_limits<double>::infinity());
+}
+
 Result<void> validateOptions(const SketchTessellationOptions &options) {
   if (!std::isfinite(options.maximumArcStepRadians) ||
       options.maximumArcStepRadians <= 0.0 ||
@@ -593,8 +682,8 @@ void hashWord(std::uint64_t &hash, std::uint64_t value) {
   }
 }
 
-std::uint64_t
-primitiveFingerprint(const SketchStrokeSourcePrimitive &primitive) {
+std::uint64_t primitiveFingerprint(const SketchStrokeSourcePrimitive &primitive,
+                                   sketch::NurbsView spline = {}) {
   std::uint64_t hash = 14'695'981'039'346'656'037ULL;
   hashWord(hash, primitive.sourceKey);
   hashWord(hash, primitive.style);
@@ -607,7 +696,21 @@ primitiveFingerprint(const SketchStrokeSourcePrimitive &primitive) {
   hashWord(hash, std::bit_cast<std::uint64_t>(primitive.radius));
   hashWord(hash, std::bit_cast<std::uint64_t>(primitive.startAngleRadians));
   hashWord(hash, std::bit_cast<std::uint64_t>(primitive.sweepAngleRadians));
+  hashWord(hash, std::bit_cast<std::uint64_t>(primitive.secondaryRadius));
+  hashWord(hash, std::bit_cast<std::uint64_t>(primitive.rotationAngleRadians));
   hashWord(hash, primitive.glyph);
+  if (primitive.kind == SketchStrokeSourceKind::BSpline) {
+    hashWord(hash, spline.degree);
+    hashWord(hash, spline.controlPointCoordinates.size());
+    for (double value : spline.controlPointCoordinates)
+      hashWord(hash, std::bit_cast<std::uint64_t>(value));
+    hashWord(hash, spline.knots.size());
+    for (double value : spline.knots)
+      hashWord(hash, std::bit_cast<std::uint64_t>(value));
+    hashWord(hash, spline.weights.size());
+    for (double value : spline.weights)
+      hashWord(hash, std::bit_cast<std::uint64_t>(value));
+  }
   return hash;
 }
 
@@ -633,6 +736,10 @@ std::uint64_t chunkHash(std::uint16_t style, std::uint16_t layer,
     hashWord(hash, std::bit_cast<std::uint32_t>(vertex.extrusionX));
     hashWord(hash, std::bit_cast<std::uint32_t>(vertex.extrusionY));
     hashWord(hash, std::bit_cast<std::uint32_t>(vertex.pathDistanceMetres));
+    hashWord(hash,
+             std::bit_cast<std::uint32_t>(vertex.patternOnLogicalPixels));
+    hashWord(hash,
+             std::bit_cast<std::uint32_t>(vertex.patternPeriodLogicalPixels));
   }
   hashWord(hash, indices.size());
   for (const std::uint32_t index : indices) {
@@ -714,6 +821,162 @@ viewportBounds(render::Point2d originMetres,
 }
 
 } // namespace
+
+Result<SketchStrokeSourceBounds>
+sketchStrokePrimitiveBounds(const SketchStrokeSourcePrimitive &primitive) {
+  return sketchStrokePrimitiveBounds(primitive, {});
+}
+
+Result<SketchStrokeSourceBounds>
+sketchStrokePrimitiveBounds(const SketchStrokeSourcePrimitive &primitive,
+                            sketch::NurbsView spline) {
+  SketchStrokeSourceBounds result;
+  const auto include = [&result](render::Point2d point) {
+    if (!finite(point))
+      return false;
+    if (result.empty) {
+      result = {point, point, false};
+      return true;
+    }
+    result.minimum.x = std::min(result.minimum.x, point.x);
+    result.minimum.y = std::min(result.minimum.y, point.y);
+    result.maximum.x = std::max(result.maximum.x, point.x);
+    result.maximum.y = std::max(result.maximum.y, point.y);
+    return true;
+  };
+  const auto positiveAngle = [](double angle) {
+    angle = std::fmod(angle, fullTurn);
+    return angle < 0.0 ? angle + fullTurn : angle;
+  };
+  const auto onSweep = [&](double parameter) {
+    return primitive.sweepAngleRadians > 0.0
+               ? positiveAngle(parameter - primitive.startAngleRadians) <=
+                     primitive.sweepAngleRadians
+               : positiveAngle(primitive.startAngleRadians - parameter) <=
+                     -primitive.sweepAngleRadians;
+  };
+  const auto rotatedPoint = [&](double localX, double localY) {
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    return render::Point2d{primitive.first.x + cosine * localX - sine * localY,
+                           primitive.first.y + sine * localX + cosine * localY};
+  };
+  switch (primitive.kind) {
+  case SketchStrokeSourceKind::Point:
+  case SketchStrokeSourceKind::Glyph:
+    static_cast<void>(include(primitive.first));
+    break;
+  case SketchStrokeSourceKind::Line:
+    static_cast<void>(include(primitive.first));
+    static_cast<void>(include(primitive.second));
+    break;
+  case SketchStrokeSourceKind::Circle:
+    static_cast<void>(include({primitive.first.x - primitive.radius,
+                               primitive.first.y - primitive.radius}));
+    static_cast<void>(include({primitive.first.x + primitive.radius,
+                               primitive.first.y + primitive.radius}));
+    break;
+  case SketchStrokeSourceKind::Arc: {
+    const auto radial = [&](double angle) {
+      return render::Point2d{
+          primitive.first.x + primitive.radius * std::cos(angle),
+          primitive.first.y + primitive.radius * std::sin(angle)};
+    };
+    static_cast<void>(include(radial(primitive.startAngleRadians)));
+    static_cast<void>(include(
+        radial(primitive.startAngleRadians + primitive.sweepAngleRadians)));
+    for (const double cardinal : {0.0, std::numbers::pi / 2.0, std::numbers::pi,
+                                  3.0 * std::numbers::pi / 2.0})
+      if (onSweep(cardinal))
+        static_cast<void>(include(radial(cardinal)));
+    break;
+  }
+  case SketchStrokeSourceKind::Ellipse: {
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    const double extentX =
+        std::hypot(primitive.radius * cosine, primitive.secondaryRadius * sine);
+    const double extentY =
+        std::hypot(primitive.radius * sine, primitive.secondaryRadius * cosine);
+    static_cast<void>(
+        include({primitive.first.x - extentX, primitive.first.y - extentY}));
+    static_cast<void>(
+        include({primitive.first.x + extentX, primitive.first.y + extentY}));
+    break;
+  }
+  case SketchStrokeSourceKind::EllipticalArc: {
+    const auto pointAt = [&](double parameter) {
+      return rotatedPoint(primitive.radius * std::cos(parameter),
+                          primitive.secondaryRadius * std::sin(parameter));
+    };
+    static_cast<void>(include(pointAt(primitive.startAngleRadians)));
+    static_cast<void>(include(
+        pointAt(primitive.startAngleRadians + primitive.sweepAngleRadians)));
+    const double rotation = primitive.rotationAngleRadians;
+    const std::array extrema{
+        std::atan2(-primitive.secondaryRadius * std::sin(rotation),
+                   primitive.radius * std::cos(rotation)),
+        std::atan2(-primitive.secondaryRadius * std::sin(rotation),
+                   primitive.radius * std::cos(rotation)) +
+            std::numbers::pi,
+        std::atan2(primitive.secondaryRadius * std::cos(rotation),
+                   primitive.radius * std::sin(rotation)),
+        std::atan2(primitive.secondaryRadius * std::cos(rotation),
+                   primitive.radius * std::sin(rotation)) +
+            std::numbers::pi};
+    for (const double parameter : extrema)
+      if (onSweep(parameter))
+        static_cast<void>(include(pointAt(parameter)));
+    break;
+  }
+  case SketchStrokeSourceKind::HyperbolicArc:
+  case SketchStrokeSourceKind::ParabolicArc: {
+    const double start = primitive.startAngleRadians;
+    const double end = start + primitive.sweepAngleRadians;
+    const auto onRange = [&](double parameter) {
+      return std::isfinite(parameter) && parameter >= std::min(start, end) &&
+             parameter <= std::max(start, end);
+    };
+    static_cast<void>(include(conicPoint(primitive, start)));
+    static_cast<void>(include(conicPoint(primitive, end)));
+    const auto includeParameter = [&](double parameter) {
+      if (onRange(parameter))
+        static_cast<void>(include(conicPoint(primitive, parameter)));
+    };
+    const double cosine = std::cos(primitive.rotationAngleRadians);
+    const double sine = std::sin(primitive.rotationAngleRadians);
+    if (primitive.kind == SketchStrokeSourceKind::HyperbolicArc) {
+      const double xRatio =
+          sine * primitive.secondaryRadius / (cosine * primitive.radius);
+      const double yRatio =
+          -cosine * primitive.secondaryRadius / (sine * primitive.radius);
+      if (std::abs(xRatio) < 1.0)
+        includeParameter(std::atanh(xRatio));
+      if (std::abs(yRatio) < 1.0)
+        includeParameter(std::atanh(yRatio));
+    } else {
+      if (cosine != 0.0)
+        includeParameter(2.0 * primitive.radius * sine / cosine);
+      if (sine != 0.0)
+        includeParameter(-2.0 * primitive.radius * cosine / sine);
+    }
+    break;
+  }
+  case SketchStrokeSourceKind::BSpline:
+    if (spline.controlPointCoordinates.size() != spline.weights.size() * 2U)
+      break;
+    for (std::size_t index = 0U; index < spline.weights.size(); ++index)
+      static_cast<void>(
+          include({spline.controlPointCoordinates[index * 2U],
+                   spline.controlPointCoordinates[index * 2U + 1U]}));
+    break;
+  }
+  if (result.empty || !finite(result.minimum) || !finite(result.maximum))
+    return std::unexpected(
+        diagnostic("desktop.sketch.unrepresentable-primitive-bounds",
+                   "sketch primitive bounds are not finite"));
+  return result;
+}
 
 bool SketchChunkBounds::intersects(const SketchChunkBounds &other,
                                    double extrusionMetres) const {
@@ -1210,13 +1473,16 @@ Result<SketchStrokeMeshBuildOutput> SketchStrokeMeshBuildAccess::build(
                                        std::numeric_limits<double>::infinity());
     };
     const auto validatePrimitive =
-        [&](const SketchStrokeSourcePrimitive &primitive) -> Result<void> {
+        [&](const SketchStrokeSourcePrimitive &primitive,
+            sketch::NurbsView spline) -> Result<void> {
       if (primitive.sourceKey == 0U ||
           primitive.style >= source.styles.size() || !finite(primitive.first) ||
           !finite(primitive.second) || !std::isfinite(primitive.radius) ||
           primitive.radius < 0.0 ||
           !std::isfinite(primitive.startAngleRadians) ||
-          !std::isfinite(primitive.sweepAngleRadians))
+          !std::isfinite(primitive.sweepAngleRadians) ||
+          !std::isfinite(primitive.secondaryRadius) ||
+          !std::isfinite(primitive.rotationAngleRadians))
         return std::unexpected(diagnostic(
             "desktop.sketch.invalid-mesh-source",
             "sketch stroke mesh source contains an invalid primitive"));
@@ -1291,6 +1557,127 @@ Result<SketchStrokeMeshBuildOutput> SketchStrokeMeshBuildAccess::build(
                 "sketch stroke mesh arc escapes its declared bounds"));
         break;
       }
+      case SketchStrokeSourceKind::Ellipse:
+      case SketchStrokeSourceKind::EllipticalArc: {
+        const bool full = primitive.kind == SketchStrokeSourceKind::Ellipse;
+        if (primitive.radius <= 0.0 || primitive.secondaryRadius <= 0.0 ||
+            primitive.secondaryRadius > primitive.radius ||
+            (!full && (primitive.sweepAngleRadians == 0.0 ||
+                       std::abs(primitive.sweepAngleRadians) > fullTurn)) ||
+            (full && (primitive.startAngleRadians != 0.0 ||
+                      primitive.sweepAngleRadians != 0.0)))
+          return std::unexpected(diagnostic(
+              "desktop.sketch.invalid-mesh-source",
+              "sketch stroke mesh source contains an invalid ellipse"));
+        const auto pointAt = [&](double parameter) {
+          const double cosine = std::cos(primitive.rotationAngleRadians);
+          const double sine = std::sin(primitive.rotationAngleRadians);
+          const double localX = primitive.radius * std::cos(parameter);
+          const double localY = primitive.secondaryRadius * std::sin(parameter);
+          return render::Point2d{
+              primitive.first.x + cosine * localX - sine * localY,
+              primitive.first.y + sine * localX + cosine * localY};
+        };
+        if (full) {
+          const double cosine = std::cos(primitive.rotationAngleRadians);
+          const double sine = std::sin(primitive.rotationAngleRadians);
+          const double extentX = std::hypot(primitive.radius * cosine,
+                                            primitive.secondaryRadius * sine);
+          const double extentY = std::hypot(primitive.radius * sine,
+                                            primitive.secondaryRadius * cosine);
+          if (!contained(
+                  {primitive.first.x - extentX, primitive.first.y - extentY}) ||
+              !contained(
+                  {primitive.first.x + extentX, primitive.first.y + extentY}))
+            return std::unexpected(diagnostic(
+                "desktop.sketch.invalid-mesh-source",
+                "sketch stroke ellipse escapes its declared bounds"));
+          break;
+        }
+        const auto positiveAngle = [](double angle) {
+          angle = std::fmod(angle, fullTurn);
+          return angle < 0.0 ? angle + fullTurn : angle;
+        };
+        const auto onArc = [&](double parameter) {
+          return primitive.sweepAngleRadians > 0.0
+                     ? positiveAngle(parameter - primitive.startAngleRadians) <=
+                           primitive.sweepAngleRadians
+                     : positiveAngle(primitive.startAngleRadians - parameter) <=
+                           -primitive.sweepAngleRadians;
+        };
+        if (!contained(pointAt(primitive.startAngleRadians)) ||
+            !contained(pointAt(primitive.startAngleRadians +
+                               primitive.sweepAngleRadians)))
+          return std::unexpected(diagnostic(
+              "desktop.sketch.invalid-mesh-source",
+              "sketch stroke elliptical arc escapes its declared bounds"));
+        const double rotation = primitive.rotationAngleRadians;
+        const std::array extrema{
+            std::atan2(-primitive.secondaryRadius * std::sin(rotation),
+                       primitive.radius * std::cos(rotation)),
+            std::atan2(-primitive.secondaryRadius * std::sin(rotation),
+                       primitive.radius * std::cos(rotation)) +
+                std::numbers::pi,
+            std::atan2(primitive.secondaryRadius * std::cos(rotation),
+                       primitive.radius * std::sin(rotation)),
+            std::atan2(primitive.secondaryRadius * std::cos(rotation),
+                       primitive.radius * std::sin(rotation)) +
+                std::numbers::pi};
+        for (const double parameter : extrema)
+          if (onArc(parameter) && !contained(pointAt(parameter)))
+            return std::unexpected(diagnostic(
+                "desktop.sketch.invalid-mesh-source",
+                "sketch stroke elliptical arc escapes its declared bounds"));
+        break;
+      }
+      case SketchStrokeSourceKind::HyperbolicArc:
+      case SketchStrokeSourceKind::ParabolicArc: {
+        const bool hyperbolic =
+            primitive.kind == SketchStrokeSourceKind::HyperbolicArc;
+        if (primitive.radius <= 0.0 || primitive.sweepAngleRadians == 0.0 ||
+            (hyperbolic && primitive.secondaryRadius <= 0.0) ||
+            (!hyperbolic && primitive.secondaryRadius != 0.0))
+          return std::unexpected(diagnostic(
+              "desktop.sketch.invalid-mesh-source",
+              "sketch stroke mesh source contains an invalid conic arc"));
+        auto bounds = sketchStrokePrimitiveBounds(primitive);
+        if (!bounds || !contained(bounds->minimum) ||
+            !contained(bounds->maximum))
+          return std::unexpected(diagnostic(
+              "desktop.sketch.invalid-mesh-source",
+              "sketch stroke conic arc escapes its declared bounds"));
+        break;
+      }
+      case SketchStrokeSourceKind::BSpline: {
+        const std::size_t count = spline.weights.size();
+        if (!source.splineAt || count < 2U || count > 1'024U ||
+            spline.degree == 0U || spline.degree > 25U ||
+            spline.degree >= count ||
+            spline.controlPointCoordinates.size() != count * 2U ||
+            spline.knots.size() != count + spline.degree + 1U ||
+            !std::ranges::all_of(
+                spline.controlPointCoordinates,
+                [](double value) { return std::isfinite(value); }) ||
+            !std::ranges::all_of(
+                spline.knots,
+                [](double value) { return std::isfinite(value); }) ||
+            !std::ranges::is_sorted(spline.knots) ||
+            !(spline.knots[spline.degree] < spline.knots[count]) ||
+            !std::ranges::all_of(spline.weights, [](double value) {
+              return std::isfinite(value) && value >= 1.0e-12 &&
+                     value <= 1.0e12;
+            }))
+          return std::unexpected(diagnostic(
+              "desktop.sketch.invalid-mesh-source",
+              "sketch stroke mesh source contains an invalid B-spline"));
+        auto bounds = sketchStrokePrimitiveBounds(primitive, spline);
+        if (!bounds || !contained(bounds->minimum) ||
+            !contained(bounds->maximum))
+          return std::unexpected(
+              diagnostic("desktop.sketch.invalid-mesh-source",
+                         "sketch stroke B-spline escapes its declared bounds"));
+        break;
+      }
       default:
         return std::unexpected(diagnostic(
             "desktop.sketch.invalid-mesh-source",
@@ -1344,10 +1731,14 @@ Result<SketchStrokeMeshBuildOutput> SketchStrokeMeshBuildAccess::build(
       cancellation.checkpoint();
       const SketchStrokeSourcePrimitive primitive =
           source.primitiveAt(source.primitiveContext, primitiveIndex);
-      if (auto valid = validatePrimitive(primitive); !valid)
+      const sketch::NurbsView spline =
+          primitive.kind == SketchStrokeSourceKind::BSpline && source.splineAt
+              ? source.splineAt(source.primitiveContext, primitiveIndex)
+              : sketch::NurbsView{};
+      if (auto valid = validatePrimitive(primitive, spline); !valid)
         return std::unexpected(std::move(valid.error()));
       sourceFingerprints.push_back(
-          {primitive.sourceKey, primitiveFingerprint(primitive)});
+          {primitive.sourceKey, primitiveFingerprint(primitive, spline)});
       sortedSourceKeys.push_back(primitive.sourceKey);
     }
     std::ranges::sort(sortedSourceKeys,
@@ -1401,10 +1792,14 @@ Result<SketchStrokeMeshBuildOutput> SketchStrokeMeshBuildAccess::build(
       cancellation.checkpoint();
       const SketchStrokeSourcePrimitive primitive =
           source.primitiveAt(source.primitiveContext, primitiveIndex);
-      if (auto valid = validatePrimitive(primitive); !valid)
+      const sketch::NurbsView spline =
+          primitive.kind == SketchStrokeSourceKind::BSpline && source.splineAt
+              ? source.splineAt(source.primitiveContext, primitiveIndex)
+              : sketch::NurbsView{};
+      if (auto valid = validatePrimitive(primitive, spline); !valid)
         return std::unexpected(std::move(valid.error()));
       if (primitive.sourceKey != sourceFingerprints[primitiveIndex].sourceKey ||
-          primitiveFingerprint(primitive) !=
+          primitiveFingerprint(primitive, spline) !=
               sourceFingerprints[primitiveIndex].fingerprint)
         return std::unexpected(
             diagnostic("desktop.sketch.changed-mesh-source",
@@ -1430,16 +1825,58 @@ Result<SketchStrokeMeshBuildOutput> SketchStrokeMeshBuildAccess::build(
         const QPointF second = local(primitive.second);
         const std::array<QPointF, 2> line{first, second};
         builder.polyline(batch, primitive.sourceKey, line,
-                         style.strokeWidthPixels, false, 0.0);
+                         style.strokeWidthPixels, strokePattern(style), false,
+                         0.0);
+        ++builder.metrics.visiblePrimitives;
+        continue;
+      }
+      if (primitive.kind == SketchStrokeSourceKind::BSpline) {
+        auto tessellated = sketch::tessellateNurbs(
+            spline, lod.maximumChordErrorMetres(),
+            tessellation.maximumCurveSegments, cancellationToken);
+        if (!tessellated) {
+          if (tessellated.error().code == "sketch.nurbs.cancelled")
+            throw detail::SketchProjectionCancelled{};
+          return std::unexpected(std::move(tessellated.error()));
+        }
+        const std::size_t requestedPointBytes =
+            memoryBudget.bytes(tessellated->points.size(), sizeof(QPointF));
+        builder.observeTemporary(
+            memoryBudget.sum({tessellated->peakBytes, requestedPointBytes}));
+        std::vector<QPointF> points;
+        points.reserve(tessellated->points.size());
+        const std::size_t pointBytes = memoryBudget.capacityBytes(points);
+        builder.observeTemporary(
+            memoryBudget.sum({tessellated->retainedBytes, pointBytes}));
+        for (const sketch::NurbsPoint point : tessellated->points) {
+          cancellation.checkpoint();
+          points.push_back(local({point.x, point.y}));
+        }
+        const bool closed =
+            std::hypot(points.back().x() - points.front().x(),
+                       points.back().y() - points.front().y()) <=
+            lod.maximumChordErrorMetres();
+        builder.polyline(
+            batch, primitive.sourceKey, points, style.strokeWidthPixels,
+            strokePattern(style), closed, tessellated->maximumCertifiedDeviation,
+            memoryBudget.sum({tessellated->retainedBytes, pointBytes}));
         ++builder.metrics.visiblePrimitives;
         continue;
       }
 
-      const bool circle = primitive.kind == SketchStrokeSourceKind::Circle;
-      const double start = circle ? 0.0 : primitive.startAngleRadians;
-      const double sweep = circle ? fullTurn : primitive.sweepAngleRadians;
+      const bool closed = primitive.kind == SketchStrokeSourceKind::Circle ||
+                          primitive.kind == SketchStrokeSourceKind::Ellipse;
+      const bool ellipse =
+          primitive.kind == SketchStrokeSourceKind::Ellipse ||
+          primitive.kind == SketchStrokeSourceKind::EllipticalArc;
+      const bool conic =
+          primitive.kind == SketchStrokeSourceKind::HyperbolicArc ||
+          primitive.kind == SketchStrokeSourceKind::ParabolicArc;
+      const double start = closed ? 0.0 : primitive.startAngleRadians;
+      const double sweep = closed ? fullTurn : primitive.sweepAngleRadians;
       const std::size_t segments =
-          curveSegments(primitive.radius, sweep, lod, tessellation);
+          conic ? conicSegments(primitive, lod, tessellation)
+                : curveSegments(primitive.radius, sweep, lod, tessellation);
       const std::size_t pointCount = segments + 1U;
       const std::size_t requestedPointBytes =
           memoryBudget.bytes(pointCount, sizeof(QPointF));
@@ -1453,25 +1890,39 @@ Result<SketchStrokeMeshBuildOutput> SketchStrokeMeshBuildAccess::build(
         const double amount =
             static_cast<double>(index) / static_cast<double>(segments);
         const double angle = start + sweep * amount;
-        points.push_back({first.x() + primitive.radius * std::cos(angle),
-                          first.y() + primitive.radius * std::sin(angle)});
+        if (conic) {
+          const render::Point2d point = conicPoint(primitive, angle);
+          points.push_back(local(point));
+        } else if (ellipse) {
+          const double cosine = std::cos(primitive.rotationAngleRadians);
+          const double sine = std::sin(primitive.rotationAngleRadians);
+          const double localX = primitive.radius * std::cos(angle);
+          const double localY = primitive.secondaryRadius * std::sin(angle);
+          points.push_back({first.x() + cosine * localX - sine * localY,
+                            first.y() + sine * localX + cosine * localY});
+        } else {
+          points.push_back({first.x() + primitive.radius * std::cos(angle),
+                            first.y() + primitive.radius * std::sin(angle)});
+        }
       }
       const long double quarterStep =
           std::abs(static_cast<long double>(sweep)) /
           (4.0L * static_cast<long double>(segments));
       const long double sine = std::sin(quarterStep);
-      const long double deviation =
+      const long double radialDeviation =
           2.0L * static_cast<long double>(primitive.radius) * sine * sine;
+      const double deviation =
+          conic ? conicDeviation(primitive, segments)
+                : std::nextafter(static_cast<double>(radialDeviation),
+                                 std::numeric_limits<double>::infinity());
       if (!std::isfinite(deviation) ||
-          deviation > std::numeric_limits<double>::max())
+          radialDeviation > std::numeric_limits<double>::max())
         return std::unexpected(
             diagnostic("desktop.sketch.unrepresentable-segment",
                        "sketch curve deviation exceeds finite range"));
       builder.polyline(batch, primitive.sourceKey, points,
-                       style.strokeWidthPixels, circle,
-                       std::nextafter(static_cast<double>(deviation),
-                                      std::numeric_limits<double>::infinity()),
-                       pointBytes);
+                       style.strokeWidthPixels, strokePattern(style), closed,
+                       deviation, pointBytes);
       ++builder.metrics.visiblePrimitives;
     }
 
