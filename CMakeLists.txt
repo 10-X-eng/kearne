@@ -47,6 +47,8 @@ if(KEARNE_BUILD_API)
     add_subdirectory(api/schema)
     add_subdirectory(modules/adapters/sketch_wire)
     add_subdirectory(modules/engineering)
+    add_subdirectory(modules/persistence)
+    add_subdirectory(modules/adapters/sqlite_project)
     add_subdirectory(modules/sketch_workflow)
 endif()
 

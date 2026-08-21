@@ -61,15 +61,14 @@ CameraAngles cameraAngles(const ViewPreset &view) {
   constexpr qreal pi = 3.141592653589793238462643383279502884;
   constexpr qreal halfPi = pi / 2.0;
   constexpr qreal degreesPerRadian = 180.0 / pi;
-  qreal xRotation = std::atan2(static_cast<qreal>(view.y),
-                               static_cast<qreal>(view.z));
+  qreal xRotation =
+      std::atan2(static_cast<qreal>(view.y), static_cast<qreal>(view.z));
   if (xRotation > halfPi)
     xRotation -= pi;
   else if (xRotation < -halfPi)
     xRotation += pi;
-  const qreal depthAfterX =
-      static_cast<qreal>(view.y) * std::sin(xRotation) +
-      static_cast<qreal>(view.z) * std::cos(xRotation);
+  const qreal depthAfterX = static_cast<qreal>(view.y) * std::sin(xRotation) +
+                            static_cast<qreal>(view.z) * std::cos(xRotation);
   return {std::atan2(-static_cast<qreal>(view.x), depthAfterX) *
               degreesPerRadian,
           -xRotation * degreesPerRadian};

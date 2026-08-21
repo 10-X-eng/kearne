@@ -302,22 +302,18 @@ void verifyViewportCamera() {
     for (const int y : {-1, 1}) {
       for (const int z : {-1, 1}) {
         const QString id =
-            QString::fromLatin1(z > 0 ? "front" : "back") +
-            QLatin1Char('-') + QString::fromLatin1(y > 0 ? "top" : "bottom") +
-            QLatin1Char('-') + QString::fromLatin1(x < 0 ? "left" : "right");
+            QString::fromLatin1(z > 0 ? "front" : "back") + QLatin1Char('-') +
+            QString::fromLatin1(y > 0 ? "top" : "bottom") + QLatin1Char('-') +
+            QString::fromLatin1(x < 0 ? "left" : "right");
         require(camera.setView(id), "generated cube corner was rejected");
         const qreal xRotation = -camera.pitch() * radiansPerDegree;
         const qreal yaw = camera.yaw() * radiansPerDegree;
-        const qreal afterXy = y * std::cos(xRotation) -
-                             z * std::sin(xRotation);
-        const qreal afterXz = y * std::sin(xRotation) +
-                             z * std::cos(xRotation);
-        const qreal projectedX = x * std::cos(yaw) +
-                                 afterXz * std::sin(yaw);
-        const qreal depth = -x * std::sin(yaw) +
-                            afterXz * std::cos(yaw);
-        require(std::abs(projectedX) < 1.0e-12 &&
-                    std::abs(afterXy) < 1.0e-12 && depth > 0.0,
+        const qreal afterXy = y * std::cos(xRotation) - z * std::sin(xRotation);
+        const qreal afterXz = y * std::sin(xRotation) + z * std::cos(xRotation);
+        const qreal projectedX = x * std::cos(yaw) + afterXz * std::sin(yaw);
+        const qreal depth = -x * std::sin(yaw) + afterXz * std::cos(yaw);
+        require(std::abs(projectedX) < 1.0e-12 && std::abs(afterXy) < 1.0e-12 &&
+                    depth > 0.0,
                 "cube corner did not face the viewport");
       }
     }
@@ -326,8 +322,7 @@ void verifyViewportCamera() {
           "unknown navigation cube view was accepted");
   camera.setView(QStringLiteral("front"));
   camera.orbit(0.0, 10.0);
-  require(camera.pitch() < 0.0,
-          "downward pointer orbit moved the view upward");
+  require(camera.pitch() < 0.0, "downward pointer orbit moved the view upward");
   camera.setView(QStringLiteral("front"));
   camera.turn(15.0, -10.0);
   require(camera.viewName() == QStringLiteral("custom") &&
@@ -370,14 +365,17 @@ void verifyViewportCamera() {
       camera.applyWheel(static_cast<qreal>(random.bounded(2401u)) - 1200.0);
       break;
     default: {
-      static const QStringList presets{
-          QStringLiteral("front"), QStringLiteral("back"),
-          QStringLiteral("left"), QStringLiteral("right"),
-          QStringLiteral("top"), QStringLiteral("bottom"),
-          QStringLiteral("isometric"), QStringLiteral("front-top"),
-          QStringLiteral("back-left"),
-          QStringLiteral("front-top-right"),
-          QStringLiteral("back-bottom-left")};
+      static const QStringList presets{QStringLiteral("front"),
+                                       QStringLiteral("back"),
+                                       QStringLiteral("left"),
+                                       QStringLiteral("right"),
+                                       QStringLiteral("top"),
+                                       QStringLiteral("bottom"),
+                                       QStringLiteral("isometric"),
+                                       QStringLiteral("front-top"),
+                                       QStringLiteral("back-left"),
+                                       QStringLiteral("front-top-right"),
+                                       QStringLiteral("back-bottom-left")};
       require(camera.setView(presets.at(static_cast<qsizetype>(
                   random.bounded(static_cast<quint32>(presets.size()))))),
               "declared camera preset was rejected");

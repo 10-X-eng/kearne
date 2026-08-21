@@ -128,6 +128,37 @@ function(kearne_require_document_dependencies)
     install(TARGETS kearne_blake3 EXPORT KearneTargets)
 endfunction()
 
+function(kearne_require_sqlite)
+    if(TARGET Kearne::SQLite)
+        return()
+    endif()
+
+    _kearne_dependency(sqlite_url sqlite url)
+    _kearne_dependency(sqlite_sha256 sqlite sha256)
+    FetchContent_Declare(kearne_sqlite_source SYSTEM EXCLUDE_FROM_ALL
+        URL "${sqlite_url}"
+        URL_HASH "SHA256=${sqlite_sha256}"
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE
+        SOURCE_SUBDIR _kearne_sources_only)
+    FetchContent_MakeAvailable(kearne_sqlite_source)
+    add_library(kearne_sqlite STATIC
+        "${kearne_sqlite_source_SOURCE_DIR}/sqlite3.c")
+    add_library(Kearne::SQLite ALIAS kearne_sqlite)
+    target_include_directories(kearne_sqlite SYSTEM PUBLIC
+        "$<BUILD_INTERFACE:${kearne_sqlite_source_SOURCE_DIR}>")
+    target_compile_definitions(kearne_sqlite PRIVATE
+        SQLITE_DQS=0
+        SQLITE_ENABLE_API_ARMOR
+        SQLITE_OMIT_DEPRECATED
+        SQLITE_THREADSAFE=1)
+    set_target_properties(kearne_sqlite PROPERTIES
+        C_STANDARD 99 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
+    if(NOT MSVC)
+        target_link_libraries(kearne_sqlite PRIVATE ${CMAKE_DL_LIBS})
+    endif()
+    install(TARGETS kearne_sqlite EXPORT KearneTargets)
+endfunction()
+
 function(kearne_require_sketch_solver)
     if(TARGET Ceres::ceres AND TARGET Eigen3::Eigen)
         return()

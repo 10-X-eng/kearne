@@ -1,6 +1,6 @@
 # Persistence, History, and Recovery
 
-- **Status:** Proposed; storage prototype required
+- **Status:** In progress; physical storage acceptance gates remain open
 - **Requirement prefix:** `PST`
 - **Depends on:** [Document model](01-document-model.md), [commands and revisions](02-commands-transactions-revisions.md)
 - **Unblocks:** distributable MVP, versioning, collaboration
@@ -19,6 +19,8 @@ The baseline to validate is:
 - SQLite WAL only while the project is open, checkpointed through supported copy/export operations.
 
 This provides transactional durability and a portable primary file without rewriting a ZIP container on every edit. The storage prototype must validate large-project behavior before acceptance.
+
+Implemented: bounded canonical mutation, revision, and project-checkpoint decoders plus a pinned SQLite adapter. One transaction stores source bytes, a content-addressed revision, the verified head checkpoint, and the head pointer. Loading verifies database references, checkpoint integrity, project Merkle roots, revision identity, and source digests before publication. Desktop Save/Open stays disabled until Engineering Service commits can be journaled atomically through this adapter.
 
 ## 3. Data classification
 
@@ -143,6 +145,8 @@ These are provisional until the storage prototype records filesystem-specific re
 - **PST-OPEN-003:** Project encryption and OS key-storage policy.
 - **PST-OPEN-004:** Exact checkpoint and history-retention policy.
 - **PST-OPEN-005:** Behavior on unsupported network filesystems and cloud-synced folders.
+
+Current evidence covers generated create/commit/retry/head-move/save-point/reopen behavior, read-only enforcement, stale-head rollback, and rejection of altered checkpoints and source bytes. It does not yet cover process/power interruption at each commit stage, disk-full and permission faults, large BLOB and long-history budgets, Windows filesystems, antivirus interference, network/cloud folders, migrations, salvage, or desktop integration. SQLite is therefore not yet accepted by `PST-OPEN-001`.
 
 ## 12. Definition of done
 

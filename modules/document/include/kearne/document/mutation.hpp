@@ -3,6 +3,7 @@
 #include <kearne/document/model.hpp>
 
 #include <optional>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -60,7 +61,20 @@ using Mutation =
                  AttachArtifact, ReplaceArtifact, DetachArtifact>;
 using MutationBatch = std::vector<Mutation>;
 
+struct MutationDecodeLimits {
+  std::size_t maximumEncodedBytes = 512U * 1024U * 1024U;
+  std::size_t maximumMutations = 1'000'000U;
+  std::size_t maximumMutationBytes = 17U * 1024U * 1024U;
+};
+
 [[nodiscard]] Result<Bytes> canonicalBytes(const Mutation &mutation);
 [[nodiscard]] Result<Bytes> canonicalBytes(const MutationBatch &batch);
+[[nodiscard]] Result<Mutation>
+decodeMutation(std::span<const std::uint8_t> bytes,
+               std::size_t maximumEncodedBytes =
+                   MutationDecodeLimits{}.maximumMutationBytes);
+[[nodiscard]] Result<MutationBatch>
+decodeMutationBatch(std::span<const std::uint8_t> bytes,
+                    MutationDecodeLimits limits = {});
 
 } // namespace kearne::document

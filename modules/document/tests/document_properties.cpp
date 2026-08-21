@@ -1,3 +1,4 @@
+#include <kearne/document/checkpoint.hpp>
 #include <kearne/document/content_store.hpp>
 #include <kearne/document/content_store_access.hpp>
 #include <kearne/document/project_state_access.hpp>
@@ -266,6 +267,239 @@ void verifyAtomicGraphValidation() {
       internal::ProjectStateAccess::apply(*created, moveAndRetarget);
   require(movedState && movedState->function(functionId)->module == *secondPath,
           "atomic source move and contract retarget failed");
+}
+
+void verifyMutationCodec(const testkit::PropertyProfile &profile) {
+  const auto firstPath = ProjectPath::parse("models/generated.py");
+  const auto secondPath = ProjectPath::parse("models/renamed.py");
+  require(firstPath && secondPath, "mutation codec paths were rejected");
+  testkit::checkProperty(
+      "mutation codec round trip", profile,
+      [&](testkit::Random &random, std::uint64_t index) {
+        const std::uint64_t salt = random.next();
+        const ActorId actor = id<ActorId>(index + 2'000U, salt);
+        const RecordId recordId = id<RecordId>(index + 3'000U, salt + 1U);
+        EngineeringRecord generated = record(recordId, actor, salt);
+        generated.provenance.origin =
+            static_cast<Origin>(1U + random.next() % 7U);
+        generated.provenance.request = id<RequestId>(index + 4'000U, salt + 2U);
+        const ModelInputId inputId =
+            id<ModelInputId>(index + 5'000U, salt + 3U);
+        const ModelFunctionId functionId =
+            id<ModelFunctionId>(index + 6'000U, salt + 4U);
+        const ModelFunctionContract function =
+            functionContract(functionId, *firstPath, "generated.part",
+                             {{inputId, "length", ModelValueKind::Length}},
+                             {{id<ModelOutputId>(index + 7'000U, salt + 5U),
+                               "result", ModelValueKind::Sketch}});
+        auto length = Quantity<Length>::fromSi(random.between(
+            -maxDatumPlaneOriginMetres, maxDatumPlaneOriginMetres));
+        require(length.has_value(), "generated mutation length was rejected");
+        const ModelCallId callId = id<ModelCallId>(index + 8'000U, salt + 6U);
+        const ModelCall call{callId,
+                             functionId,
+                             {{id<ModelBindingId>(index + 9'000U, salt + 7U),
+                               inputId, *length}}};
+        const ArtifactId artifactId =
+            id<ArtifactId>(index + 10'000U, salt + 8U);
+        const ArtifactMetadata artifact{
+            artifactId,
+            digest<ArtifactDigest>(static_cast<std::uint8_t>(salt)),
+            random.next(),
+            "application/vnd.kearne.generated",
+            false,
+            std::nullopt,
+            std::nullopt};
+        const ContentEntry content{
+            digest<ContentDigest>(static_cast<std::uint8_t>(salt + 1U)),
+            random.next(), "text/x-python"};
+        const ContentDigest expected =
+            digest<ContentDigest>(static_cast<std::uint8_t>(salt + 2U));
+        const Mutation mutation = [&]() -> Mutation {
+          switch (index % 15U) {
+          case 0:
+            return PutContent{*firstPath, std::nullopt, content};
+          case 1:
+            return MoveContent{*firstPath, *secondPath, expected};
+          case 2:
+            return DeleteContent{*firstPath, expected};
+          case 3:
+            return CreateRecord{generated};
+          case 4:
+            return ReplaceRecord{recordId, expected, generated};
+          case 5:
+            return DeleteRecord{recordId, expected};
+          case 6:
+            return CreateFunction{function};
+          case 7:
+            return ReplaceFunction{functionId, expected, function};
+          case 8:
+            return DeleteFunction{functionId, expected};
+          case 9:
+            return CreateCall{call};
+          case 10:
+            return ReplaceCall{callId, expected, call};
+          case 11:
+            return DeleteCall{callId, expected};
+          case 12:
+            return AttachArtifact{artifact};
+          case 13:
+            return ReplaceArtifact{artifactId, expected, artifact};
+          default:
+            return DetachArtifact{artifactId, expected};
+          }
+        }();
+        auto encoded = canonicalBytes(mutation);
+        require(encoded.has_value(), "generated mutation did not encode");
+        auto decoded = decodeMutation(*encoded);
+        require(decoded.has_value(), "generated mutation did not decode");
+        auto reencoded = canonicalBytes(*decoded);
+        require(reencoded && *reencoded == *encoded,
+                "mutation codec changed canonical bytes");
+
+        const std::size_t cut =
+            static_cast<std::size_t>(random.next() % encoded->size());
+        require(!decodeMutation({encoded->data(), cut}),
+                "truncated mutation was accepted");
+        require(!decodeMutation(*encoded, encoded->size() - 1U),
+                "mutation byte limit was ignored");
+        Bytes trailing = *encoded;
+        trailing.push_back(0);
+        require(!decodeMutation(trailing),
+                "mutation trailing bytes were accepted");
+      });
+}
+
+void verifyProjectCheckpoints(const testkit::PropertyProfile &profile) {
+  testkit::PropertyProfile checkpointProfile = profile;
+  if (!checkpointProfile.replay)
+    checkpointProfile.iterations =
+        std::max((profile.iterations + 127U) / 128U, profile.shardCount * 64U);
+  testkit::checkProperty(
+      "project checkpoint reconstruction", checkpointProfile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const ProjectId projectId =
+            id<ProjectId>(index + 20'000U, random.next());
+        const SchemaSetDigest schema =
+            digest<SchemaSetDigest>(static_cast<std::uint8_t>(random.next()));
+        auto empty = ProjectState::create(projectId, schema);
+        require(empty.has_value(), "checkpoint state could not initialize");
+        const auto module = ProjectPath::parse("models/generated_" +
+                                               std::to_string(index) + ".py");
+        require(module.has_value(), "checkpoint source path was rejected");
+        const std::string source =
+            "def sketch(width, plane):\n    return width, plane\n";
+        const ContentEntry sourceEntry = pythonSource(source);
+        const ActorId actor = id<ActorId>(index + 21'000U, random.next());
+        const RecordId componentId =
+            id<RecordId>(index + 22'000U, random.next());
+        const RecordId planeId = id<RecordId>(index + 23'000U, random.next());
+        const RecordId unknownId = id<RecordId>(index + 24'000U, random.next());
+        EngineeringRecord unknown =
+            record(unknownId, actor, random.next(), componentId);
+        unknown.value.kind = "extension.unknown-record";
+        const std::size_t unknownSize =
+            static_cast<std::size_t>(random.next() % 1024U);
+        unknown.value.bytes.resize(unknownSize);
+        for (std::uint8_t &byte : unknown.value.bytes)
+          byte = static_cast<std::uint8_t>(random.next());
+        const Bytes expectedUnknownBytes = unknown.value.bytes;
+
+        const ModelInputId widthInput =
+            id<ModelInputId>(index + 25'000U, random.next());
+        const ModelInputId planeInput =
+            id<ModelInputId>(index + 26'000U, random.next());
+        const ModelOutputId sketchOutput =
+            id<ModelOutputId>(index + 27'000U, random.next());
+        ModelFunctionContract function = functionContract(
+            id<ModelFunctionId>(index + 28'000U, random.next()), *module,
+            "generated.sketch",
+            {{widthInput, "width", ModelValueKind::Length},
+             {planeInput, "plane", ModelValueKind::SketchPlane}},
+            {{sketchOutput, "sketch", ModelValueKind::Sketch}});
+        if ((random.next() & 1U) != 0)
+          std::ranges::reverse(function.inputs);
+        auto width = Quantity<Length>::fromSi(random.between(-1.0e3, 1.0e3));
+        require(width.has_value(), "checkpoint length was rejected");
+        ModelCall call{id<ModelCallId>(index + 29'000U, random.next()),
+                       function.id,
+                       {{id<ModelBindingId>(index + 30'000U, random.next()),
+                         widthInput, *width},
+                        {id<ModelBindingId>(index + 31'000U, random.next()),
+                         planeInput, DatumPlaneReference{planeId}}}};
+        if ((random.next() & 1U) != 0)
+          std::ranges::reverse(call.bindings);
+        const RevisionId revision =
+            digest<RevisionId>(static_cast<std::uint8_t>(random.next()));
+        const ArtifactMetadata artifact{
+            id<ArtifactId>(index + 32'000U, random.next()),
+            digest<ArtifactDigest>(static_cast<std::uint8_t>(random.next())),
+            random.next() % (16U * 1024U * 1024U),
+            "application/vnd.kearne.mesh",
+            true,
+            revision,
+            digest<EvaluatorDigest>(static_cast<std::uint8_t>(random.next()))};
+        MutationBatch mutations{
+            PutContent{*module, std::nullopt, sourceEntry},
+            CreateRecord{componentDefinition(componentId, actor)},
+            CreateRecord{datumPlane(planeId, componentId, actor)},
+            CreateRecord{unknown},
+            CreateFunction{function},
+            CreateCall{call},
+            AttachArtifact{artifact}};
+        for (std::size_t remaining = mutations.size(); remaining > 1U;
+             --remaining)
+          std::swap(
+              mutations[remaining - 1U],
+              mutations[static_cast<std::size_t>(random.next() % remaining)]);
+        auto state = internal::ProjectStateAccess::apply(*empty, mutations);
+        require(state.has_value(), "generated checkpoint graph was rejected");
+        const ProjectSnapshot snapshot{*state, revision};
+        auto encoded = canonicalBytes(snapshot);
+        require(encoded.has_value(), "project checkpoint did not encode");
+        auto decoded = decodeProjectCheckpoint(*encoded);
+        require(decoded.has_value(), "project checkpoint did not decode");
+        require(decoded->state().projectId() == projectId &&
+                    decoded->state().schemaSet() == schema &&
+                    decoded->state().rootDigest() == state->rootDigest() &&
+                    decoded->revisionId() == revision,
+                "checkpoint changed project identity or revision");
+        require(decoded->state().contentCount() == state->contentCount() &&
+                    decoded->state().recordCount() == state->recordCount() &&
+                    decoded->state().functionCount() ==
+                        state->functionCount() &&
+                    decoded->state().callCount() == state->callCount() &&
+                    decoded->state().artifactCount() == state->artifactCount(),
+                "checkpoint changed a canonical table count");
+        const auto decodedUnknown = decoded->state().record(unknownId);
+        require(decodedUnknown &&
+                    decodedUnknown->value.bytes == expectedUnknownBytes,
+                "checkpoint did not preserve unknown payload bytes");
+        auto reencoded = canonicalBytes(*decoded);
+        require(reencoded && *reencoded == *encoded,
+                "project checkpoint encoding is not deterministic");
+
+        ProjectCheckpointLimits byteLimit;
+        byteLimit.maximumEncodedBytes = encoded->size() - 1U;
+        require(!decodeProjectCheckpoint(*encoded, byteLimit),
+                "checkpoint byte limit was ignored");
+        ProjectCheckpointLimits countLimit;
+        countLimit.maximumMutations = mutations.size() - 1U;
+        require(!canonicalBytes(snapshot, countLimit),
+                "checkpoint encoder created output above its count limit");
+        require(!decodeProjectCheckpoint(*encoded, countLimit),
+                "checkpoint mutation limit was ignored");
+
+        Bytes corrupted = *encoded;
+        const auto root = state->rootDigest().bytes();
+        const auto found = std::ranges::search(corrupted, root);
+        require(!found.empty(), "checkpoint root bytes were not found");
+        *found.begin() ^= 0xffU;
+        auto rejected = decodeProjectCheckpoint(corrupted);
+        require(!rejected && rejected.error().code ==
+                                 "document.checkpoint.checksum-mismatch",
+                "checkpoint with a false root was published");
+      });
 }
 
 void verifyCanonicalReader(const testkit::PropertyProfile &profile) {
@@ -1072,6 +1306,8 @@ int main() {
     verifyCanonicalOrder();
     verifyGeneratedHistory(profile);
     verifyAtomicGraphValidation();
+    verifyMutationCodec(profile);
+    verifyProjectCheckpoints(profile);
     verifyCanonicalReader(profile);
     verifyCanonicalModelValues(profile);
     verifyDatumPlanePayloads(profile);

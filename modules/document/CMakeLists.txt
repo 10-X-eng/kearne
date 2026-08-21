@@ -2,6 +2,7 @@ kearne_require_document_dependencies()
 
 add_library(kearne_document STATIC
     src/canonical.cpp
+    src/checkpoint.cpp
     src/content_store.cpp
     src/document.cpp)
 add_library(Kearne::Document ALIAS kearne_document)
@@ -35,4 +36,8 @@ if(BUILD_TESTING)
         Kearne::Document Kearne::DocumentInternal Kearne::Testkit
         Kearne::BuildOptions)
     set_tests_properties(document-properties PROPERTIES TIMEOUT 120)
+    if(KEARNE_ENABLE_SANITIZERS)
+        set_tests_properties(document-properties PROPERTIES
+            ENVIRONMENT "KEARNE_TEST_ITERATIONS=1000")
+    endif()
 endif()

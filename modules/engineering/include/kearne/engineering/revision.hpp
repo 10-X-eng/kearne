@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -30,8 +31,21 @@ struct RevisionRecord {
   RevisionEnvelope envelope;
 };
 
+struct RevisionDecodeLimits {
+  std::size_t maximumEncodedBytes = 512U * 1024U * 1024U;
+  std::size_t maximumCommandTypes = 4'096U;
+  std::size_t maximumCommandTypeBytes = 128U;
+  document::MutationDecodeLimits mutations;
+};
+
 [[nodiscard]] Result<document::Bytes>
 canonicalBytes(const RevisionEnvelope &revision);
 [[nodiscard]] Result<RevisionId> revisionId(const RevisionEnvelope &revision);
+[[nodiscard]] Result<RevisionEnvelope>
+decodeRevisionEnvelope(std::span<const std::uint8_t> bytes,
+                       RevisionDecodeLimits limits = {});
+[[nodiscard]] Result<RevisionRecord>
+decodeRevisionRecord(std::span<const std::uint8_t> bytes,
+                     RevisionDecodeLimits limits = {});
 
 } // namespace kearne::engineering

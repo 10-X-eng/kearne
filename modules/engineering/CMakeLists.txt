@@ -25,13 +25,21 @@ if(BUILD_TESTING)
         Kearne::Engineering Kearne::Testkit Kearne::BuildOptions)
     add_test(NAME engineering-request-identity-properties
         COMMAND kearne_engineering_request_identity_properties)
+    add_executable(kearne_engineering_revision_properties
+        tests/revision_properties.cpp)
+    target_link_libraries(kearne_engineering_revision_properties PRIVATE
+        Kearne::Engineering Kearne::Testkit Kearne::BuildOptions)
+    add_test(NAME engineering-revision-properties
+        COMMAND kearne_engineering_revision_properties)
     if(KEARNE_ENABLE_SANITIZERS)
         set_tests_properties(
             engineering-model engineering-request-identity-properties
+            engineering-revision-properties
             PROPERTIES TIMEOUT 120)
     else()
         set_tests_properties(
             engineering-model engineering-request-identity-properties
+            engineering-revision-properties
             PROPERTIES TIMEOUT 60)
     endif()
 endif()

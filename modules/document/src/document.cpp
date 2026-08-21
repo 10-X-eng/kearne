@@ -224,6 +224,342 @@ Result<void> writeArtifact(CanonicalWriter &writer,
   return {};
 }
 
+template <typename Tag>
+Result<std::optional<TypedId<Tag>>> readOptionalId(CanonicalReader &reader) {
+  auto present = reader.boolean();
+  if (!present)
+    return std::unexpected(std::move(present.error()));
+  if (!*present)
+    return std::optional<TypedId<Tag>>{};
+  auto value = reader.identifier<Tag>();
+  if (!value)
+    return std::unexpected(std::move(value.error()));
+  return std::optional<TypedId<Tag>>{std::move(*value)};
+}
+
+template <typename Tag>
+Result<std::optional<TypedDigest<Tag>>>
+readOptionalDigest(CanonicalReader &reader) {
+  auto present = reader.boolean();
+  if (!present)
+    return std::unexpected(std::move(present.error()));
+  if (!*present)
+    return std::optional<TypedDigest<Tag>>{};
+  auto value = reader.digest<Tag>();
+  if (!value)
+    return std::unexpected(std::move(value.error()));
+  return std::optional<TypedDigest<Tag>>{std::move(*value)};
+}
+
+Result<ProjectPath> readPath(CanonicalReader &reader) {
+  auto text = reader.text(1024);
+  if (!text)
+    return std::unexpected(std::move(text.error()));
+  return ProjectPath::parse(*text);
+}
+
+Result<VersionedPayload> readPayload(CanonicalReader &reader) {
+  auto kind = reader.text(128);
+  if (!kind)
+    return std::unexpected(std::move(kind.error()));
+  auto schemaVersion = reader.unsignedInteger();
+  if (!schemaVersion)
+    return std::unexpected(std::move(schemaVersion.error()));
+  if (*schemaVersion > std::numeric_limits<std::uint32_t>::max())
+    return std::unexpected(diagnostic("document.payload.schema-range",
+                                      "payload schema version is too large"));
+  auto bytes = reader.bytes(16U * 1024U * 1024U);
+  if (!bytes)
+    return std::unexpected(std::move(bytes.error()));
+  VersionedPayload value{std::string{*kind},
+                         static_cast<std::uint32_t>(*schemaVersion),
+                         Bytes{bytes->begin(), bytes->end()}};
+  if (auto result = validate(value); !result)
+    return std::unexpected(std::move(result.error()));
+  return value;
+}
+
+Result<ContentEntry> readContent(CanonicalReader &reader) {
+  auto digest = reader.digest<ContentDigestTag>();
+  if (!digest)
+    return std::unexpected(std::move(digest.error()));
+  auto byteSize = reader.unsignedInteger();
+  if (!byteSize)
+    return std::unexpected(std::move(byteSize.error()));
+  auto mediaType = reader.text(128);
+  if (!mediaType)
+    return std::unexpected(std::move(mediaType.error()));
+  ContentEntry value{std::move(*digest), *byteSize, std::string{*mediaType}};
+  if (auto result = validate(value); !result)
+    return std::unexpected(std::move(result.error()));
+  return value;
+}
+
+Result<EngineeringRecord> readRecord(CanonicalReader &reader) {
+  auto id = reader.identifier<RecordIdTag>();
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  auto owner = readOptionalId<RecordIdTag>(reader);
+  if (!owner)
+    return std::unexpected(std::move(owner.error()));
+  auto lifecycle = reader.unsignedInteger();
+  if (!lifecycle)
+    return std::unexpected(std::move(lifecycle.error()));
+  if (*lifecycle < static_cast<std::uint8_t>(Lifecycle::Active) ||
+      *lifecycle > static_cast<std::uint8_t>(Lifecycle::Suppressed))
+    return std::unexpected(
+        diagnostic("document.record.lifecycle", "record lifecycle is invalid"));
+  auto payload = readPayload(reader);
+  if (!payload)
+    return std::unexpected(std::move(payload.error()));
+  auto actor = reader.identifier<ActorIdTag>();
+  if (!actor)
+    return std::unexpected(std::move(actor.error()));
+  auto origin = reader.unsignedInteger();
+  if (!origin)
+    return std::unexpected(std::move(origin.error()));
+  if (*origin < static_cast<std::uint8_t>(Origin::Human) ||
+      *origin > static_cast<std::uint8_t>(Origin::System))
+    return std::unexpected(
+        diagnostic("document.record.origin", "record origin is invalid"));
+  auto request = readOptionalId<RequestIdTag>(reader);
+  if (!request)
+    return std::unexpected(std::move(request.error()));
+  auto createdAt = reader.unsignedInteger();
+  if (!createdAt)
+    return std::unexpected(std::move(createdAt.error()));
+  EngineeringRecord value{std::move(*id),
+                          std::move(*owner),
+                          static_cast<Lifecycle>(*lifecycle),
+                          std::move(*payload),
+                          {std::move(*actor), static_cast<Origin>(*origin),
+                           std::move(*request), *createdAt}};
+  if (auto result = validate(value); !result)
+    return std::unexpected(std::move(result.error()));
+  return value;
+}
+
+Result<ModelFunctionContract> readFunction(CanonicalReader &reader) {
+  auto id = reader.identifier<ModelFunctionIdTag>();
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  auto module = readPath(reader);
+  if (!module)
+    return std::unexpected(std::move(module.error()));
+  auto qualifiedName = reader.text(256);
+  if (!qualifiedName)
+    return std::unexpected(std::move(qualifiedName.error()));
+  auto environment = reader.digest<EnvironmentDigestTag>();
+  if (!environment)
+    return std::unexpected(std::move(environment.error()));
+  auto capability = reader.digest<CapabilityProfileDigestTag>();
+  if (!capability)
+    return std::unexpected(std::move(capability.error()));
+  auto topology = reader.unsignedInteger();
+  if (!topology)
+    return std::unexpected(std::move(topology.error()));
+  if (*topology < static_cast<std::uint8_t>(TopologyPublicationMode::Labeled) ||
+      *topology > static_cast<std::uint8_t>(TopologyPublicationMode::Dumb))
+    return std::unexpected(
+        diagnostic("document.function.topology-publication",
+                   "function topology publication mode is invalid"));
+
+  auto inputCount = reader.unsignedInteger();
+  if (!inputCount)
+    return std::unexpected(std::move(inputCount.error()));
+  if (*inputCount > maxModelInputs)
+    return std::unexpected(diagnostic("document.function.input-limit",
+                                      "function input count is too large"));
+  std::vector<ModelInputPort> inputs;
+  inputs.reserve(static_cast<std::size_t>(*inputCount));
+  for (std::uint64_t index = 0; index < *inputCount; ++index) {
+    auto inputId = reader.identifier<ModelInputIdTag>();
+    if (!inputId)
+      return std::unexpected(std::move(inputId.error()));
+    auto name = reader.text(64);
+    if (!name)
+      return std::unexpected(std::move(name.error()));
+    auto kind = reader.unsignedInteger();
+    if (!kind)
+      return std::unexpected(std::move(kind.error()));
+    if (*kind < static_cast<std::uint8_t>(ModelValueKind::Length) ||
+        *kind > static_cast<std::uint8_t>(ModelValueKind::Sketch))
+      return std::unexpected(diagnostic("document.function.input-kind",
+                                        "function input kind is invalid"));
+    inputs.push_back({std::move(*inputId), std::string{*name},
+                      static_cast<ModelValueKind>(*kind)});
+  }
+
+  auto outputCount = reader.unsignedInteger();
+  if (!outputCount)
+    return std::unexpected(std::move(outputCount.error()));
+  if (*outputCount > maxModelOutputs)
+    return std::unexpected(diagnostic("document.function.output-limit",
+                                      "function output count is too large"));
+  std::vector<ModelOutputPort> outputs;
+  outputs.reserve(static_cast<std::size_t>(*outputCount));
+  for (std::uint64_t index = 0; index < *outputCount; ++index) {
+    auto outputId = reader.identifier<ModelOutputIdTag>();
+    if (!outputId)
+      return std::unexpected(std::move(outputId.error()));
+    auto name = reader.text(64);
+    if (!name)
+      return std::unexpected(std::move(name.error()));
+    auto kind = reader.unsignedInteger();
+    if (!kind)
+      return std::unexpected(std::move(kind.error()));
+    if (*kind < static_cast<std::uint8_t>(ModelValueKind::Length) ||
+        *kind > static_cast<std::uint8_t>(ModelValueKind::Sketch))
+      return std::unexpected(diagnostic("document.function.output-kind",
+                                        "function output kind is invalid"));
+    outputs.push_back({std::move(*outputId), std::string{*name},
+                       static_cast<ModelValueKind>(*kind)});
+  }
+
+  ModelFunctionContract value{std::move(*id),
+                              std::move(*module),
+                              std::string{*qualifiedName},
+                              std::move(*environment),
+                              std::move(*capability),
+                              std::move(inputs),
+                              std::move(outputs),
+                              static_cast<TopologyPublicationMode>(*topology)};
+  if (auto result = validate(value); !result)
+    return std::unexpected(std::move(result.error()));
+  return value;
+}
+
+Result<ModelCall> readCall(CanonicalReader &reader) {
+  auto id = reader.identifier<ModelCallIdTag>();
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  auto function = reader.identifier<ModelFunctionIdTag>();
+  if (!function)
+    return std::unexpected(std::move(function.error()));
+  auto bindingCount = reader.unsignedInteger();
+  if (!bindingCount)
+    return std::unexpected(std::move(bindingCount.error()));
+  if (*bindingCount > maxModelInputs)
+    return std::unexpected(diagnostic("document.call.binding-limit",
+                                      "model call binding count is too large"));
+  std::vector<ModelInputBinding> bindings;
+  bindings.reserve(static_cast<std::size_t>(*bindingCount));
+  for (std::uint64_t index = 0; index < *bindingCount; ++index) {
+    auto bindingId = reader.identifier<ModelBindingIdTag>();
+    if (!bindingId)
+      return std::unexpected(std::move(bindingId.error()));
+    auto input = reader.identifier<ModelInputIdTag>();
+    if (!input)
+      return std::unexpected(std::move(input.error()));
+    auto tag = reader.unsignedInteger();
+    if (!tag)
+      return std::unexpected(std::move(tag.error()));
+    auto value = [&]() -> Result<ModelBindingValue> {
+      if (*tag == 1) {
+        auto number = reader.binary64();
+        if (!number)
+          return std::unexpected(std::move(number.error()));
+        auto quantity = Quantity<Length>::fromSi(*number);
+        if (!quantity)
+          return std::unexpected(std::move(quantity.error()));
+        return ModelBindingValue{std::move(*quantity)};
+      }
+      if (*tag == 2) {
+        auto record = reader.identifier<RecordIdTag>();
+        if (!record)
+          return std::unexpected(std::move(record.error()));
+        return ModelBindingValue{DatumPlaneReference{std::move(*record)}};
+      }
+      if (*tag == 3) {
+        auto call = reader.identifier<ModelCallIdTag>();
+        if (!call)
+          return std::unexpected(std::move(call.error()));
+        auto output = reader.identifier<ModelOutputIdTag>();
+        if (!output)
+          return std::unexpected(std::move(output.error()));
+        return ModelBindingValue{
+            NamedOutputReference{std::move(*call), std::move(*output)}};
+      }
+      return std::unexpected(diagnostic("document.call.binding-tag",
+                                        "model call binding tag is invalid"));
+    }();
+    if (!value)
+      return std::unexpected(std::move(value.error()));
+    bindings.push_back(
+        {std::move(*bindingId), std::move(*input), std::move(*value)});
+  }
+  ModelCall value{std::move(*id), std::move(*function), std::move(bindings)};
+  if (auto result = validate(value); !result)
+    return std::unexpected(std::move(result.error()));
+  return value;
+}
+
+Result<ArtifactMetadata> readArtifact(CanonicalReader &reader) {
+  auto id = reader.identifier<ArtifactIdTag>();
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  auto digest = reader.digest<ArtifactDigestTag>();
+  if (!digest)
+    return std::unexpected(std::move(digest.error()));
+  auto byteSize = reader.unsignedInteger();
+  if (!byteSize)
+    return std::unexpected(std::move(byteSize.error()));
+  auto mediaType = reader.text(128);
+  if (!mediaType)
+    return std::unexpected(std::move(mediaType.error()));
+  auto derived = reader.boolean();
+  if (!derived)
+    return std::unexpected(std::move(derived.error()));
+  auto source = readOptionalDigest<RevisionIdTag>(reader);
+  if (!source)
+    return std::unexpected(std::move(source.error()));
+  auto evaluator = readOptionalDigest<EvaluatorDigestTag>(reader);
+  if (!evaluator)
+    return std::unexpected(std::move(evaluator.error()));
+  ArtifactMetadata value{
+      std::move(*id),          std::move(*digest), *byteSize,
+      std::string{*mediaType}, *derived,           std::move(*source),
+      std::move(*evaluator)};
+  if (auto result = validate(value); !result)
+    return std::unexpected(std::move(result.error()));
+  return value;
+}
+
+Result<Mutation> readCreateMutation(CanonicalReader &reader, auto read,
+                                    auto create) {
+  auto value = read(reader);
+  if (!value)
+    return std::unexpected(std::move(value.error()));
+  return Mutation{create(std::move(*value))};
+}
+
+template <typename IdTag>
+Result<Mutation> readReplaceMutation(CanonicalReader &reader, auto read,
+                                     auto replace) {
+  auto id = reader.identifier<IdTag>();
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  auto expected = reader.digest<ContentDigestTag>();
+  if (!expected)
+    return std::unexpected(std::move(expected.error()));
+  auto value = read(reader);
+  if (!value)
+    return std::unexpected(std::move(value.error()));
+  return Mutation{
+      replace(std::move(*id), std::move(*expected), std::move(*value))};
+}
+
+template <typename IdTag>
+Result<Mutation> readDeleteMutation(CanonicalReader &reader, auto remove) {
+  auto id = reader.identifier<IdTag>();
+  if (!id)
+    return std::unexpected(std::move(id.error()));
+  auto expected = reader.digest<ContentDigestTag>();
+  if (!expected)
+    return std::unexpected(std::move(expected.error()));
+  return Mutation{remove(std::move(*id), std::move(*expected))};
+}
+
 template <typename Value, typename Write>
 Result<ContentDigest> digestEntity(std::string_view type,
                                    std::string_view context, const Value &value,
@@ -880,6 +1216,171 @@ Result<Bytes> canonicalBytes(const MutationBatch &batch) {
     writer.bytes(*bytes);
   }
   return std::move(writer).take();
+}
+
+Result<Mutation> decodeMutation(std::span<const std::uint8_t> bytes,
+                                std::size_t maximumEncodedBytes) {
+  if (maximumEncodedBytes == 0 || bytes.size() > maximumEncodedBytes)
+    return std::unexpected(diagnostic("document.mutation.size-limit",
+                                      "encoded mutation exceeds its limit"));
+  CanonicalReader reader(bytes);
+  if (auto result = reader.header("mutation", 1); !result)
+    return std::unexpected(std::move(result.error()));
+  auto tag = reader.unsignedInteger();
+  if (!tag)
+    return std::unexpected(std::move(tag.error()));
+
+  auto mutation = [&]() -> Result<Mutation> {
+    switch (*tag) {
+    case 1: {
+      auto path = readPath(reader);
+      if (!path)
+        return std::unexpected(std::move(path.error()));
+      auto expected = readOptionalDigest<ContentDigestTag>(reader);
+      if (!expected)
+        return std::unexpected(std::move(expected.error()));
+      auto value = readContent(reader);
+      if (!value)
+        return std::unexpected(std::move(value.error()));
+      return Mutation{PutContent{std::move(*path), std::move(*expected),
+                                 std::move(*value)}};
+    }
+    case 2: {
+      auto from = readPath(reader);
+      if (!from)
+        return std::unexpected(std::move(from.error()));
+      auto to = readPath(reader);
+      if (!to)
+        return std::unexpected(std::move(to.error()));
+      auto expected = reader.digest<ContentDigestTag>();
+      if (!expected)
+        return std::unexpected(std::move(expected.error()));
+      return Mutation{
+          MoveContent{std::move(*from), std::move(*to), std::move(*expected)}};
+    }
+    case 3: {
+      auto path = readPath(reader);
+      if (!path)
+        return std::unexpected(std::move(path.error()));
+      auto expected = reader.digest<ContentDigestTag>();
+      if (!expected)
+        return std::unexpected(std::move(expected.error()));
+      return Mutation{DeleteContent{std::move(*path), std::move(*expected)}};
+    }
+    case 4:
+      return readCreateMutation(reader, readRecord,
+                                [](EngineeringRecord value) {
+                                  return CreateRecord{std::move(value)};
+                                });
+    case 5:
+      return readReplaceMutation<RecordIdTag>(
+          reader, readRecord,
+          [](RecordId id, ContentDigest expected, EngineeringRecord value) {
+            return ReplaceRecord{std::move(id), std::move(expected),
+                                 std::move(value)};
+          });
+    case 6:
+      return readDeleteMutation<RecordIdTag>(
+          reader, [](RecordId id, ContentDigest expected) {
+            return DeleteRecord{std::move(id), std::move(expected)};
+          });
+    case 7:
+      return readCreateMutation(reader, readFunction,
+                                [](ModelFunctionContract value) {
+                                  return CreateFunction{std::move(value)};
+                                });
+    case 8:
+      return readReplaceMutation<ModelFunctionIdTag>(
+          reader, readFunction,
+          [](ModelFunctionId id, ContentDigest expected,
+             ModelFunctionContract value) {
+            return ReplaceFunction{std::move(id), std::move(expected),
+                                   std::move(value)};
+          });
+    case 9:
+      return readDeleteMutation<ModelFunctionIdTag>(
+          reader, [](ModelFunctionId id, ContentDigest expected) {
+            return DeleteFunction{std::move(id), std::move(expected)};
+          });
+    case 10:
+      return readCreateMutation(reader, readCall, [](ModelCall value) {
+        return CreateCall{std::move(value)};
+      });
+    case 11:
+      return readReplaceMutation<ModelCallIdTag>(
+          reader, readCall,
+          [](ModelCallId id, ContentDigest expected, ModelCall value) {
+            return ReplaceCall{std::move(id), std::move(expected),
+                               std::move(value)};
+          });
+    case 12:
+      return readDeleteMutation<ModelCallIdTag>(
+          reader, [](ModelCallId id, ContentDigest expected) {
+            return DeleteCall{std::move(id), std::move(expected)};
+          });
+    case 13:
+      return readCreateMutation(reader, readArtifact,
+                                [](ArtifactMetadata value) {
+                                  return AttachArtifact{std::move(value)};
+                                });
+    case 14:
+      return readReplaceMutation<ArtifactIdTag>(
+          reader, readArtifact,
+          [](ArtifactId id, ContentDigest expected, ArtifactMetadata value) {
+            return ReplaceArtifact{std::move(id), std::move(expected),
+                                   std::move(value)};
+          });
+    case 15:
+      return readDeleteMutation<ArtifactIdTag>(
+          reader, [](ArtifactId id, ContentDigest expected) {
+            return DetachArtifact{std::move(id), std::move(expected)};
+          });
+    default:
+      return std::unexpected(
+          diagnostic("document.mutation.tag", "mutation tag is unsupported"));
+    }
+  }();
+  if (!mutation)
+    return std::unexpected(std::move(mutation.error()));
+  if (auto result = reader.end(); !result)
+    return std::unexpected(std::move(result.error()));
+  return mutation;
+}
+
+Result<MutationBatch> decodeMutationBatch(std::span<const std::uint8_t> bytes,
+                                          MutationDecodeLimits limits) {
+  if (limits.maximumEncodedBytes == 0 || limits.maximumMutations == 0 ||
+      limits.maximumMutationBytes == 0)
+    return std::unexpected(diagnostic("document.mutation.invalid-limits",
+                                      "mutation decode limits are invalid"));
+  if (bytes.size() > limits.maximumEncodedBytes)
+    return std::unexpected(diagnostic("document.mutation.size-limit",
+                                      "mutation batch exceeds its limit"));
+  CanonicalReader reader(bytes);
+  if (auto result = reader.header("mutation-batch", 1); !result)
+    return std::unexpected(std::move(result.error()));
+  auto count = reader.unsignedInteger();
+  if (!count)
+    return std::unexpected(std::move(count.error()));
+  if (*count > limits.maximumMutations ||
+      *count > std::numeric_limits<std::size_t>::max())
+    return std::unexpected(
+        diagnostic("document.mutation.count-limit",
+                   "mutation batch count exceeds its limit"));
+  MutationBatch batch;
+  batch.reserve(static_cast<std::size_t>(*count));
+  for (std::uint64_t index = 0; index < *count; ++index) {
+    auto encoded = reader.bytes(limits.maximumMutationBytes);
+    if (!encoded)
+      return std::unexpected(std::move(encoded.error()));
+    auto mutation = decodeMutation(*encoded, limits.maximumMutationBytes);
+    if (!mutation)
+      return std::unexpected(std::move(mutation.error()));
+    batch.push_back(std::move(*mutation));
+  }
+  if (auto result = reader.end(); !result)
+    return std::unexpected(std::move(result.error()));
+  return batch;
 }
 
 struct ProjectState::Data {
