@@ -283,7 +283,13 @@ def complete_definition(seed: int) -> SketchDefinition:
 
     constraints = (
         Constraint(constraint_id(1), "coincident", (point, start)),
-        Constraint(constraint_id(2), "horizontal", entities=(first_line,)),
+        Constraint(
+            constraint_id(2),
+            "horizontal",
+            entities=(first_line,),
+            label="Datum horizontal",
+            active=False,
+        ),
         Constraint(constraint_id(3), "vertical", entities=(second_line,)),
         Constraint(constraint_id(4), "parallel", entities=(first_line, second_line)),
         Constraint(
@@ -304,7 +310,14 @@ def complete_definition(seed: int) -> SketchDefinition:
         Constraint(constraint_id(9), "midpoint", (center,), (first_line,)),
         Constraint(constraint_id(10), "block", entities=(arc_id,)),
         Constraint(constraint_id(11), "collinear", entities=(first_line, second_line)),
-        Constraint(constraint_id(12), "distance", (point, end), value=Length(0.03)),
+        Constraint(
+            constraint_id(12),
+            "distance",
+            (point, end),
+            value=Length(0.03),
+            label="Overall distance",
+            driving=False,
+        ),
         Constraint(
             constraint_id(13),
             "horizontal_distance",
@@ -359,6 +372,13 @@ def complete_definition(seed: int) -> SketchDefinition:
             constraint_id(22),
             "group",
             entities=(first_line, first_circle),
+        ),
+        Constraint(
+            constraint_id(23),
+            "snell",
+            (PointRef(first_line, "start"), PointRef(second_line, "end")),
+            (rectangle_lines[0],),
+            value=1.5,
         ),
     )
     if seed % 2 == 0:

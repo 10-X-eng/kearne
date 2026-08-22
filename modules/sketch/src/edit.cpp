@@ -433,7 +433,7 @@ Result<AppliedEdits> dragCurve(const Definition &current,
   std::map<PointRef, std::vector<PointRef>> graph;
   for (const Constraint &value : current.constraints) {
     const auto *coincident = std::get_if<Coincident>(&value);
-    if (!coincident)
+    if (!coincident || !isDrivingConstraint(value))
       continue;
     graph[coincident->first].push_back(coincident->second);
     graph[coincident->second].push_back(coincident->first);

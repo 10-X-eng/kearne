@@ -60,6 +60,13 @@ ApplicationWindow {
         onActivated: App.ui.redo()
     }
 
+    Shortcut {
+        sequences: [StandardKey.Delete]
+        enabled: App.ui.activeCommandId.length === 0
+                 && App.ui.sketchConstraintSelected
+        onActivated: App.ui.requestCommand("sketch.constraint.delete")
+    }
+
     ColumnLayout {
         anchors.fill: parent
         spacing: 0

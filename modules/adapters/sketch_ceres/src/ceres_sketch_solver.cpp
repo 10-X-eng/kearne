@@ -454,6 +454,54 @@ PlainPoint parabolaPoint(const double *values, double parameter) {
                       parameter, 3U);
 }
 
+PlainPoint unitTangent(const EntityShape &shape, const double *values,
+                       PlainPoint location) {
+  PlainPoint tangent{};
+  if (shape.kind == Kind::Line) {
+    tangent = {values[2] - values[0], values[3] - values[1]};
+  } else if (shape.kind == Kind::Circle || shape.kind == Kind::Arc) {
+    tangent = {-(location.y - values[1]), location.x - values[0]};
+  } else if (shape.kind == Kind::Ellipse || shape.kind == Kind::EllipticalArc ||
+             shape.kind == Kind::HyperbolicArc) {
+    const double cosine = std::cos(values[4]);
+    const double sine = std::sin(values[4]);
+    const double offsetX = location.x - values[0];
+    const double offsetY = location.y - values[1];
+    const double localX = cosine * offsetX + sine * offsetY;
+    const double localY = -sine * offsetX + cosine * offsetY;
+    const double gradientX = 2.0 * localX / std::pow(values[2], 2.0);
+    const double gradientY =
+        (shape.kind == Kind::Ellipse || shape.kind == Kind::EllipticalArc
+             ? 2.0
+             : -2.0) *
+        localY / std::pow(values[3], 2.0);
+    const PlainPoint local{-gradientY, gradientX};
+    tangent = {cosine * local.x - sine * local.y,
+               sine * local.x + cosine * local.y};
+  } else if (shape.kind == Kind::ParabolicArc) {
+    const double cosine = std::cos(values[3]);
+    const double sine = std::sin(values[3]);
+    const double offsetX = location.x - values[0];
+    const double offsetY = location.y - values[1];
+    const double localY = -sine * offsetX + cosine * offsetY;
+    const PlainPoint local{-2.0 * localY, -4.0 * values[2]};
+    tangent = {cosine * local.x - sine * local.y,
+               sine * local.x + cosine * local.y};
+  } else if (shape.kind == Kind::BSpline) {
+    const model::NurbsView view =
+        nurbsView(shape, {values, shape.controlPointCount * 3U});
+    const model::NurbsProjection projected =
+        model::projectToNurbs(view, {location.x, location.y});
+    const model::NurbsPoint derivative =
+        model::differentiateNurbs(view, projected.parameter);
+    tangent = {derivative.x, derivative.y};
+  }
+  const double magnitude = std::hypot(tangent.x, tangent.y);
+  return magnitude > std::numeric_limits<double>::epsilon()
+             ? PlainPoint{tangent.x / magnitude, tangent.y / magnitude}
+             : PlainPoint{};
+}
+
 std::vector<PlainPoint> rigidPoints(const EntityShape &shape,
                                     const double *values) {
   switch (shape.kind) {
@@ -520,6 +568,68 @@ bool isHyperbola(Kind kind) { return kind == Kind::HyperbolicArc; }
 bool isParabola(Kind kind) { return kind == Kind::ParabolicArc; }
 bool isBSpline(Kind kind) { return kind == Kind::BSpline; }
 
+PlainPoint selectedPoint(const EntityShape &shape, const double *values,
+                         model::PointKey key) {
+  if (shape.kind == Kind::Point && key == model::PointKey::Point)
+    return {values[0], values[1]};
+  if (shape.kind == Kind::Line)
+    return key == model::PointKey::Start ? PlainPoint{values[0], values[1]}
+                                         : PlainPoint{values[2], values[3]};
+  if (shape.kind == Kind::Arc && key != model::PointKey::Center) {
+    const double parameter = values[key == model::PointKey::Start ? 3U : 4U];
+    return {values[0] + values[2] * std::cos(parameter),
+            values[1] + values[2] * std::sin(parameter)};
+  }
+  if (isEllipse(shape.kind) && key != model::PointKey::Center) {
+    if (key == model::PointKey::Major)
+      return ellipsePoint(values, 0.0);
+    if (key == model::PointKey::Minor)
+      return ellipsePoint(values, std::numbers::pi / 2.0);
+    return ellipsePoint(values,
+                        values[key == model::PointKey::Start ? 5U : 6U]);
+  }
+  if (isHyperbola(shape.kind) && key != model::PointKey::Center) {
+    if (key == model::PointKey::Major)
+      return hyperbolaPoint(values, 0.0);
+    if (key == model::PointKey::Minor)
+      return rotatedPoint(values, values[2], values[3], 4U);
+    if (key == model::PointKey::Focus)
+      return rotatedPoint(values, std::hypot(values[2], values[3]), 0.0, 4U);
+    return hyperbolaPoint(values,
+                          values[key == model::PointKey::Start ? 5U : 6U]);
+  }
+  if (isParabola(shape.kind) && key != model::PointKey::Center) {
+    if (key == model::PointKey::Focus)
+      return rotatedPoint(values, values[2], 0.0, 3U);
+    return parabolaPoint(values,
+                         values[key == model::PointKey::Start ? 4U : 5U]);
+  }
+  if (isBSpline(shape.kind)) {
+    const auto [first, last] = model::nurbsDomain(
+        nurbsView(shape, {values, shape.controlPointCount * 3U}));
+    return bsplinePoint(shape, values,
+                        key == model::PointKey::Start ? first : last);
+  }
+  return {values[0], values[1]};
+}
+
+PlainPoint orientedRayTangent(const EntityShape &shape, const double *values,
+                              model::PointKey endpoint, bool towardEndpoint) {
+  PlainPoint tangent =
+      unitTangent(shape, values, selectedPoint(shape, values, endpoint));
+  const PlainPoint first = selectedPoint(shape, values, model::PointKey::Start);
+  const PlainPoint last = selectedPoint(shape, values, model::PointKey::End);
+  if ((tangent.x * (last.x - first.x) + tangent.y * (last.y - first.y)) < 0.0) {
+    tangent.x = -tangent.x;
+    tangent.y = -tangent.y;
+  }
+  if ((endpoint == model::PointKey::End) != towardEndpoint) {
+    tangent.x = -tangent.x;
+    tangent.y = -tangent.y;
+  }
+  return tangent;
+}
+
 bool validPointKey(Kind kind, model::PointKey key) {
   if (kind == Kind::Point)
     return key == model::PointKey::Point;
@@ -571,53 +681,11 @@ public:
       return shapes_[static_cast<std::size_t>(found - entities_.begin())];
     };
     const auto selectedPoint = [&](const model::PointRef &reference) {
+      const EntityShape &selectedShape = shape(reference.entity);
       const auto [kind, values] = block(reference.entity);
-      if (kind == Kind::Point && reference.key == model::PointKey::Point)
-        return PlainPoint{values[0], values[1]};
-      if (kind == Kind::Line && reference.key == model::PointKey::Start)
-        return PlainPoint{values[0], values[1]};
-      if (kind == Kind::Line && reference.key == model::PointKey::End)
-        return PlainPoint{values[2], values[3]};
-      if (kind == Kind::Arc && reference.key != model::PointKey::Center) {
-        const double angle =
-            values[reference.key == model::PointKey::Start ? 3U : 4U];
-        return PlainPoint{values[0] + values[2] * std::cos(angle),
-                          values[1] + values[2] * std::sin(angle)};
-      }
-      if (isEllipse(kind) && reference.key != model::PointKey::Center) {
-        if (reference.key == model::PointKey::Major)
-          return ellipsePoint(values, 0.0);
-        if (reference.key == model::PointKey::Minor)
-          return ellipsePoint(values, std::numbers::pi / 2.0);
-        return ellipsePoint(
-            values, values[reference.key == model::PointKey::Start ? 5U : 6U]);
-      }
-      if (isHyperbola(kind) && reference.key != model::PointKey::Center) {
-        if (reference.key == model::PointKey::Major)
-          return hyperbolaPoint(values, 0.0);
-        if (reference.key == model::PointKey::Minor)
-          return rotatedPoint(values, values[2], values[3], 4U);
-        if (reference.key == model::PointKey::Focus)
-          return rotatedPoint(values, std::hypot(values[2], values[3]), 0.0,
-                              4U);
-        return hyperbolaPoint(
-            values, values[reference.key == model::PointKey::Start ? 5U : 6U]);
-      }
-      if (isParabola(kind) && reference.key != model::PointKey::Center) {
-        if (reference.key == model::PointKey::Focus)
-          return rotatedPoint(values, values[2], 0.0, 3U);
-        return parabolaPoint(
-            values, values[reference.key == model::PointKey::Start ? 4U : 5U]);
-      }
-      if (isBSpline(kind)) {
-        const EntityShape &spline = shape(reference.entity);
-        const auto [first, last] = model::nurbsDomain(
-            nurbsView(spline, {values, spline.controlPointCount * 3U}));
-        return bsplinePoint(spline, values,
-                            reference.key == model::PointKey::Start ? first
-                                                                    : last);
-      }
-      return PlainPoint{values[0], values[1]};
+      static_cast<void>(kind);
+      return ::kearne::adapters::selectedPoint(selectedShape, values,
+                                               reference.key);
     };
     const auto lineLength = [&](const double *line) {
       return std::max(std::hypot(line[2] - line[0], line[3] - line[1]),
@@ -809,6 +877,79 @@ public:
                       : std::hypot(offsetX, offsetY) / scale_;
             }
           }
+          if constexpr (std::is_same_v<Type, model::Snell>) {
+            const PlainPoint incidentPoint = selectedPoint(value.incident);
+            const PlainPoint refractedPoint = selectedPoint(value.refracted);
+            const PlainPoint shared{
+                std::midpoint(incidentPoint.x, refractedPoint.x),
+                std::midpoint(incidentPoint.y, refractedPoint.y)};
+            const auto [incidentKind, incidentRay] =
+                block(value.incident.entity);
+            const auto [refractedKind, refractedRay] =
+                block(value.refracted.entity);
+            static_cast<void>(incidentKind);
+            static_cast<void>(refractedKind);
+            const PlainPoint incidentDirection =
+                orientedRayTangent(shape(value.incident.entity), incidentRay,
+                                   value.incident.key, true);
+            const PlainPoint refractedDirection =
+                orientedRayTangent(shape(value.refracted.entity), refractedRay,
+                                   value.refracted.key, false);
+            const auto [boundaryKind, boundary] = block(value.boundary);
+            const PlainPoint boundaryDirection =
+                unitTangent(shape(value.boundary), boundary, shared);
+            double boundaryResidual = 0.0;
+            if (isLine(boundaryKind)) {
+              boundaryResidual =
+                  cross(boundary[2] - boundary[0], boundary[3] - boundary[1],
+                        shared.x - boundary[0], shared.y - boundary[1]) /
+                  lineLength(boundary);
+            } else if (isRadial(boundaryKind)) {
+              boundaryResidual =
+                  std::hypot(shared.x - boundary[0], shared.y - boundary[1]) -
+                  boundary[2];
+            } else if (isEllipse(boundaryKind) || isHyperbola(boundaryKind)) {
+              const double cosine = std::cos(boundary[4]);
+              const double sine = std::sin(boundary[4]);
+              const double offsetX = shared.x - boundary[0];
+              const double offsetY = shared.y - boundary[1];
+              const double localX = cosine * offsetX + sine * offsetY;
+              const double localY = -sine * offsetX + cosine * offsetY;
+              const double implicit = std::pow(localX / boundary[2], 2.0) +
+                                      (isEllipse(boundaryKind) ? 1.0 : -1.0) *
+                                          std::pow(localY / boundary[3], 2.0) -
+                                      1.0;
+              boundaryResidual =
+                  implicit * std::min(boundary[2], boundary[3]) * 0.5;
+            } else if (isParabola(boundaryKind)) {
+              const double cosine = std::cos(boundary[3]);
+              const double sine = std::sin(boundary[3]);
+              const double offsetX = shared.x - boundary[0];
+              const double offsetY = shared.y - boundary[1];
+              const double localX = cosine * offsetX + sine * offsetY;
+              const double localY = -sine * offsetX + cosine * offsetY;
+              const double denominator =
+                  std::max(2.0 * boundary[2], std::abs(localY));
+              boundaryResidual =
+                  (localY * localY - 4.0 * boundary[2] * localX) / denominator;
+            } else {
+              const EntityShape &spline = shape(value.boundary);
+              const model::NurbsView view =
+                  nurbsView(spline, {boundary, spline.controlPointCount * 3U});
+              boundaryResidual =
+                  std::sqrt(model::projectToNurbs(view, {shared.x, shared.y})
+                                .squaredDistance);
+            }
+            residuals[count++] = (refractedPoint.x - incidentPoint.x) / scale_;
+            residuals[count++] = (refractedPoint.y - incidentPoint.y) / scale_;
+            residuals[count++] = boundaryResidual / scale_;
+            residuals[count++] = dot(incidentDirection.x, incidentDirection.y,
+                                     boundaryDirection.x, boundaryDirection.y) -
+                                 value.ratio.si() * dot(refractedDirection.x,
+                                                        refractedDirection.y,
+                                                        boundaryDirection.x,
+                                                        boundaryDirection.y);
+          }
           if constexpr (std::is_same_v<Type, model::Symmetric>) {
             const PlainPoint first = selectedPoint(value.first);
             const PlainPoint second = selectedPoint(value.second);
@@ -977,6 +1118,10 @@ std::vector<SketchEntityId> referencedEntities(const model::Constraint &value) {
         } else if constexpr (std::is_same_v<Type, model::PointOnObject>) {
           add(constraint.point.entity);
           add(constraint.curve);
+        } else if constexpr (std::is_same_v<Type, model::Snell>) {
+          add(constraint.incident.entity);
+          add(constraint.refracted.entity);
+          add(constraint.boundary);
         } else if constexpr (std::is_same_v<Type, model::Symmetric>) {
           add(constraint.first.entity);
           add(constraint.second.entity);
@@ -1004,6 +1149,80 @@ std::vector<SketchEntityId> referencedEntities(const model::Constraint &value) {
   return result;
 }
 
+void snapIsolatedDimensions(std::vector<WorkingEntity> &entities,
+                            const WorkingIndex &index,
+                            std::span<const model::Constraint> constraints,
+                            double minimumLength) {
+  std::unordered_map<SketchEntityId, std::size_t,
+                     TypedIdHash<SketchEntityIdTag>>
+      uses;
+  for (const model::Constraint &constraint : constraints)
+    if (model::isDrivingConstraint(constraint))
+      for (SketchEntityId entity : referencedEntities(constraint))
+        ++uses[entity];
+
+  for (const model::Constraint &constraint : constraints) {
+    if (!model::isDrivingConstraint(constraint))
+      continue;
+    const std::vector<SketchEntityId> references =
+        referencedEntities(constraint);
+    if (references.size() != 1U || uses[references.front()] != 1U)
+      continue;
+    WorkingEntity &entity = entities[index.at(references.front())];
+    std::visit(
+        [&entity, minimumLength](const auto &value) {
+          using Type = std::decay_t<decltype(value)>;
+          if constexpr (std::is_same_v<Type, model::Distance> ||
+                        std::is_same_v<Type, model::HorizontalDistance> ||
+                        std::is_same_v<Type, model::VerticalDistance>) {
+            if (entity.kind != Kind::Line ||
+                (value.first.key != model::PointKey::Start &&
+                 value.first.key != model::PointKey::End) ||
+                (value.second.key != model::PointKey::Start &&
+                 value.second.key != model::PointKey::End) ||
+                value.first.key == value.second.key)
+              return;
+            const std::size_t first =
+                value.first.key == model::PointKey::Start ? 0U : 2U;
+            const std::size_t second =
+                value.second.key == model::PointKey::Start ? 0U : 2U;
+            if constexpr (std::is_same_v<Type, model::Distance>) {
+              const double deltaX =
+                  entity.values[second] - entity.values[first];
+              const double deltaY =
+                  entity.values[second + 1U] - entity.values[first + 1U];
+              const double current = std::hypot(deltaX, deltaY);
+              if (!(current > minimumLength))
+                return;
+              const double midpointX =
+                  std::midpoint(entity.values[first], entity.values[second]);
+              const double midpointY = std::midpoint(
+                  entity.values[first + 1U], entity.values[second + 1U]);
+              const double half = value.value.si() / (2.0 * current);
+              entity.values[first] = midpointX - deltaX * half;
+              entity.values[first + 1U] = midpointY - deltaY * half;
+              entity.values[second] = midpointX + deltaX * half;
+              entity.values[second + 1U] = midpointY + deltaY * half;
+            } else {
+              constexpr std::size_t axis =
+                  std::is_same_v<Type, model::HorizontalDistance> ? 0U : 1U;
+              const double midpoint = std::midpoint(
+                  entity.values[first + axis], entity.values[second + axis]);
+              entity.values[first + axis] = midpoint - value.value.si() * 0.5;
+              entity.values[second + axis] = midpoint + value.value.si() * 0.5;
+            }
+          } else if constexpr (std::is_same_v<Type, model::Radius> ||
+                               std::is_same_v<Type, model::Diameter>) {
+            if (entity.kind == Kind::Circle || entity.kind == Kind::Arc)
+              entity.values[2] =
+                  value.value.si() /
+                  (std::is_same_v<Type, model::Diameter> ? 2.0 : 1.0);
+          }
+        },
+        constraint);
+  }
+}
+
 std::size_t residualCount(const model::Constraint &constraint,
                           const std::vector<WorkingEntity> &entities,
                           const WorkingIndex &index,
@@ -1020,6 +1239,8 @@ std::size_t residualCount(const model::Constraint &constraint,
                       std::is_same_v<Type, model::Collinear> ||
                       std::is_same_v<Type, model::AngleBetween>)
           return 2;
+        if constexpr (std::is_same_v<Type, model::Snell>)
+          return 4;
         if constexpr (std::is_same_v<Type, model::Block>)
           return entities[index.at(value.entity)].values.size();
         if constexpr (std::is_same_v<Type, model::Group>) {
@@ -1419,9 +1640,13 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
 
   std::vector<ceres::ResidualBlockId> documentBlocks;
   std::vector<std::size_t> rowCounts;
+  std::vector<SketchConstraintId> documentConstraintIds;
   documentBlocks.reserve(input.definition.constraints.size());
   rowCounts.reserve(input.definition.constraints.size());
+  documentConstraintIds.reserve(input.definition.constraints.size());
   for (const model::Constraint &constraint : input.definition.constraints) {
+    if (!model::isDrivingConstraint(constraint))
+      continue;
     const std::vector<SketchEntityId> references =
         referencedEntities(constraint);
     std::vector<EntityShape> shapes;
@@ -1449,6 +1674,7 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
     documentBlocks.push_back(
         problem.AddResidualBlock(cost, nullptr, parameterBlocks));
     rowCounts.push_back(rows);
+    documentConstraintIds.push_back(model::constraintId(constraint));
   }
 
   if (includeDrag && input.drag) {
@@ -1470,6 +1696,9 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
     problem.AddResidualBlock(cost, nullptr, entity.values.data());
   }
 
+  const bool ranSolver = !intrinsicBlocks.empty() || !documentBlocks.empty() ||
+                         (includeDrag && input.drag.has_value());
+
   model::SolveResult result;
   if (input.cancellation.stop_requested()) {
     result.status = model::SolveStatus::Cancelled;
@@ -1477,17 +1706,16 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
   }
 
   ceres::Solver::Summary summary;
-  const bool ranSolver = !intrinsicBlocks.empty() || !documentBlocks.empty() ||
-                         (includeDrag && input.drag.has_value());
   if (ranSolver) {
+    snapIsolatedDimensions(entities, index, input.definition.constraints,
+                           input.numerical.minimumLengthMeters);
     CancellationCallback cancellation{input.cancellation};
     ceres::Solver::Options options;
     options.max_num_iterations =
         static_cast<int>(input.numerical.maximumIterations);
     options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
     options.sparse_linear_algebra_library_type = ceres::EIGEN_SPARSE;
-    options.trust_region_strategy_type = ceres::DOGLEG;
-    options.dogleg_type = ceres::SUBSPACE_DOGLEG;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
     options.function_tolerance = 1.0e-14;
     options.gradient_tolerance = 1.0e-14;
     options.parameter_tolerance = 1.0e-14;
@@ -1520,7 +1748,7 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
   const bool satisfied = std::ranges::all_of(
       result.residuals, &model::ConstraintResidual::satisfied);
 
-  const bool computeRedundancy = input.definition.constraints.size() <=
+  const bool computeRedundancy = documentConstraintIds.size() <=
                                  input.numerical.maximumRedundancyConstraints;
   std::vector<ceres::ResidualBlockId> analysisBlocks = intrinsicBlocks;
   analysisBlocks.insert(analysisBlocks.end(), documentBlocks.begin(),
@@ -1550,7 +1778,7 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
         contributes = contributes || pivotRows.contains(row + offset);
       if (!contributes)
         result.redundantConstraints.push_back(
-            model::constraintId(input.definition.constraints[constraintIndex]));
+            documentConstraintIds[constraintIndex]);
       row += rowCounts[constraintIndex];
     }
   }
@@ -1563,6 +1791,38 @@ Result<SolveAttempt> solveOnce(const model::SolveInput &input,
     }
     if (!conflict.constraints.empty())
       result.conflicts.push_back(std::move(conflict));
+    for (const model::Constraint &constraint : input.definition.constraints) {
+      const auto *snell = std::get_if<model::Snell>(&constraint);
+      if (!snell || !model::isDrivingConstraint(constraint))
+        continue;
+      const WorkingEntity &incident =
+          entities[index.at(snell->incident.entity)];
+      const WorkingEntity &refracted =
+          entities[index.at(snell->refracted.entity)];
+      const WorkingEntity &boundary = entities[index.at(snell->boundary)];
+      const EntityShape incidentShape = shapeOf(incident);
+      const EntityShape refractedShape = shapeOf(refracted);
+      const EntityShape boundaryShape = shapeOf(boundary);
+      const PlainPoint incidentPoint = selectedPoint(
+          incidentShape, incident.values.data(), snell->incident.key);
+      const PlainPoint refractedPoint = selectedPoint(
+          refractedShape, refracted.values.data(), snell->refracted.key);
+      const PlainPoint shared{std::midpoint(incidentPoint.x, refractedPoint.x),
+                              std::midpoint(incidentPoint.y, refractedPoint.y)};
+      const PlainPoint incidentDirection = orientedRayTangent(
+          incidentShape, incident.values.data(), snell->incident.key, true);
+      const PlainPoint boundaryDirection =
+          unitTangent(boundaryShape, boundary.values.data(), shared);
+      const double incidentSine =
+          std::abs(incidentDirection.x * boundaryDirection.x +
+                   incidentDirection.y * boundaryDirection.y);
+      if (incidentSine >
+          snell->ratio.si() + input.numerical.angleToleranceRadians) {
+        result.diagnostics.push_back(diagnostic(
+            "sketch.constraint.snell-total-internal-reflection",
+            "The refractive-index ratio cannot transmit this incident angle"));
+      }
+    }
   }
 
   if (ranSolver && summary.termination_type == ceres::FAILURE) {

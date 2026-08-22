@@ -97,12 +97,12 @@ private:
   commitSource(const SketchAddress &address, const SourceRevision &source,
                const OperationContext &operation,
                std::optional<ContentDigest> expectedPrior);
-  [[nodiscard]] SketchState evaluate(SketchAddress address,
-                                     SourceRevision source,
-                                     sketch::Definition definition,
-                                     RevisionId revision,
-                                     const EvaluationIdentity &identity,
-                                     std::stop_token cancellation) const;
+  [[nodiscard]] SketchState
+  evaluate(SketchAddress address, SourceRevision source,
+           sketch::Definition definition, RevisionId revision,
+           const EvaluationIdentity &identity,
+           std::optional<std::vector<sketch::Entity>> priorSolution,
+           std::stop_token cancellation) const;
 
   ActorContext actor_;
   document::ContentStore &contentStore_;

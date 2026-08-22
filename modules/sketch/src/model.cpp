@@ -7,6 +7,7 @@
 #include <limits>
 #include <map>
 #include <numbers>
+#include <numeric>
 #include <ranges>
 #include <set>
 #include <span>
@@ -89,6 +90,30 @@ bool validUtf8(std::string_view text) {
         return false;
   }
   return true;
+}
+
+Result<void> validateConstraintProperties(const Constraint &constraint) {
+  const ConstraintProperties &properties = constraintProperties(constraint);
+  if ((properties.activity != ConstraintActivity::Active &&
+       properties.activity != ConstraintActivity::Suppressed) ||
+      (properties.dimensionMode != DimensionMode::Driving &&
+       properties.dimensionMode != DimensionMode::Reference))
+    return std::unexpected(diagnostic("sketch.constraint.invalid-state",
+                                      "constraint state is invalid"));
+  if (!isDimensionalConstraint(constraint) &&
+      properties.dimensionMode != DimensionMode::Driving)
+    return std::unexpected(
+        diagnostic("sketch.constraint.invalid-dimension-mode",
+                   "only dimensional constraints can be reference dimensions"));
+  if (properties.label &&
+      (properties.label->empty() || properties.label->size() > 128U ||
+       !validUtf8(*properties.label) ||
+       std::ranges::all_of(*properties.label, [](unsigned char value) {
+         return value <= 0x20U || value == 0x7fU;
+       })))
+    return std::unexpected(diagnostic("sketch.constraint.invalid-label",
+                                      "constraint label is invalid"));
+  return {};
 }
 
 FlatEntity flatten(const Entity &entity) {
@@ -357,6 +382,82 @@ double radius(const FlatEntity &curve) { return curve.values[2]; }
 double dx(const FlatEntity &line) { return line.values[2] - line.values[0]; }
 double dy(const FlatEntity &line) { return line.values[3] - line.values[1]; }
 double length(const FlatEntity &line) { return std::hypot(dx(line), dy(line)); }
+
+Result<PlainPoint> unitTangent(const FlatEntity &curve, PlainPoint location) {
+  PlainPoint tangent;
+  if (isLine(curve)) {
+    tangent = {dx(curve), dy(curve)};
+  } else if (isRadial(curve)) {
+    tangent = {-(location.y - curve.values[1]), location.x - curve.values[0]};
+  } else if (isEllipse(curve) || isHyperbola(curve)) {
+    const double cosine = std::cos(curve.values[4]);
+    const double sine = std::sin(curve.values[4]);
+    const double offsetX = location.x - curve.values[0];
+    const double offsetY = location.y - curve.values[1];
+    const double localX = cosine * offsetX + sine * offsetY;
+    const double localY = -sine * offsetX + cosine * offsetY;
+    const double gradientX = 2.0 * localX / std::pow(curve.values[2], 2.0);
+    const double gradientY = (isEllipse(curve) ? 2.0 : -2.0) * localY /
+                             std::pow(curve.values[3], 2.0);
+    const PlainPoint local{-gradientY, gradientX};
+    tangent = {cosine * local.x - sine * local.y,
+               sine * local.x + cosine * local.y};
+  } else if (isParabola(curve)) {
+    const double cosine = std::cos(curve.values[3]);
+    const double sine = std::sin(curve.values[3]);
+    const double offsetX = location.x - curve.values[0];
+    const double offsetY = location.y - curve.values[1];
+    const double localY = -sine * offsetX + cosine * offsetY;
+    const PlainPoint local{-2.0 * localY, -4.0 * curve.values[2]};
+    tangent = {cosine * local.x - sine * local.y,
+               sine * local.x + cosine * local.y};
+  } else if (isBSpline(curve)) {
+    const NurbsView view = bsplineView(curve);
+    const NurbsProjection projected =
+        projectToNurbs(view, {location.x, location.y});
+    const NurbsPoint derivative = differentiateNurbs(view, projected.parameter);
+    tangent = {derivative.x, derivative.y};
+  } else {
+    return std::unexpected(
+        diagnostic("sketch.constraint.snell-boundary",
+                   "Snell constraint requires a curve boundary"));
+  }
+  const double magnitude = std::hypot(tangent.x, tangent.y);
+  if (!(magnitude > std::numeric_limits<double>::epsilon()))
+    return std::unexpected(
+        diagnostic("sketch.constraint.snell-normal",
+                   "Snell constraint cannot resolve a curve normal"));
+  return PlainPoint{tangent.x / magnitude, tangent.y / magnitude};
+}
+
+Result<PlainPoint> orientedRayTangent(const FlatEntity &ray, PointKey endpoint,
+                                      bool towardEndpoint) {
+  if (endpoint != PointKey::Start && endpoint != PointKey::End)
+    return std::unexpected(
+        diagnostic("sketch.constraint.snell-ray-endpoint",
+                   "Snell constraint rays require selected curve endpoints"));
+  auto selected = point(ray, endpoint);
+  auto first = point(ray, PointKey::Start);
+  auto last = point(ray, PointKey::End);
+  if (!selected || !first || !last)
+    return std::unexpected(
+        diagnostic("sketch.constraint.snell-ray",
+                   "Snell constraint rays require endpoint-bearing curves"));
+  auto tangent = unitTangent(ray, *selected);
+  if (!tangent)
+    return std::unexpected(std::move(tangent.error()));
+  const PlainPoint chord{last->x - first->x, last->y - first->y};
+  if (tangent->x * chord.x + tangent->y * chord.y < 0.0) {
+    tangent->x = -tangent->x;
+    tangent->y = -tangent->y;
+  }
+  const bool pointsTowardEndpoint = endpoint == PointKey::End;
+  if (pointsTowardEndpoint != towardEndpoint) {
+    tangent->x = -tangent->x;
+    tangent->y = -tangent->y;
+  }
+  return tangent;
+}
 
 bool parameterWithin(double parameter, double first, double second) {
   const auto [minimum, maximum] = std::minmax(first, second);
@@ -743,6 +844,105 @@ Result<std::vector<double>> residualsFor(
               diagnostic("sketch.constraint.invalid-point-on-object",
                          "point-on-object requires a point and a curve"));
         }
+        if constexpr (std::is_same_v<Type, Snell>) {
+          if (!(value.ratio.si() > 0.0) || !std::isfinite(value.ratio.si()))
+            return std::unexpected(diagnostic(
+                "sketch.constraint.snell-ratio",
+                "Snell constraint requires a positive finite n2/n1 ratio"));
+          auto incidentPoint = point(current, currentIndex, value.incident);
+          auto refractedPoint = point(current, currentIndex, value.refracted);
+          auto incidentRay = entity(value.incident.entity);
+          auto refractedRay = entity(value.refracted.entity);
+          auto boundary = entity(value.boundary);
+          if (!incidentPoint || !refractedPoint || !incidentRay ||
+              !refractedRay || !boundary) {
+            if (!incidentPoint)
+              return std::unexpected(std::move(incidentPoint.error()));
+            if (!refractedPoint)
+              return std::unexpected(std::move(refractedPoint.error()));
+            if (!incidentRay)
+              return std::unexpected(std::move(incidentRay.error()));
+            if (!refractedRay)
+              return std::unexpected(std::move(refractedRay.error()));
+            return std::unexpected(std::move(boundary.error()));
+          }
+          if (value.incident.entity == value.refracted.entity ||
+              value.incident.entity == value.boundary ||
+              value.refracted.entity == value.boundary)
+            return std::unexpected(diagnostic(
+                "sketch.constraint.snell-distinct-curves",
+                "Snell constraint requires two rays and a distinct boundary"));
+          auto incidentDirection =
+              orientedRayTangent(**incidentRay, value.incident.key, true);
+          auto refractedDirection =
+              orientedRayTangent(**refractedRay, value.refracted.key, false);
+          const PlainPoint shared{
+              std::midpoint(incidentPoint->x, refractedPoint->x),
+              std::midpoint(incidentPoint->y, refractedPoint->y)};
+          auto boundaryDirection = unitTangent(**boundary, shared);
+          if (!incidentDirection)
+            return std::unexpected(std::move(incidentDirection.error()));
+          if (!refractedDirection)
+            return std::unexpected(std::move(refractedDirection.error()));
+          if (!boundaryDirection)
+            return std::unexpected(std::move(boundaryDirection.error()));
+          double boundaryResidual = 0.0;
+          if (isLine(**boundary)) {
+            boundaryResidual = cross(dx(**boundary), dy(**boundary),
+                                     shared.x - start(**boundary).x,
+                                     shared.y - start(**boundary).y) /
+                               length(**boundary);
+          } else if (isRadial(**boundary)) {
+            boundaryResidual = std::hypot(shared.x - center(**boundary).x,
+                                          shared.y - center(**boundary).y) -
+                               radius(**boundary);
+          } else if (isEllipse(**boundary) || isHyperbola(**boundary)) {
+            const double cosine = std::cos((*boundary)->values[4]);
+            const double sine = std::sin((*boundary)->values[4]);
+            const double offsetX = shared.x - center(**boundary).x;
+            const double offsetY = shared.y - center(**boundary).y;
+            const double localX = cosine * offsetX + sine * offsetY;
+            const double localY = -sine * offsetX + cosine * offsetY;
+            const double implicit =
+                std::pow(localX / (*boundary)->values[2], 2.0) +
+                (isEllipse(**boundary) ? 1.0 : -1.0) *
+                    std::pow(localY / (*boundary)->values[3], 2.0) -
+                1.0;
+            boundaryResidual =
+                implicit *
+                std::min((*boundary)->values[2], (*boundary)->values[3]) / 2.0;
+          } else if (isParabola(**boundary)) {
+            const double cosine = std::cos((*boundary)->values[3]);
+            const double sine = std::sin((*boundary)->values[3]);
+            const double offsetX = shared.x - center(**boundary).x;
+            const double offsetY = shared.y - center(**boundary).y;
+            const double localX = cosine * offsetX + sine * offsetY;
+            const double localY = -sine * offsetX + cosine * offsetY;
+            const double scale =
+                std::max(2.0 * (*boundary)->values[2], std::abs(localY));
+            boundaryResidual =
+                (localY * localY - 4.0 * (*boundary)->values[2] * localX) /
+                scale;
+          } else if (isBSpline(**boundary)) {
+            boundaryResidual = bsplineDistance(**boundary, shared);
+          } else {
+            return std::unexpected(
+                diagnostic("sketch.constraint.snell-boundary",
+                           "Snell constraint requires a curve boundary"));
+          }
+          const double incidentSine =
+              dot(incidentDirection->x, incidentDirection->y,
+                  boundaryDirection->x, boundaryDirection->y);
+          const double refractedSine =
+              dot(refractedDirection->x, refractedDirection->y,
+                  boundaryDirection->x, boundaryDirection->y);
+          return std::vector<double>{
+              (refractedPoint->x - incidentPoint->x) / lengthTolerance,
+              (refractedPoint->y - incidentPoint->y) / lengthTolerance,
+              boundaryResidual / lengthTolerance,
+              (incidentSine - value.ratio.si() * refractedSine) /
+                  angleTolerance};
+        }
         if constexpr (std::is_same_v<Type, Symmetric>) {
           auto first = point(current, currentIndex, value.first);
           auto second = point(current, currentIndex, value.second);
@@ -1078,6 +1278,102 @@ SketchConstraintId constraintId(const Constraint &constraint) {
   return std::visit([](const auto &value) { return value.id; }, constraint);
 }
 
+const ConstraintProperties &constraintProperties(const Constraint &constraint) {
+  return std::visit(
+      [](const auto &value) -> const ConstraintProperties & {
+        return value.properties;
+      },
+      constraint);
+}
+
+ConstraintProperties &constraintProperties(Constraint &constraint) {
+  return std::visit(
+      [](auto &value) -> ConstraintProperties & { return value.properties; },
+      constraint);
+}
+
+bool isDimensionalConstraint(const Constraint &constraint) {
+  return std::visit(
+      []<typename Value>(const Value &) {
+        using Type = std::remove_cvref_t<Value>;
+        return std::is_same_v<Type, Distance> ||
+               std::is_same_v<Type, HorizontalDistance> ||
+               std::is_same_v<Type, VerticalDistance> ||
+               std::is_same_v<Type, Radius> || std::is_same_v<Type, Diameter> ||
+               std::is_same_v<Type, AngleBetween>;
+      },
+      constraint);
+}
+
+bool isDrivingConstraint(const Constraint &constraint) {
+  const ConstraintProperties &properties = constraintProperties(constraint);
+  return properties.activity == ConstraintActivity::Active &&
+         (!isDimensionalConstraint(constraint) ||
+          properties.dimensionMode == DimensionMode::Driving);
+}
+
+std::string_view constraintKindName(const Constraint &constraint) {
+  return std::visit(
+      []<typename Value>(const Value &) -> std::string_view {
+        using Type = std::remove_cvref_t<Value>;
+        if constexpr (std::is_same_v<Type, Coincident>)
+          return "Coincident";
+        if constexpr (std::is_same_v<Type, Horizontal>)
+          return "Horizontal";
+        if constexpr (std::is_same_v<Type, Vertical>)
+          return "Vertical";
+        if constexpr (std::is_same_v<Type, Parallel>)
+          return "Parallel";
+        if constexpr (std::is_same_v<Type, Perpendicular>)
+          return "Perpendicular";
+        if constexpr (std::is_same_v<Type, Tangent>)
+          return "Tangent";
+        if constexpr (std::is_same_v<Type, Concentric>)
+          return "Concentric";
+        if constexpr (std::is_same_v<Type, Equal>)
+          return "Equal";
+        if constexpr (std::is_same_v<Type, Midpoint>)
+          return "Midpoint";
+        if constexpr (std::is_same_v<Type, PointOnObject>)
+          return "Point on Object";
+        if constexpr (std::is_same_v<Type, Symmetric>)
+          return "Symmetric";
+        if constexpr (std::is_same_v<Type, SymmetricAboutPoint>)
+          return "Symmetric about Point";
+        if constexpr (std::is_same_v<Type, Lock>)
+          return "Lock";
+        if constexpr (std::is_same_v<Type, Block>)
+          return "Block";
+        if constexpr (std::is_same_v<Type, Group>)
+          return "Group";
+        if constexpr (std::is_same_v<Type, Collinear>)
+          return "Collinear";
+        if constexpr (std::is_same_v<Type, Snell>)
+          return "Refraction";
+        if constexpr (std::is_same_v<Type, Distance>)
+          return "Distance";
+        if constexpr (std::is_same_v<Type, HorizontalDistance>)
+          return "Horizontal Distance";
+        if constexpr (std::is_same_v<Type, VerticalDistance>)
+          return "Vertical Distance";
+        if constexpr (std::is_same_v<Type, Radius>)
+          return "Radius";
+        if constexpr (std::is_same_v<Type, Diameter>)
+          return "Diameter";
+        return "Angle";
+      },
+      constraint);
+}
+
+std::string constraintDisplayLabel(const Constraint &constraint,
+                                   std::size_t kindOrdinal) {
+  const auto &label = constraintProperties(constraint).label;
+  if (label)
+    return *label;
+  return std::string{constraintKindName(constraint)} + " " +
+         std::to_string(kindOrdinal);
+}
+
 std::vector<SketchEntityId> constraintEntityIds(const Constraint &constraint) {
   return std::visit(
       []<typename Value>(const Value &value) {
@@ -1100,6 +1396,9 @@ std::vector<SketchEntityId> constraintEntityIds(const Constraint &constraint) {
                       std::is_same_v<Type, Collinear> ||
                       std::is_same_v<Type, AngleBetween>)
           return std::vector{value.first, value.second};
+        if constexpr (std::is_same_v<Type, Snell>)
+          return std::vector{value.incident.entity, value.refracted.entity,
+                             value.boundary};
         if constexpr (std::is_same_v<Type, Midpoint>)
           return std::vector{value.point.entity, value.line};
         if constexpr (std::is_same_v<Type, PointOnObject>)
@@ -1272,7 +1571,7 @@ std::size_t closedProfileCount(const Definition &definition) {
     join(first, second);
   for (const Constraint &constraint : definition.constraints) {
     const auto *coincident = std::get_if<Coincident>(&constraint);
-    if (!coincident)
+    if (!coincident || !isDrivingConstraint(constraint))
       continue;
     join(coincident->first, coincident->second);
   }
@@ -1307,12 +1606,14 @@ Result<void> validateConstraint(const Definition &definition,
                                 const NumericalProfile &profile) {
   if (auto valid = validateProfile(profile); !valid)
     return valid;
+  if (auto valid = validateConstraintProperties(constraint); !valid)
+    return valid;
   auto flat = flatten(definition.entities);
   if (!flat)
     return std::unexpected(std::move(flat.error()));
   for (const FlatEntity &entity : *flat)
-    if (auto valid = validateGeometry(entity, profile, "sketch.entity",
-                                      "sketch entity");
+    if (auto valid =
+            validateGeometry(entity, profile, "sketch.entity", "sketch entity");
         !valid)
       return valid;
   const EntityIndex index = indexOf(*flat);
@@ -1469,11 +1770,13 @@ Result<void> validate(const Definition &definition,
       const bool validRole =
           object.kind == SketchObjectKind::CurveGroup
               ? !member.role.empty() && member.role.size() <= 32U &&
-                    std::ranges::all_of(member.role, [](unsigned char value) {
-                      return (value >= 'a' && value <= 'z') ||
-                             (value >= '0' && value <= '9') || value == '_';
-                    })
-              : dynamicRoles
+                    std::ranges::all_of(
+                        member.role,
+                        [](unsigned char value) {
+                          return (value >= 'a' && value <= 'z') ||
+                                 (value >= '0' && value <= '9') || value == '_';
+                        })
+          : dynamicRoles
               ? member.role == dynamicPrefix + std::to_string(index + 1U)
               : std::ranges::find(expectedRoles, member.role) !=
                     expectedRoles.end();
@@ -1501,6 +1804,8 @@ Result<void> validate(const Definition &definition,
     if (!constraintIds.insert(constraintId(constraint)).second)
       return std::unexpected(diagnostic("sketch.constraint.duplicate-id",
                                         "sketch constraint ID is duplicated"));
+    if (auto valid = validateConstraintProperties(constraint); !valid)
+      return valid;
     const auto invalidValue = std::visit(
         []<typename Value>(const Value &value) {
           using Type = std::decay_t<Value>;
@@ -1562,6 +1867,8 @@ evaluateResiduals(const Definition &definition,
   std::vector<ConstraintResidual> result;
   result.reserve(definition.constraints.size());
   for (const Constraint &constraint : definition.constraints) {
+    if (!isDrivingConstraint(constraint))
+      continue;
     auto values = residualsFor(constraint, *current, currentIndex, *reference,
                                referenceIndex, profile);
     if (!values)
@@ -1576,6 +1883,57 @@ evaluateResiduals(const Definition &definition,
     result.push_back({constraintId(constraint), maximum, maximum <= 1.0});
   }
   return result;
+}
+
+std::vector<ConstraintHealth> constraintHealth(const Definition &definition,
+                                               const SolveResult &solve) {
+  return constraintHealth(definition, solve.residuals,
+                          solve.redundantConstraints, solve.conflicts);
+}
+
+std::vector<ConstraintHealth>
+constraintHealth(const Definition &definition,
+                 std::span<const ConstraintResidual> solveResiduals,
+                 std::span<const SketchConstraintId> redundantConstraints,
+                 std::span<const ConflictSet> conflicts) {
+  std::unordered_map<SketchConstraintId, const ConstraintResidual *,
+                     TypedIdHash<SketchConstraintIdTag>>
+      residuals;
+  residuals.reserve(solveResiduals.size());
+  for (const ConstraintResidual &residual : solveResiduals)
+    residuals.emplace(residual.constraint, &residual);
+
+  std::unordered_set<SketchConstraintId, TypedIdHash<SketchConstraintIdTag>>
+      redundant(redundantConstraints.begin(), redundantConstraints.end());
+  std::unordered_set<SketchConstraintId, TypedIdHash<SketchConstraintIdTag>>
+      conflicting;
+  for (const ConflictSet &conflict : conflicts)
+    conflicting.insert(conflict.constraints.begin(),
+                       conflict.constraints.end());
+
+  std::vector<ConstraintHealth> health;
+  health.reserve(definition.constraints.size());
+  for (const Constraint &constraint : definition.constraints) {
+    ConstraintHealth entry{constraintId(constraint), ConstraintState::Driving,
+                           std::nullopt, true};
+    const ConstraintProperties &properties = constraintProperties(constraint);
+    if (properties.activity == ConstraintActivity::Suppressed)
+      entry.state = ConstraintState::Suppressed;
+    else if (conflicting.contains(entry.constraint))
+      entry.state = ConstraintState::Conflicting;
+    else if (redundant.contains(entry.constraint))
+      entry.state = ConstraintState::Redundant;
+    else if (isDimensionalConstraint(constraint) &&
+             properties.dimensionMode == DimensionMode::Reference)
+      entry.state = ConstraintState::Reference;
+    const auto residual = residuals.find(entry.constraint);
+    if (residual != residuals.end()) {
+      entry.normalizedResidual = residual->second->normalizedMaximum;
+      entry.satisfied = residual->second->satisfied;
+    }
+    health.push_back(std::move(entry));
+  }
+  return health;
 }
 
 } // namespace kearne::sketch

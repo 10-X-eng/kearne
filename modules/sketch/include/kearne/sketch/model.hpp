@@ -5,7 +5,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -139,22 +141,38 @@ struct PointRef {
   auto operator<=>(const PointRef &) const = default;
 };
 
+enum class ConstraintActivity : std::uint8_t { Active = 1, Suppressed = 2 };
+
+enum class DimensionMode : std::uint8_t { Driving = 1, Reference = 2 };
+
+// Common authored properties stay on the declaration. Solver health is
+// derived from the declaration and its latest evaluation, never persisted.
+struct ConstraintProperties {
+  std::optional<std::string> label;
+  ConstraintActivity activity = ConstraintActivity::Active;
+  DimensionMode dimensionMode = DimensionMode::Driving;
+  auto operator<=>(const ConstraintProperties &) const = default;
+};
+
 struct Coincident {
   SketchConstraintId id;
   PointRef first;
   PointRef second;
+  ConstraintProperties properties{};
   auto operator<=>(const Coincident &) const = default;
 };
 
 struct Horizontal {
   SketchConstraintId id;
   SketchEntityId line;
+  ConstraintProperties properties{};
   auto operator<=>(const Horizontal &) const = default;
 };
 
 struct Vertical {
   SketchConstraintId id;
   SketchEntityId line;
+  ConstraintProperties properties{};
   auto operator<=>(const Vertical &) const = default;
 };
 
@@ -162,6 +180,7 @@ struct Parallel {
   SketchConstraintId id;
   SketchEntityId first;
   SketchEntityId second;
+  ConstraintProperties properties{};
   auto operator<=>(const Parallel &) const = default;
 };
 
@@ -169,6 +188,7 @@ struct Perpendicular {
   SketchConstraintId id;
   SketchEntityId first;
   SketchEntityId second;
+  ConstraintProperties properties{};
   auto operator<=>(const Perpendicular &) const = default;
 };
 
@@ -179,6 +199,7 @@ struct Tangent {
   SketchEntityId first;
   SketchEntityId second;
   Tangency mode = Tangency::External;
+  ConstraintProperties properties{};
   auto operator<=>(const Tangent &) const = default;
 };
 
@@ -186,6 +207,7 @@ struct Concentric {
   SketchConstraintId id;
   SketchEntityId first;
   SketchEntityId second;
+  ConstraintProperties properties{};
   auto operator<=>(const Concentric &) const = default;
 };
 
@@ -193,6 +215,7 @@ struct Equal {
   SketchConstraintId id;
   SketchEntityId first;
   SketchEntityId second;
+  ConstraintProperties properties{};
   auto operator<=>(const Equal &) const = default;
 };
 
@@ -200,6 +223,7 @@ struct Midpoint {
   SketchConstraintId id;
   PointRef point;
   SketchEntityId line;
+  ConstraintProperties properties{};
   auto operator<=>(const Midpoint &) const = default;
 };
 
@@ -207,6 +231,7 @@ struct PointOnObject {
   SketchConstraintId id;
   PointRef point;
   SketchEntityId curve;
+  ConstraintProperties properties{};
   auto operator<=>(const PointOnObject &) const = default;
 };
 
@@ -215,6 +240,7 @@ struct Symmetric {
   PointRef first;
   PointRef second;
   SketchEntityId axis;
+  ConstraintProperties properties{};
   auto operator<=>(const Symmetric &) const = default;
 };
 
@@ -223,6 +249,7 @@ struct SymmetricAboutPoint {
   PointRef first;
   PointRef second;
   PointRef center;
+  ConstraintProperties properties{};
   auto operator<=>(const SymmetricAboutPoint &) const = default;
 };
 
@@ -230,18 +257,21 @@ struct Lock {
   SketchConstraintId id;
   PointRef point;
   Point2 position;
+  ConstraintProperties properties{};
   auto operator<=>(const Lock &) const = default;
 };
 
 struct Block {
   SketchConstraintId id;
   SketchEntityId entity;
+  ConstraintProperties properties{};
   auto operator<=>(const Block &) const = default;
 };
 
 struct Group {
   SketchConstraintId id;
   std::vector<SketchEntityId> entities;
+  ConstraintProperties properties{};
   auto operator<=>(const Group &) const = default;
 };
 
@@ -249,7 +279,20 @@ struct Collinear {
   SketchConstraintId id;
   SketchEntityId first;
   SketchEntityId second;
+  ConstraintProperties properties{};
   auto operator<=>(const Collinear &) const = default;
+};
+
+// The incident endpoint approaches the shared boundary point; the refracted
+// endpoint leaves it. ratio is n2 / n1 and is always positive.
+struct Snell {
+  SketchConstraintId id;
+  PointRef incident;
+  PointRef refracted;
+  SketchEntityId boundary;
+  DimensionlessValue ratio;
+  ConstraintProperties properties{};
+  auto operator<=>(const Snell &) const = default;
 };
 
 struct Distance {
@@ -257,6 +300,7 @@ struct Distance {
   PointRef first;
   PointRef second;
   LengthValue value;
+  ConstraintProperties properties{};
   auto operator<=>(const Distance &) const = default;
 };
 
@@ -265,6 +309,7 @@ struct HorizontalDistance {
   PointRef first;
   PointRef second;
   LengthValue value;
+  ConstraintProperties properties{};
   auto operator<=>(const HorizontalDistance &) const = default;
 };
 
@@ -273,6 +318,7 @@ struct VerticalDistance {
   PointRef first;
   PointRef second;
   LengthValue value;
+  ConstraintProperties properties{};
   auto operator<=>(const VerticalDistance &) const = default;
 };
 
@@ -280,6 +326,7 @@ struct Radius {
   SketchConstraintId id;
   SketchEntityId curve;
   LengthValue value;
+  ConstraintProperties properties{};
   auto operator<=>(const Radius &) const = default;
 };
 
@@ -287,6 +334,7 @@ struct Diameter {
   SketchConstraintId id;
   SketchEntityId curve;
   LengthValue value;
+  ConstraintProperties properties{};
   auto operator<=>(const Diameter &) const = default;
 };
 
@@ -295,15 +343,16 @@ struct AngleBetween {
   SketchEntityId first;
   SketchEntityId second;
   AngleValue value;
+  ConstraintProperties properties{};
   auto operator<=>(const AngleBetween &) const = default;
 };
 
 using Constraint =
     std::variant<Coincident, Horizontal, Vertical, Parallel, Perpendicular,
                  Tangent, Concentric, Equal, Midpoint, Block, Group, Collinear,
-                 PointOnObject, Symmetric, SymmetricAboutPoint, Lock, Distance,
-                 HorizontalDistance, VerticalDistance, Radius, Diameter,
-                 AngleBetween>;
+                 PointOnObject, Symmetric, SymmetricAboutPoint, Lock, Snell,
+                 Distance, HorizontalDistance, VerticalDistance, Radius,
+                 Diameter, AngleBetween>;
 
 enum class SketchObjectKind : std::uint8_t {
   Rectangle = 1,
@@ -421,15 +470,47 @@ struct SolveResult {
   std::uint32_t iterations = 0;
 };
 
+enum class ConstraintState : std::uint8_t {
+  Driving = 1,
+  Reference = 2,
+  Suppressed = 3,
+  Redundant = 4,
+  Conflicting = 5,
+};
+
+struct ConstraintHealth {
+  SketchConstraintId constraint;
+  ConstraintState state = ConstraintState::Driving;
+  std::optional<double> normalizedResidual;
+  bool satisfied = true;
+  bool operator==(const ConstraintHealth &) const = default;
+};
+
 [[nodiscard]] SketchEntityId entityId(const Entity &entity);
 [[nodiscard]] SketchConstraintId constraintId(const Constraint &constraint);
+[[nodiscard]] const ConstraintProperties &
+constraintProperties(const Constraint &constraint);
+[[nodiscard]] ConstraintProperties &
+constraintProperties(Constraint &constraint);
+[[nodiscard]] bool isDimensionalConstraint(const Constraint &constraint);
+[[nodiscard]] bool isDrivingConstraint(const Constraint &constraint);
+[[nodiscard]] std::string_view constraintKindName(const Constraint &constraint);
+[[nodiscard]] std::string constraintDisplayLabel(const Constraint &constraint,
+                                                 std::size_t kindOrdinal);
+[[nodiscard]] std::vector<ConstraintHealth>
+constraintHealth(const Definition &definition, const SolveResult &solve);
+[[nodiscard]] std::vector<ConstraintHealth>
+constraintHealth(const Definition &definition,
+                 std::span<const ConstraintResidual> residuals,
+                 std::span<const SketchConstraintId> redundantConstraints,
+                 std::span<const ConflictSet> conflicts);
 [[nodiscard]] std::vector<SketchEntityId>
 constraintEntityIds(const Constraint &constraint);
 [[nodiscard]] Result<Point2> resolvePoint(const Definition &definition,
                                           PointRef reference);
 [[nodiscard]] std::size_t closedProfileCount(const Definition &definition);
-[[nodiscard]] Result<void>
-validate(const Entity &entity, const NumericalProfile &profile = {});
+[[nodiscard]] Result<void> validate(const Entity &entity,
+                                    const NumericalProfile &profile = {});
 [[nodiscard]] Result<void>
 validateConstraint(const Definition &definition, const Constraint &constraint,
                    const NumericalProfile &profile = {});

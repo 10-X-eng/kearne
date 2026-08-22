@@ -28,7 +28,7 @@ void require(bool condition, const char *message) {
 
 void verifyGeneratedRoundTrips() {
   static_assert(std::variant_size_v<sketch::Entity> == 9);
-  static_assert(std::variant_size_v<sketch::Constraint> == 22);
+  static_assert(std::variant_size_v<sketch::Constraint> == 23);
   const auto profile = kearne::testkit::propertyProfile();
   kearne::testkit::checkProperty(
       "sketch wire round trip", profile,
@@ -42,9 +42,9 @@ void verifyGeneratedRoundTrips() {
         wire::SketchDefinition encoded;
         auto written = adapters::writeSketchDefinition(definition, &encoded);
         if (!written)
-          throw std::runtime_error("valid definition did not convert to wire: " +
-                                   written.error().code + ": " +
-                                   written.error().summary);
+          throw std::runtime_error(
+              "valid definition did not convert to wire: " +
+              written.error().code + ": " + written.error().summary);
         require(encoded.entities_size() ==
                         static_cast<int>(definition.entities.size()) &&
                     encoded.objects_size() ==

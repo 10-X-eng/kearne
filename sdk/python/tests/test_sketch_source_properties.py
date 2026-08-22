@@ -176,13 +176,15 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
             (
                 argument.kind
                 for argument in spec.positional
-                if argument.kind in {"length", "angle"}
+                if argument.kind in {"length", "angle", "scalar"}
             ),
             None,
         )
         value = Length(0.025) if quantity == "length" else None
         if quantity == "angle":
             value = Angle(0.5)
+        elif quantity == "scalar":
+            value = 1.5
         position = (
             (Length(0.01), Length(0.02))
             if any(argument.kind == "point" for argument in spec.positional)
@@ -197,6 +199,9 @@ def values(seed: int) -> tuple[tuple[Entity, ...], tuple[Constraint, ...]]:
                 value,
                 "internal" if name == "tangent" else None,
                 position,
+                f"{name.replace('_', ' ').title()} {ordinal + 1}",
+                ordinal % 3 != 0,
+                quantity not in {"length", "angle"} or ordinal % 2 == 0,
             )
         )
     return entities, tuple(constraints)
@@ -286,6 +291,13 @@ class SketchSourceProperties(unittest.TestCase):
         self.assertIn(
             "mode='internal'",
             emit_call(next(value for value in constraints if value.kind == "tangent")),
+        )
+        self.assertTrue(all("label=" in emit_call(value) for value in constraints))
+        self.assertTrue(
+            any("active=False" in emit_call(value) for value in constraints)
+        )
+        self.assertTrue(
+            any("driving=False" in emit_call(value) for value in constraints)
         )
 
         session = open_edit_session(source, "profile")

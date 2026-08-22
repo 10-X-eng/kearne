@@ -104,10 +104,12 @@ std::optional<Diagnostic> schemaCoverageError() {
                        std::array{1, 2}) &&
         hasExactFields(*wire::SketchEntityPairAngleConstraint::descriptor(),
                        std::array{1, 2, 3}) &&
+        hasExactFields(*wire::SketchSnellConstraint::descriptor(),
+                       std::array{1, 2, 3, 4}) &&
         hasExactFields(*wire::SketchConstraint::descriptor(),
-                       std::array{1,  20, 21, 22, 23, 24, 25, 26,
-                                  27, 28, 29, 30, 31, 32, 33, 34,
-                                  35, 36, 37, 38, 39, 40, 41}) &&
+                       std::array{1,  2,  3,  4,  20, 21, 22, 23, 24,
+                                  25, 26, 27, 28, 29, 30, 31, 32, 33,
+                                  34, 35, 36, 37, 38, 39, 40, 41, 42}) &&
         hasExactFields(*wire::SketchObjectMember::descriptor(),
                        std::array{1, 2}) &&
         hasExactFields(*wire::SketchObject::descriptor(),
@@ -122,9 +124,9 @@ std::optional<Diagnostic> schemaCoverageError() {
         hasExactFields(*geometry,
                        std::array{20, 21, 22, 23, 24, 25, 26, 27, 28}) &&
         relation != nullptr &&
-        hasExactFields(*relation,
-                       std::array{20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
-                                  31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41}))
+        hasExactFields(*relation, std::array{20, 21, 22, 23, 24, 25, 26, 27,
+                                             28, 29, 30, 31, 32, 33, 34, 35,
+                                             36, 37, 38, 39, 40, 41, 42}))
       return std::optional<Diagnostic>{};
     return std::optional<Diagnostic>{diagnostic(
         "sketch.wire.conversion-registry-stale",
@@ -666,24 +668,55 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
   auto id = api::readId<SketchConstraintId>(value.id());
   if (!id)
     return std::unexpected(std::move(id.error()));
+  sketch::ConstraintProperties properties;
+  if (!value.label().empty())
+    properties.label = value.label();
+  switch (value.activity()) {
+  case wire::SKETCH_CONSTRAINT_ACTIVITY_ACTIVE:
+    properties.activity = sketch::ConstraintActivity::Active;
+    break;
+  case wire::SKETCH_CONSTRAINT_ACTIVITY_SUPPRESSED:
+    properties.activity = sketch::ConstraintActivity::Suppressed;
+    break;
+  default:
+    return std::unexpected(
+        diagnostic("sketch.wire.invalid-constraint-activity",
+                   "wire constraint activity is unsupported"));
+  }
+  switch (value.dimension_mode()) {
+  case wire::SKETCH_DIMENSION_MODE_DRIVING:
+    properties.dimensionMode = sketch::DimensionMode::Driving;
+    break;
+  case wire::SKETCH_DIMENSION_MODE_REFERENCE:
+    properties.dimensionMode = sketch::DimensionMode::Reference;
+    break;
+  default:
+    return std::unexpected(diagnostic("sketch.wire.invalid-dimension-mode",
+                                      "wire dimension mode is unsupported"));
+  }
+  const auto authored =
+      [&properties](sketch::Constraint result) -> Result<sketch::Constraint> {
+    sketch::constraintProperties(result) = properties;
+    return result;
+  };
   switch (value.relation_case()) {
   case wire::SketchConstraint::kCoincident: {
     auto pair = readPointPair(value.coincident());
     if (!pair)
       return std::unexpected(std::move(pair.error()));
-    return sketch::Coincident{*id, pair->first, pair->second};
+    return authored(sketch::Coincident{*id, pair->first, pair->second});
   }
   case wire::SketchConstraint::kHorizontal: {
     auto line = readEntityId(value.horizontal().line());
     if (!line)
       return std::unexpected(std::move(line.error()));
-    return sketch::Horizontal{*id, *line};
+    return authored(sketch::Horizontal{*id, *line});
   }
   case wire::SketchConstraint::kVertical: {
     auto line = readEntityId(value.vertical().line());
     if (!line)
       return std::unexpected(std::move(line.error()));
-    return sketch::Vertical{*id, *line};
+    return authored(sketch::Vertical{*id, *line});
   }
   case wire::SketchConstraint::kParallel:
   case wire::SketchConstraint::kPerpendicular:
@@ -715,15 +748,15 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(pair.error()));
     switch (value.relation_case()) {
     case wire::SketchConstraint::kParallel:
-      return sketch::Parallel{*id, pair->first, pair->second};
+      return authored(sketch::Parallel{*id, pair->first, pair->second});
     case wire::SketchConstraint::kPerpendicular:
-      return sketch::Perpendicular{*id, pair->first, pair->second};
+      return authored(sketch::Perpendicular{*id, pair->first, pair->second});
     case wire::SketchConstraint::kConcentric:
-      return sketch::Concentric{*id, pair->first, pair->second};
+      return authored(sketch::Concentric{*id, pair->first, pair->second});
     case wire::SketchConstraint::kEqual:
-      return sketch::Equal{*id, pair->first, pair->second};
+      return authored(sketch::Equal{*id, pair->first, pair->second});
     case wire::SketchConstraint::kCollinear:
-      return sketch::Collinear{*id, pair->first, pair->second};
+      return authored(sketch::Collinear{*id, pair->first, pair->second});
     default:
       std::terminate();
     }
@@ -747,7 +780,7 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(diagnostic("sketch.wire.invalid-tangency",
                                         "wire tangency mode is unsupported"));
     }
-    return sketch::Tangent{*id, *first, *second, mode};
+    return authored(sketch::Tangent{*id, *first, *second, mode});
   }
   case wire::SketchConstraint::kMidpoint: {
     auto point = readPointReference(value.midpoint().point());
@@ -756,7 +789,7 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(point.error()));
     if (!line)
       return std::unexpected(std::move(line.error()));
-    return sketch::Midpoint{*id, *point, *line};
+    return authored(sketch::Midpoint{*id, *point, *line});
   }
   case wire::SketchConstraint::kPointOnObject: {
     auto point = readPointReference(value.point_on_object().point());
@@ -765,7 +798,7 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(point.error()));
     if (!curve)
       return std::unexpected(std::move(curve.error()));
-    return sketch::PointOnObject{*id, *point, *curve};
+    return authored(sketch::PointOnObject{*id, *point, *curve});
   }
   case wire::SketchConstraint::kSymmetric: {
     auto first = readPointReference(value.symmetric().first());
@@ -777,7 +810,7 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(second.error()));
     if (!axis)
       return std::unexpected(std::move(axis.error()));
-    return sketch::Symmetric{*id, *first, *second, *axis};
+    return authored(sketch::Symmetric{*id, *first, *second, *axis});
   }
   case wire::SketchConstraint::kLock: {
     auto point = readPointReference(value.lock().point());
@@ -786,7 +819,7 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(point.error()));
     if (!position)
       return std::unexpected(std::move(position.error()));
-    return sketch::Lock{*id, *point, *position};
+    return authored(sketch::Lock{*id, *point, *position});
   }
   case wire::SketchConstraint::kSymmetricAboutPoint: {
     auto first = readPointReference(value.symmetric_about_point().first());
@@ -798,13 +831,13 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(second.error()));
     if (!center)
       return std::unexpected(std::move(center.error()));
-    return sketch::SymmetricAboutPoint{*id, *first, *second, *center};
+    return authored(sketch::SymmetricAboutPoint{*id, *first, *second, *center});
   }
   case wire::SketchConstraint::kBlock: {
     auto entity = readEntityId(value.block().entity());
     if (!entity)
       return std::unexpected(std::move(entity.error()));
-    return sketch::Block{*id, *entity};
+    return authored(sketch::Block{*id, *entity});
   }
   case wire::SketchConstraint::kGroup: {
     std::vector<SketchEntityId> entities;
@@ -815,7 +848,7 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
         return std::unexpected(std::move(entity.error()));
       entities.push_back(*entity);
     }
-    return sketch::Group{*id, std::move(entities)};
+    return authored(sketch::Group{*id, std::move(entities)});
   }
   case wire::SketchConstraint::kDistance:
   case wire::SketchConstraint::kHorizontalDistance:
@@ -833,11 +866,13 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
     if (!length)
       return std::unexpected(std::move(length.error()));
     if (value.relation_case() == wire::SketchConstraint::kDistance)
-      return sketch::Distance{*id, pair->first, pair->second, *length};
+      return authored(
+          sketch::Distance{*id, pair->first, pair->second, *length});
     if (value.relation_case() == wire::SketchConstraint::kHorizontalDistance)
-      return sketch::HorizontalDistance{*id, pair->first, pair->second,
-                                        *length};
-    return sketch::VerticalDistance{*id, pair->first, pair->second, *length};
+      return authored(
+          sketch::HorizontalDistance{*id, pair->first, pair->second, *length});
+    return authored(
+        sketch::VerticalDistance{*id, pair->first, pair->second, *length});
   }
   case wire::SketchConstraint::kRadius:
   case wire::SketchConstraint::kDiameter: {
@@ -852,8 +887,8 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
     if (!length)
       return std::unexpected(std::move(length.error()));
     if (value.relation_case() == wire::SketchConstraint::kRadius)
-      return sketch::Radius{*id, *curve, *length};
-    return sketch::Diameter{*id, *curve, *length};
+      return authored(sketch::Radius{*id, *curve, *length});
+    return authored(sketch::Diameter{*id, *curve, *length});
   }
   case wire::SketchConstraint::kAngle: {
     auto first = readEntityId(value.angle().first());
@@ -865,7 +900,23 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
       return std::unexpected(std::move(second.error()));
     if (!angle)
       return std::unexpected(std::move(angle.error()));
-    return sketch::AngleBetween{*id, *first, *second, *angle};
+    return authored(sketch::AngleBetween{*id, *first, *second, *angle});
+  }
+  case wire::SketchConstraint::kSnell: {
+    auto incident = readPointReference(value.snell().incident());
+    auto refracted = readPointReference(value.snell().refracted());
+    auto boundary = readEntityId(value.snell().boundary());
+    auto ratio = readDimensionless(value.snell().ratio());
+    if (!incident)
+      return std::unexpected(std::move(incident.error()));
+    if (!refracted)
+      return std::unexpected(std::move(refracted.error()));
+    if (!boundary)
+      return std::unexpected(std::move(boundary.error()));
+    if (!ratio)
+      return std::unexpected(std::move(ratio.error()));
+    return authored(
+        sketch::Snell{*id, *incident, *refracted, *boundary, *ratio});
   }
   default:
     return std::unexpected(diagnostic("sketch.wire.unsupported-constraint",
@@ -875,6 +926,16 @@ Result<sketch::Constraint> readConstraint(const wire::SketchConstraint &value) {
 
 void writeConstraint(const sketch::Constraint &value,
                      wire::SketchConstraint *result) {
+  const sketch::ConstraintProperties &properties =
+      sketch::constraintProperties(value);
+  result->set_label(properties.label.value_or(""));
+  result->set_activity(properties.activity == sketch::ConstraintActivity::Active
+                           ? wire::SKETCH_CONSTRAINT_ACTIVITY_ACTIVE
+                           : wire::SKETCH_CONSTRAINT_ACTIVITY_SUPPRESSED);
+  result->set_dimension_mode(properties.dimensionMode ==
+                                     sketch::DimensionMode::Driving
+                                 ? wire::SKETCH_DIMENSION_MODE_DRIVING
+                                 : wire::SKETCH_DIMENSION_MODE_REFERENCE);
   std::visit(
       [&]<typename Constraint>(const Constraint &constraint) {
         api::writeId(constraint.id, result->mutable_id());
@@ -966,6 +1027,13 @@ void writeConstraint(const sketch::Constraint &value,
           api::writeId(constraint.curve,
                        result->mutable_diameter()->mutable_curve());
           result->mutable_diameter()->set_value(constraint.value.si());
+        } else if constexpr (std::is_same_v<Constraint, sketch::Snell>) {
+          auto *payload = result->mutable_snell();
+          writePointReference(constraint.incident, payload->mutable_incident());
+          writePointReference(constraint.refracted,
+                              payload->mutable_refracted());
+          api::writeId(constraint.boundary, payload->mutable_boundary());
+          payload->set_ratio(constraint.ratio.si());
         } else {
           static_assert(std::is_same_v<Constraint, sketch::AngleBetween>);
           writeEntityPair(constraint.first, constraint.second,

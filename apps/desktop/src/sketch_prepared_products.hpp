@@ -27,7 +27,8 @@ public:
   source() const {
     return source_;
   }
-  [[nodiscard]] const std::shared_ptr<const SketchVectorPacket> &packet() const {
+  [[nodiscard]] const std::shared_ptr<const SketchVectorPacket> &
+  packet() const {
     return packet_;
   }
   [[nodiscard]] std::span<const SketchVectorPrimitiveSpanRecord>
@@ -78,6 +79,7 @@ struct PreparedSketchProductsMetrics {
   std::size_t provisionalRetainedBytes = 0U;
   std::size_t markerRetainedBytes = 0U;
   std::size_t markerPacketRetainedBytes = 0U;
+  std::size_t markerProvenanceRetainedBytes = 0U;
   std::size_t totalRetainedBytes = 0U;
   bool operator==(const PreparedSketchProductsMetrics &) const = default;
 };
@@ -121,19 +123,28 @@ public:
   markerPacket() const {
     return markerPacket_;
   }
+  [[nodiscard]] std::span<const SketchVectorPrimitiveSpanRecord>
+  markerProvenance() const {
+    return markerProvenance_
+               ? std::span{*markerProvenance_}
+               : std::span<const SketchVectorPrimitiveSpanRecord>{};
+  }
   [[nodiscard]] const PreparedSketchProductsMetrics &metrics() const {
     return metrics_;
   }
 
 private:
   [[nodiscard]] static Result<std::shared_ptr<const PreparedSketchProducts>>
-  createPrepared(std::shared_ptr<const SketchSceneProducts> source,
-                 std::shared_ptr<const PreparedSketchScene> base,
-                 std::shared_ptr<const PreparedSketchOverlay> overlay,
-                 std::shared_ptr<const PreparedSketchProvisional> provisional,
-                 std::shared_ptr<const PreparedSketchMarkers> markers,
-                 std::shared_ptr<const SketchVectorPacket> overlayPointPacket,
-                 std::shared_ptr<const SketchVectorPacket> markerPacket);
+  createPrepared(
+      std::shared_ptr<const SketchSceneProducts> source,
+      std::shared_ptr<const PreparedSketchScene> base,
+      std::shared_ptr<const PreparedSketchOverlay> overlay,
+      std::shared_ptr<const PreparedSketchProvisional> provisional,
+      std::shared_ptr<const PreparedSketchMarkers> markers,
+      std::shared_ptr<const SketchVectorPacket> overlayPointPacket,
+      std::shared_ptr<const SketchVectorPacket> markerPacket,
+      std::shared_ptr<const std::vector<SketchVectorPrimitiveSpanRecord>>
+          markerProvenance);
 
   PreparedSketchProducts(
       std::shared_ptr<const SketchSceneProducts> source,
@@ -143,6 +154,8 @@ private:
       std::shared_ptr<const PreparedSketchMarkers> markers,
       std::shared_ptr<const SketchVectorPacket> overlayPointPacket,
       std::shared_ptr<const SketchVectorPacket> markerPacket,
+      std::shared_ptr<const std::vector<SketchVectorPrimitiveSpanRecord>>
+          markerProvenance,
       PreparedSketchProductsMetrics metrics);
 
   std::shared_ptr<const SketchSceneProducts> source_;
@@ -152,6 +165,8 @@ private:
   std::shared_ptr<const PreparedSketchMarkers> markers_;
   std::shared_ptr<const SketchVectorPacket> overlayPointPacket_;
   std::shared_ptr<const SketchVectorPacket> markerPacket_;
+  std::shared_ptr<const std::vector<SketchVectorPrimitiveSpanRecord>>
+      markerProvenance_;
   PreparedSketchProductsMetrics metrics_;
 
   friend Result<std::shared_ptr<const PreparedSketchProducts>>

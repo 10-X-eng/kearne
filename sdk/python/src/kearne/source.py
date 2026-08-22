@@ -458,13 +458,18 @@ def _validate_keywords(call: ast.Call, spec: HelperSpec, code: str) -> None:
                 raise _Unrecognized
             if not isinstance(keyword.value.value, bool):
                 raise SourceError(code, "helper keyword value is invalid")
-        else:
+        elif keyword_spec.kind == "enum":
             allowed = keyword_spec.values
             if not isinstance(keyword.value, ast.Constant):
                 raise _Unrecognized
             if not isinstance(keyword.value.value, str):
                 raise SourceError(code, "helper keyword value is invalid")
             if keyword.value.value not in allowed:
+                raise SourceError(code, "helper keyword value is invalid")
+        else:
+            if not isinstance(keyword.value, ast.Constant):
+                raise _Unrecognized
+            if not isinstance(keyword.value.value, str):
                 raise SourceError(code, "helper keyword value is invalid")
 
 
@@ -931,9 +936,7 @@ def _append_edits(
         prefix = b" "
         inserted = prefix + call + b","
     start = section.close + len(prefix)
-    return [(section.close, section.close, inserted)], _Span(
-        start, start + len(call)
-    )
+    return [(section.close, section.close, inserted)], _Span(start, start + len(call))
 
 
 def _delete_edits(
@@ -1079,9 +1082,7 @@ def _apply_operation(
             raise SourceError(
                 "source.edit.duplicate-stable-id", "appended stable ID already exists"
             )
-        splices, call_span = _append_edits(
-            state.source, section, spans, replacement
-        )
+        splices, call_span = _append_edits(state.source, section, spans, replacement)
         state.source = _apply_bytes(state.source, splices)
         state.relocate(splices)
         _, relocated = state.selected(edit.section)
@@ -1103,13 +1104,10 @@ def _apply_operation(
             line_end = _line_end(state.source, entries[index].span.end)
             newline = (
                 b"\r\n"
-                if line_end >= 2
-                and state.source[line_end - 2 : line_end] == b"\r\n"
+                if line_end >= 2 and state.source[line_end - 2 : line_end] == b"\r\n"
                 else b"\n"
             )
-            formatted = _indented_continuations(
-                replacement, target_indent, newline
-            )
+            formatted = _indented_continuations(replacement, target_indent, newline)
         splices = [(start, entries[index].span.end, formatted)]
         state.source = _apply_bytes(state.source, splices)
         state.relocate(splices)

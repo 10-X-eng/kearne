@@ -223,7 +223,9 @@ QVariantList structureRecords(const std::vector<StructureItem> &items) {
     return Record{{QStringLiteral("id"), item.id},
                   {QStringLiteral("label"), item.label},
                   {QStringLiteral("depth"), item.depth},
-                  {QStringLiteral("kind"), item.kind}};
+                  {QStringLiteral("kind"), item.kind},
+                  {QStringLiteral("icon"), item.icon},
+                  {QStringLiteral("status"), item.status}};
   });
 }
 
@@ -346,8 +348,8 @@ QVariantMap functionRecord(const FunctionSummary &function) {
       {QStringLiteral("outputs"), functionPortRecords(function.outputs)}};
 }
 
-QVariantList sketchPrimitiveRecords(
-    std::span<const SketchPrimitiveProjection> primitives) {
+QVariantList
+sketchPrimitiveRecords(std::span<const SketchPrimitiveProjection> primitives) {
   return recordsFor(primitives, [](const SketchPrimitiveProjection &primitive) {
     QVariantList points;
     points.reserve(static_cast<qsizetype>(primitive.points.size()));
@@ -440,12 +442,16 @@ std::uint32_t changedProjections(const FrontendSnapshot &previous,
       previous.selectedSketchScopes != next.selectedSketchScopes ||
       previous.sketchControlPolygonVisible !=
           next.sketchControlPolygonVisible ||
-      previous.sketchCurvatureCombVisible !=
-          next.sketchCurvatureCombVisible ||
+      previous.sketchCurvatureCombVisible != next.sketchCurvatureCombVisible ||
       previous.sketchDegreeLabelsVisible != next.sketchDegreeLabelsVisible ||
       previous.sketchKnotLabelsVisible != next.sketchKnotLabelsVisible ||
       previous.sketchWeightLabelsVisible != next.sketchWeightLabelsVisible ||
-      previous.sketchScene != next.sketchScene)
+      previous.sketchConstraintsVisible != next.sketchConstraintsVisible ||
+      previous.sketchDimensionsVisible != next.sketchDimensionsVisible ||
+      previous.sketchReferenceDimensionsVisible !=
+          next.sketchReferenceDimensionsVisible ||
+      previous.sketchScene != next.sketchScene ||
+      previous.sketchConstraintMarkers != next.sketchConstraintMarkers)
     changed |= sketchProjection;
   if (previous.defaultLengthUnitId != next.defaultLengthUnitId ||
       previous.projectLengthUnitId != next.projectLengthUnitId ||
@@ -537,6 +543,17 @@ QString UiSession::modelHealth() const { return snapshot_->modelHealth; }
 QString UiSession::selectionSummary() const {
   return snapshot_->selectionSummary;
 }
+QString UiSession::selectedEntityId() const {
+  return snapshot_->selectedEntityId;
+}
+bool UiSession::sketchConstraintSelected() const {
+  const auto selected = std::ranges::find_if(
+      snapshot_->structure, [this](const StructureItem &item) {
+        return item.id == snapshot_->selectedEntityId;
+      });
+  return selected != snapshot_->structure.end() &&
+         selected->kind == QStringLiteral("sketch-constraint");
+}
 QString UiSession::agentStatus() const { return snapshot_->agentStatus; }
 QString UiSession::modelSource() const { return snapshot_->modelSource; }
 QVariantMap UiSession::selectedFunction() const {
@@ -600,6 +617,19 @@ QString UiSession::sketchHoveredEntityId() const {
 QString UiSession::sketchHoveredPointKey() const {
   return sketchHoveredPointKey_;
 }
+
+QString UiSession::sketchHoveredConstraintId() const {
+  return sketchHoveredConstraintId_;
+}
+bool UiSession::sketchConstraintsVisible() const {
+  return snapshot_->sketchConstraintsVisible;
+}
+bool UiSession::sketchDimensionsVisible() const {
+  return snapshot_->sketchDimensionsVisible;
+}
+bool UiSession::sketchReferenceDimensionsVisible() const {
+  return snapshot_->sketchReferenceDimensionsVisible;
+}
 bool UiSession::backendConnected() const { return snapshot_->backendConnected; }
 bool UiSession::projectPersistenceAvailable() const {
   return snapshot_->projectPersistenceAvailable;
@@ -611,11 +641,10 @@ bool UiSession::canUndo() const { return snapshot_->canUndo; }
 bool UiSession::canRedo() const { return snapshot_->canRedo; }
 bool UiSession::sketchGesturePreviewVisible() const {
   return gesturePreview_.visible() ||
-         std::ranges::any_of(
-             snapshot_->sketchProjection.primitives,
-             [](const SketchPrimitiveProjection &primitive) {
-               return primitive.draft;
-             });
+         std::ranges::any_of(snapshot_->sketchProjection.primitives,
+                             [](const SketchPrimitiveProjection &primitive) {
+                               return primitive.draft;
+                             });
 }
 
 std::uint64_t UiSession::sketchGesturePreviewGeneration() const {
@@ -634,9 +663,8 @@ QVariantList UiSession::sketchPreviewMeasurements() const {
   for (const SketchPreviewMeasurement &measurement : measurements) {
     const QString value =
         measurement.quantity == SketchPreviewQuantity::Length
-            ? formatDisplayedLength(
-                  millimetersFromMetres(measurement.valueSi),
-                  snapshot_->projectLengthUnitId)
+            ? formatDisplayedLength(millimetersFromMetres(measurement.valueSi),
+                                    snapshot_->projectLengthUnitId)
             : QStringLiteral("%1°").arg(
                   measurement.valueSi * 180.0 / std::numbers::pi, 0, 'f', 1);
     result.push_back(Record{
@@ -709,6 +737,11 @@ QVariantList UiSession::interfaceStates() const {
 std::shared_ptr<const render::SketchSceneSnapshot>
 UiSession::sketchScene() const {
   return snapshot_->sketchScene;
+}
+
+std::shared_ptr<const render::SketchMarkerPacket>
+UiSession::sketchConstraintMarkers() const {
+  return snapshot_->sketchConstraintMarkers;
 }
 
 void UiSession::navigateTo(const QString &surfaceId) {
@@ -951,8 +984,7 @@ bool UiSession::previewSketchGesture(
            std::holds_alternative<bool>(field->value) &&
            std::get<bool>(field->value);
   };
-  const auto unsignedField = [this](QStringView suffix,
-                                    std::size_t fallback) {
+  const auto unsignedField = [this](QStringView suffix, std::size_t fallback) {
     const auto field = std::ranges::find_if(
         snapshot_->fields, [suffix](const FieldDescriptor &candidate) {
           return candidate.id.endsWith(suffix);
@@ -969,8 +1001,7 @@ bool UiSession::previewSketchGesture(
       snapshot_->activeCommandId, pointsMillimeters, enabled, methodId,
       toggle(QStringLiteral(".close-profile")),
       unsignedField(QStringLiteral(".sides"), 0U),
-      static_cast<std::uint32_t>(
-          unsignedField(QStringLiteral(".degree"), 3U)));
+      static_cast<std::uint32_t>(unsignedField(QStringLiteral(".degree"), 3U)));
 }
 
 QString UiSession::formatProjectLength(qreal lengthMillimeters) const {
@@ -1010,6 +1041,13 @@ bool UiSession::submitSketchPointerClick(qreal itemX, qreal itemY) {
   const auto picked = sketchPickHandler_(QPointF{itemX, itemY}, 8.0, targets);
   if (!picked)
     return false;
+  if (!picked->constraintId.isEmpty()) {
+    if (snapshot_->sketchInteraction.inputKind == SketchInputKind::Entity)
+      return false;
+    controller_->selectEntity(picked->constraintId);
+    refresh();
+    return true;
+  }
   if (snapshot_->sketchInteraction.inputKind == SketchInputKind::Entity) {
     const SketchInputRequest request{
         snapshot_->activeCommandId,
@@ -1051,15 +1089,18 @@ bool UiSession::updateSketchPointerHover(qreal itemX, qreal itemY) {
       snapshot_->activeCommandId == QStringLiteral("sketch.split");
   if (persistentModifyHover && !picked && !sketchHoveredEntityId_.isEmpty() &&
       ++sketchModifyHoverMisses_ < 4)
-    picked = SketchPickSelection{sketchHoveredEntityId_,
-                                 sketchHoveredPointKey_, {}};
+    picked =
+        SketchPickSelection{sketchHoveredEntityId_, sketchHoveredPointKey_, {}};
   else if (picked || !persistentModifyHover)
     sketchModifyHoverMisses_ = 0;
   const QString entity = picked ? picked->entityId : QString{};
   const QString point = picked ? picked->pointKey : QString{};
-  if (entity != sketchHoveredEntityId_ || point != sketchHoveredPointKey_) {
+  const QString constraint = picked ? picked->constraintId : QString{};
+  if (entity != sketchHoveredEntityId_ || point != sketchHoveredPointKey_ ||
+      constraint != sketchHoveredConstraintId_) {
     sketchHoveredEntityId_ = entity;
     sketchHoveredPointKey_ = point;
+    sketchHoveredConstraintId_ = constraint;
     emit sketchHoverChanged();
   }
   if (previewModify) {
@@ -1077,9 +1118,11 @@ bool UiSession::updateSketchPointerHover(qreal itemX, qreal itemY) {
 
 void UiSession::clearSketchPointerHover() {
   sketchModifyHoverMisses_ = 0;
-  if (!sketchHoveredEntityId_.isEmpty() || !sketchHoveredPointKey_.isEmpty()) {
+  if (!sketchHoveredEntityId_.isEmpty() || !sketchHoveredPointKey_.isEmpty() ||
+      !sketchHoveredConstraintId_.isEmpty()) {
     sketchHoveredEntityId_.clear();
     sketchHoveredPointKey_.clear();
+    sketchHoveredConstraintId_.clear();
     emit sketchHoverChanged();
   }
   if (sketchHoverHandler_)

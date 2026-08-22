@@ -42,6 +42,7 @@ struct SketchEvaluation {
   EvaluationEvidence evidence;
   SolveEvidence solve;
   std::vector<Diagnostic> diagnostics;
+  std::vector<sketch::Entity> geometry;
   std::shared_ptr<const render::SketchSceneSnapshot> replacementScene;
 };
 

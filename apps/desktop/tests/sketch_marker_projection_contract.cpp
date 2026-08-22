@@ -247,8 +247,7 @@ MarkerInput categoryFixture(const SketchSceneSnapshot &base) {
             controlSegmentAnchors);
   const std::array controlPoleAnchors{
       SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.03, 0.04}}}};
-  input.add(70U, SketchMarkerKind::SplineControlPole, 0.0,
-            controlPoleAnchors);
+  input.add(70U, SketchMarkerKind::SplineControlPole, 0.0, controlPoleAnchors);
   const std::array curvatureAnchors{
       SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{-0.01, 0.0}}},
       SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{-0.01, 0.03}}}};
@@ -312,8 +311,8 @@ void requireExactProjection(const PreparedSketchMarkers &prepared) {
               sizeof(PreparedSketchMarkers) +
                   prepared.markers().size() * sizeof(SketchMarkerRenderRecord) +
                   prepared.anchors().size() * sizeof(SketchMarkerAnchorPoint) &&
-          metrics.scratchBytes == 0U &&
-          metrics.peakBytes == metrics.retainedBytes,
+          metrics.scratchBytes >= prepared.markers().size() &&
+          metrics.peakBytes == metrics.retainedBytes + metrics.scratchBytes,
       "prepared marker accounting is inconsistent");
 }
 
@@ -375,6 +374,50 @@ void verifyCategoriesAnchorsAndOrder() {
   require(std::ranges::all_of(variants, [](bool present) { return present; }) &&
               basePoint && baseCurve && provisionalPoint && provisionalCurve,
           "marker contract omitted an anchor variant");
+}
+
+void verifyDeterministicNonOverlappingLayout() {
+  const SceneStamp baseStamp = stamp(95, 1, 95, 95, 95, 1);
+  auto baseScene = scene(4U, 9'501U, baseStamp);
+  auto base = preparedScene(baseScene, {});
+  const std::array sharedAnchor{
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.0, 0.0}}}};
+  const std::array dimensionAnchors{
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.0, -0.01}}},
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.0, 0.01}}}};
+  MarkerInput input;
+  input.add(1U, SketchMarkerKind::HorizontalConstraint, 0.0, sharedAnchor,
+            id<SketchConstraintId>(9'511U));
+  input.markers.back().visual = SketchMarkerVisualState::Active;
+  input.add(2U, SketchMarkerKind::HorizontalConstraint, 0.0, sharedAnchor,
+            id<SketchConstraintId>(9'512U));
+  input.markers.back().visual = SketchMarkerVisualState::Conflicting;
+  input.add(3U, SketchMarkerKind::HorizontalConstraint, 0.0, sharedAnchor,
+            id<SketchConstraintId>(9'513U));
+  input.markers.back().visual = SketchMarkerVisualState::Redundant;
+  input.add(4U, SketchMarkerKind::VerticalDistanceDimension, 0.02,
+            dimensionAnchors, id<SketchConstraintId>(9'514U));
+  input.add(5U, SketchMarkerKind::VerticalDistanceDimension, 0.03,
+            dimensionAnchors, id<SketchConstraintId>(9'515U));
+  auto source =
+      markerPacket(markerStamp(persistentMarkerTarget(baseStamp), 1U, 1U),
+                   baseScene, nullptr, input);
+  auto prepared = prepareSketchMarkers(source, base);
+  require(prepared && (*prepared)->markers().size() == 5U,
+          "dense marker layout fixture was rejected");
+  const auto markers = (*prepared)->markers();
+  require(markers[1].screenOffsetXLogicalPixels == 0.0F &&
+              markers[1].screenOffsetYLogicalPixels == -14.0F &&
+              markers[2].screenOffsetXLogicalPixels == 14.0F &&
+              markers[2].screenOffsetYLogicalPixels == -14.0F &&
+              markers[0].screenOffsetXLogicalPixels == -14.0F &&
+              markers[0].screenOffsetYLogicalPixels == -14.0F,
+          "marker layout did not place errors first and separate badges");
+  require(markers[3].screenOffsetXLogicalPixels == 0.0F &&
+              markers[4].screenOffsetXLogicalPixels == 18.0F &&
+              markers[3].screenOffsetYLogicalPixels == 0.0F &&
+              markers[4].screenOffsetYLogicalPixels == 0.0F,
+          "duplicate dimensions did not receive stable separate lanes");
 }
 
 struct LargeFixture {
@@ -546,6 +589,12 @@ void verifyDependencyAndBudgetRejection() {
                            "desktop.sketch.marker-projection-retained-limit",
           "marker projection retained-byte limit was ignored");
   limited = exact;
+  --limited.maximumScratchBytes;
+  auto scratch = prepareSketchMarkers(fixture.source, fixture.base, limited);
+  require(!scratch && scratch.error().code ==
+                          "desktop.sketch.marker-projection-scratch-limit",
+          "marker projection scratch-byte limit was ignored");
+  limited = exact;
   --limited.maximumPeakBytes;
   auto peak = prepareSketchMarkers(fixture.source, fixture.base, limited);
   require(!peak && peak.error().code ==
@@ -599,6 +648,7 @@ int main(int argc, char *argv[]) {
     QGuiApplication application(argc, argv);
     const auto profile = kearne::testkit::propertyProfile();
     verifyCategoriesAnchorsAndOrder();
+    verifyDeterministicNonOverlappingLayout();
     verifyScaleReuseAndCancellation(profile);
     verifyDependencyAndBudgetRejection();
     verifyGeneratedProjection(profile);

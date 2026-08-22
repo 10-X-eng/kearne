@@ -334,19 +334,21 @@ def parse_call(code: str) -> SketchValue:
         values[cast(str, keyword.arg)] = _literal(keyword.value, expected)
     try:
         if spec.name in OBJECT_HELPERS:
-            members = cast(
-                tuple[tuple[str, str], ...], values.get("members", ())
+            members = cast(tuple[tuple[str, str], ...], values.get("members", ()))
+            entities = (
+                tuple(
+                    cast(str, values[argument.name])
+                    for argument in spec.positional
+                    if argument.kind == "entity_ref"
+                )
+                + tuple(
+                    entity
+                    for argument in spec.positional
+                    if argument.kind == "entity_refs"
+                    for entity in cast(tuple[str, ...], values[argument.name])
+                )
+                + tuple(entity for _, entity in members)
             )
-            entities = tuple(
-                cast(str, values[argument.name])
-                for argument in spec.positional
-                if argument.kind == "entity_ref"
-            ) + tuple(
-                entity
-                for argument in spec.positional
-                if argument.kind == "entity_refs"
-                for entity in cast(tuple[str, ...], values[argument.name])
-            ) + tuple(entity for _, entity in members)
             return SketchObject(
                 cast(str, values["id"]),
                 cast(str, values["label"]),
@@ -454,11 +456,11 @@ def parse_call(code: str) -> SketchValue:
             ),
             (),
         )
-        quantity = next(
+        parameter = next(
             (
-                cast(Length | Angle, values[value.name])
+                cast(Length | Angle | float, values[value.name])
                 for value in arguments
-                if value.kind in {"length", "angle"}
+                if value.kind in {"length", "angle", "scalar"}
             ),
             None,
         )
@@ -475,9 +477,12 @@ def parse_call(code: str) -> SketchValue:
             spec.name,
             points,
             (*entities, *entity_set),
-            quantity,
+            parameter,
             cast(str | None, values.get("mode")),
             position,
+            cast(str | None, values.get("label")),
+            cast(bool, values.get("active", True)),
+            cast(bool, values.get("driving", True)),
         )
     except (KeyError, SketchDefinitionError, TypeError) as error:
         raise _source_error() from error

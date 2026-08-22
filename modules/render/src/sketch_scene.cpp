@@ -1178,9 +1178,9 @@ bool validProvisionalClassification(SketchProvisionalClassification value) {
          value == SketchProvisionalClassification::Construction;
 }
 
-Result<void> validateProvisionalPrimitive(
-    const PackedSketchProvisionalPrimitive &primitive,
-    std::span<const PackedSketchSpline> splines) {
+Result<void>
+validateProvisionalPrimitive(const PackedSketchProvisionalPrimitive &primitive,
+                             std::span<const PackedSketchSpline> splines) {
   const std::size_t count = requiredPointCount(primitive.kind);
   const auto kind = static_cast<std::uint8_t>(primitive.kind);
   if (kind < static_cast<std::uint8_t>(SketchPrimitiveKind::Point) ||
@@ -1316,22 +1316,21 @@ Result<void> validateProvisionalBatch(const SketchProvisionalBatch &batch,
   for (const PackedSketchSpline &spline : batch.splines) {
     if (spline.firstControlPoint != nextControlPoint ||
         spline.firstKnot != nextKnot || spline.firstWeight != nextWeight)
-      return std::unexpected(diagnostic(
-          "render.sketch.provisional-non-packed-bspline",
-          "provisional sketch B-spline data is not packed"));
+      return std::unexpected(
+          diagnostic("render.sketch.provisional-non-packed-bspline",
+                     "provisional sketch B-spline data is not packed"));
     if (auto valid = validateSpline(spline, batch); !valid)
       return valid;
     nextControlPoint += spline.controlPointCount;
     nextKnot += spline.controlPointCount + spline.degree + 1U;
     nextWeight += spline.controlPointCount;
   }
-  if (nextControlPoint * 2U !=
-          batch.splineControlPointCoordinates.size() ||
+  if (nextControlPoint * 2U != batch.splineControlPointCoordinates.size() ||
       nextKnot != batch.splineKnots.size() ||
       nextWeight != batch.splineWeights.size())
-    return std::unexpected(diagnostic(
-        "render.sketch.provisional-unused-bspline-data",
-        "provisional sketch has unused B-spline data"));
+    return std::unexpected(
+        diagnostic("render.sketch.provisional-unused-bspline-data",
+                   "provisional sketch has unused B-spline data"));
   std::vector<bool> usedSplines(batch.splines.size(), false);
   std::size_t validationWork = 0U;
   for (const PackedSketchProvisionalPrimitive &primitive : batch.primitives) {
@@ -1351,9 +1350,9 @@ Result<void> validateProvisionalBatch(const SketchProvisionalBatch &batch,
                      "provisional sketch construction was cancelled"));
   }
   if (std::ranges::find(usedSplines, false) != usedSplines.end())
-    return std::unexpected(diagnostic(
-        "render.sketch.provisional-unused-bspline",
-        "provisional sketch B-spline data is unreferenced"));
+    return std::unexpected(
+        diagnostic("render.sketch.provisional-unused-bspline",
+                   "provisional sketch B-spline data is unreferenced"));
   return {};
 }
 
@@ -1381,18 +1380,17 @@ provisionalByteCounts(const SketchProvisionalBatch &batch,
                 sizeof(double)) ||
       !addArray(result.input, batch.splineKnots.size(), sizeof(double)) ||
       !addArray(result.input, batch.splineWeights.size(), sizeof(double)) ||
-      !addArray(result.input, batch.splines.size(),
-                sizeof(PackedSketchSpline)))
+      !addArray(result.input, batch.splines.size(), sizeof(PackedSketchSpline)))
     return std::unexpected(
         diagnostic("render.sketch.provisional-input-limit",
                    "provisional sketch input byte count overflowed"));
   result.retained = sizeof(SketchProvisionalGeometry);
   if (!addArray(result.retained, retainedPrimitiveCapacity,
                 sizeof(PackedSketchProvisionalPrimitive)) ||
-      !addArray(result.retained,
-                batch.splineControlPointCoordinates.capacity(),
+      !addArray(result.retained, batch.splineControlPointCoordinates.capacity(),
                 sizeof(double)) ||
-      !addArray(result.retained, batch.splineKnots.capacity(), sizeof(double)) ||
+      !addArray(result.retained, batch.splineKnots.capacity(),
+                sizeof(double)) ||
       !addArray(result.retained, batch.splineWeights.capacity(),
                 sizeof(double)) ||
       !addArray(result.retained, batch.splines.capacity(),
@@ -2493,8 +2491,8 @@ SketchProvisionalGeometry::SketchProvisionalGeometry(
     std::vector<PackedSketchProvisionalPrimitive> primitives,
     std::vector<double> splineControlPointCoordinates,
     std::vector<double> splineKnots, std::vector<double> splineWeights,
-    std::vector<PackedSketchSpline> splines,
-    std::size_t inputBytes, std::size_t retainedBytes, std::size_t scratchBytes,
+    std::vector<PackedSketchSpline> splines, std::size_t inputBytes,
+    std::size_t retainedBytes, std::size_t scratchBytes,
     std::size_t peakBuildBytes)
     : stamp_(std::move(stamp)), primitives_(std::move(primitives)),
       splineControlPointCoordinates_(std::move(splineControlPointCoordinates)),
@@ -2542,8 +2540,7 @@ SketchProvisionalGeometry::create(
                    "provisional sketch retained byte count overflowed"));
   const std::size_t scratchCount =
       primitives.size() > 1U ? primitives.size() : 0U;
-  if (!checkedMultiply(scratchCount,
-                       sizeof(PackedSketchProvisionalPrimitive),
+  if (!checkedMultiply(scratchCount, sizeof(PackedSketchProvisionalPrimitive),
                        minimum.scratch) ||
       !checkedAdd(minimum.retained, minimum.scratch, minimum.peak))
     return std::unexpected(
@@ -2573,8 +2570,8 @@ SketchProvisionalGeometry::create(SketchProvisionalStamp stamp,
                    "provisional sketch construction was cancelled"));
   const std::size_t scratchCount =
       batch.primitives.size() > 1U ? batch.primitives.size() : 0U;
-  auto requested = provisionalByteCounts(batch, batch.primitives.size(),
-                                         scratchCount);
+  auto requested =
+      provisionalByteCounts(batch, batch.primitives.size(), scratchCount);
   if (!requested)
     return std::unexpected(std::move(requested.error()));
   if (auto bounded = validateProvisionalLimits(*requested, limits); !bounded)
@@ -2596,8 +2593,7 @@ SketchProvisionalGeometry::create(SketchProvisionalStamp stamp,
                      "provisional sketch construction was cancelled"));
     std::size_t validationWork = 0U;
     for (std::size_t index = 1U; index < batch.primitives.size(); ++index) {
-      if (batch.primitives[index - 1U].handle ==
-          batch.primitives[index].handle)
+      if (batch.primitives[index - 1U].handle == batch.primitives[index].handle)
         return std::unexpected(
             diagnostic("render.sketch.provisional-duplicate-handle",
                        "provisional sketch primitive handle is duplicated"));
@@ -2731,6 +2727,11 @@ std::optional<SketchMarkerCategory> markerCategory(SketchMarkerKind kind) {
   case SketchMarkerKind::MidpointConstraint:
   case SketchMarkerKind::FixedConstraint:
   case SketchMarkerKind::CollinearConstraint:
+  case SketchMarkerKind::PointOnObjectConstraint:
+  case SketchMarkerKind::SymmetricConstraint:
+  case SketchMarkerKind::SymmetricAboutPointConstraint:
+  case SketchMarkerKind::GroupConstraint:
+  case SketchMarkerKind::RefractionConstraint:
     return SketchMarkerCategory::Constraint;
   case SketchMarkerKind::HorizontalInference:
   case SketchMarkerKind::VerticalInference:
@@ -2860,6 +2861,11 @@ Result<std::shared_ptr<const SketchMarkerPacket>> SketchMarkerPacket::create(
       return std::unexpected(
           diagnostic("render.sketch.marker-invalid-value",
                      "sketch marker SI value is invalid for its kind"));
+    if (marker.visual < SketchMarkerVisualState::Active ||
+        marker.visual > SketchMarkerVisualState::Conflicting)
+      return std::unexpected(
+          diagnostic("render.sketch.marker-invalid-visual-state",
+                     "sketch marker visual state is invalid"));
     const bool semantic = *category == SketchMarkerCategory::Constraint ||
                           *category == SketchMarkerCategory::Dimension;
     if (semantic && !marker.constraint)

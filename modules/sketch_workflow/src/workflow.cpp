@@ -3,6 +3,7 @@
 #include <kearne/api/strong_types.hpp>
 
 #include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace kearne::sketch_workflow {
@@ -42,6 +43,40 @@ Diagnostic cancelledBeforeCommit() {
   return diagnostic("sketch.workflow.cancelled-before-commit",
                     "Sketch operation was cancelled before commit",
                     Severity::Information);
+}
+
+std::optional<std::vector<sketch::Entity>>
+preservedSolution(const SketchState &current,
+                  const sketch::Definition &definition) {
+  if (!current.evaluation || !current.evaluation->replacementScene ||
+      current.evaluation->geometry.empty())
+    return std::nullopt;
+  std::unordered_map<SketchEntityId, const sketch::Entity *,
+                     TypedIdHash<SketchEntityIdTag>>
+      prior;
+  prior.reserve(current.evaluation->geometry.size());
+  for (const sketch::Entity &entity : current.evaluation->geometry)
+    prior.emplace(sketch::entityId(entity), &entity);
+  std::unordered_map<SketchEntityId, const sketch::Entity *,
+                     TypedIdHash<SketchEntityIdTag>>
+      authored;
+  authored.reserve(current.definition.entities.size());
+  for (const sketch::Entity &entity : current.definition.entities)
+    authored.emplace(sketch::entityId(entity), &entity);
+  std::vector<sketch::Entity> result;
+  result.reserve(definition.entities.size());
+  for (const sketch::Entity &entity : definition.entities) {
+    const SketchEntityId id = sketch::entityId(entity);
+    const auto found = prior.find(id);
+    const auto source = authored.find(id);
+    const bool unchanged =
+        source != authored.end() && *source->second == entity;
+    result.push_back(unchanged && found != prior.end() &&
+                             found->second->index() == entity.index()
+                         ? *found->second
+                         : entity);
+  }
+  return result;
 }
 
 } // namespace
@@ -88,11 +123,12 @@ Workflow::commitSource(const SketchAddress &address,
   return revision;
 }
 
-SketchState Workflow::evaluate(SketchAddress address, SourceRevision source,
-                               sketch::Definition definition,
-                               RevisionId revision,
-                               const EvaluationIdentity &identity,
-                               std::stop_token cancellation) const {
+SketchState
+Workflow::evaluate(SketchAddress address, SourceRevision source,
+                   sketch::Definition definition, RevisionId revision,
+                   const EvaluationIdentity &identity,
+                   std::optional<std::vector<sketch::Entity>> priorSolution,
+                   std::stop_token cancellation) const {
   const sketch_runtime::EvaluationEvidence evidence{
       {{identity.renderSession,
         {identity.attachmentBinding, revision},
@@ -100,9 +136,13 @@ SketchState Workflow::evaluate(SketchAddress address, SourceRevision source,
        identity.sceneGeneration,
        identity.sceneDigest},
       source.digest};
-  auto evaluated = sketch_runtime::evaluateSketch(
-      {definition, evidence, std::nullopt, std::nullopt, {}, cancellation},
-      solver_);
+  auto evaluated = sketch_runtime::evaluateSketch({definition,
+                                                   evidence,
+                                                   std::move(priorSolution),
+                                                   std::nullopt,
+                                                   {},
+                                                   cancellation},
+                                                  solver_);
   if (!evaluated)
     return {std::move(address),    std::move(source),
             std::move(definition), std::move(revision),
@@ -132,7 +172,7 @@ Result<SketchState> Workflow::create(SketchAddress address,
     return std::unexpected(std::move(revision.error()));
   sketch::Definition definition{source->digest, {}, {}, {}};
   return evaluate(std::move(address), std::move(*source), std::move(definition),
-                  std::move(*revision), evaluation, cancellation);
+                  std::move(*revision), evaluation, std::nullopt, cancellation);
 }
 
 Result<SketchState> Workflow::applyTool(const SketchState &current,
@@ -184,8 +224,10 @@ Result<SketchState> Workflow::applyEdits(const SketchState &current,
       commitSource(current.address, *source, operation, current.source.digest);
   if (!revision)
     return std::unexpected(std::move(revision.error()));
+  auto prior = preservedSolution(current, definition);
   return evaluate(current.address, std::move(*source), std::move(definition),
-                  std::move(*revision), evaluation, cancellation);
+                  std::move(*revision), evaluation, std::move(prior),
+                  cancellation);
 }
 
 Result<SketchState> Workflow::replaceSource(
@@ -207,8 +249,10 @@ Result<SketchState> Workflow::replaceSource(
       commitSource(current.address, source, operation, current.source.digest);
   if (!revision)
     return std::unexpected(std::move(revision.error()));
+  auto prior = preservedSolution(current, definition);
   return evaluate(current.address, std::move(source), std::move(definition),
-                  std::move(*revision), evaluation, cancellation);
+                  std::move(*revision), evaluation, std::move(prior),
+                  cancellation);
 }
 
 } // namespace kearne::sketch_workflow

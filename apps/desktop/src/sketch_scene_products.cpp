@@ -90,7 +90,9 @@ bool sameSketchSceneProductComponents(const SketchSceneProducts &first,
   return first.scene == second.scene &&
          sameOverlayIdentity(first.overlay, second.overlay) &&
          sameProvisionalIdentity(first.provisional, second.provisional) &&
-         sameMarkerIdentity(first.markers, second.markers);
+         sameMarkerIdentity(first.markers, second.markers) &&
+         first.constraintDisplay == second.constraintDisplay &&
+         first.markerEmphasis == second.markerEmphasis;
 }
 
 } // namespace kearne::ui

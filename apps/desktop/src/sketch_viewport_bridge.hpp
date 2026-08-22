@@ -43,6 +43,7 @@ public:
   shutdown(std::chrono::milliseconds timeout = std::chrono::seconds{5});
   [[nodiscard]] SketchSceneItem *item() const { return item_.get(); }
   [[nodiscard]] bool presentationCurrent() const;
+  [[nodiscard]] QString presentationStatus() const;
   [[nodiscard]] Diagnostic lastDiagnostic() const { return lastDiagnostic_; }
 
 private:
@@ -55,7 +56,7 @@ private:
   [[nodiscard]] Result<void> publishProvisional();
   [[nodiscard]] Result<void> publishCamera();
   [[nodiscard]] Result<void>
-  publishOverlay(std::optional<std::pair<QString, QString>> hover,
+  publishOverlay(std::span<const SketchSelectionScope> hover,
                  std::span<const SketchSelectionScope> selected);
   void subscribeToWindow(QQuickWindow *window);
   void repickHoverAfterPresentedFrame();
@@ -73,7 +74,7 @@ private:
   std::shared_ptr<const render::SketchProvisionalGeometry> provisional_;
   std::shared_ptr<const render::SketchMarkerPacket> markers_;
   std::array<render::SketchOverlayRoleSetPtr, 4> overlayRoleSets_;
-  std::optional<std::pair<QString, QString>> hovered_;
+  std::vector<SketchSelectionScope> hovered_;
   std::optional<QPointF> lastPickItemPoint_;
   std::optional<QPointF> lastHoverItemPoint_;
   std::optional<SketchProductStamp> requestedProducts_;
@@ -90,6 +91,9 @@ private:
   bool hoverRepickPending_ = false;
   bool presentationPublished_ = false;
   std::uint8_t splineAnnotationsPublished_ = 0U;
+  SketchConstraintDisplay constraintDisplayPublished_{};
+  SketchMarkerEmphasis markerEmphasisPublished_{};
+  QString hoveredConstraintId_;
   bool stopped_ = false;
 };
 

@@ -98,4 +98,12 @@ parseDisplayedAngleRadians(QString text) {
   return degrees ? value * std::numbers::pi / 180.0 : value;
 }
 
+[[nodiscard]] inline std::optional<double> parseDisplayedScalar(QString text) {
+  bool valid = false;
+  const double value = text.trimmed().toDouble(&valid);
+  if (!valid || !std::isfinite(value))
+    return std::nullopt;
+  return value;
+}
+
 } // namespace kearne::ui

@@ -15,7 +15,8 @@ Rectangle {
     property string semanticValue: App.camera.state + ":"
                                    + App.ui.selectionSummary + ":hover="
                                    + App.ui.sketchHoveredEntityId + "/"
-                                   + App.ui.sketchHoveredPointKey
+                                   + App.ui.sketchHoveredPointKey + ":constraint="
+                                   + App.ui.sketchHoveredConstraintId
     property bool structureAvailable: true
     property bool inspectorAvailable: true
     property real modelGridSpacingMillimeters: App.ui.gridSpacingMillimeters

@@ -143,6 +143,13 @@ Canvas {
             rect(context, 8, 4, 8, 6, 0.5)
             rect(context, 8, 14, 8, 7, 0.5)
             break
+        case "delete":
+            line(context, 4.5, 7, 19.5, 7)
+            line(context, 9, 4, 15, 4)
+            paintPath(context, [6.5, 7, 7.5, 21, 16.5, 21, 17.5, 7], false)
+            line(context, 10.5, 10, 10.5, 18)
+            line(context, 13.5, 10, 13.5, 18)
+            break
         case "operations":
             line(context, 5, 5, 19, 5)
             line(context, 5, 12, 19, 12)
@@ -1017,6 +1024,80 @@ Canvas {
             useAccent(context)
             fillPath(context, [10, 11.5, 13.5, 9.7, 13.5, 13.3])
             break
+        case "point-on-object":
+            useBase(context)
+            context.beginPath()
+            context.moveTo(3.5, 17)
+            context.bezierCurveTo(8, 17, 13, 6, 20.5, 7)
+            context.stroke()
+            useSoft(context)
+            dot(context, 12, 11.2, 3.2)
+            useAccent(context)
+            circle(context, 12, 11.2, 2)
+            dot(context, 12, 11.2, 1)
+            break
+        case "symmetric-about-point":
+            useBase(context, 0.75)
+            line(context, 4, 17, 20, 7)
+            useSoft(context)
+            dot(context, 5, 16.4, 3)
+            dot(context, 19, 7.6, 3)
+            useBase(context)
+            circle(context, 5, 16.4, 1.9)
+            circle(context, 19, 7.6, 1.9)
+            useAccent(context)
+            circle(context, 12, 12, 2.1)
+            dot(context, 12, 12, 0.9)
+            break
+        case "distance":
+        case "horizontal-distance":
+            useBase(context, 0.7)
+            line(context, 4, 7, 4, 19)
+            line(context, 20, 7, 20, 19)
+            useAccent(context)
+            line(context, 4, 11, 20, 11)
+            fillPath(context, [4, 11, 7.5, 8.8, 7.5, 13.2])
+            fillPath(context, [20, 11, 16.5, 8.8, 16.5, 13.2])
+            if (icon === "distance") {
+                useBase(context)
+                line(context, 5, 18, 19, 6)
+            }
+            break
+        case "vertical-distance":
+            useBase(context, 0.7)
+            line(context, 5, 4, 18, 4)
+            line(context, 5, 20, 18, 20)
+            useAccent(context)
+            line(context, 13, 4, 13, 20)
+            fillPath(context, [13, 4, 10.8, 7.5, 15.2, 7.5])
+            fillPath(context, [13, 20, 10.8, 16.5, 15.2, 16.5])
+            break
+        case "radius-constraint":
+            useBase(context)
+            circle(context, 12, 12, 8)
+            useAccent(context)
+            line(context, 12, 12, 18, 6)
+            fillPath(context, [18, 6, 16.8, 10.1, 13.9, 7.2])
+            dot(context, 12, 12, 1.2)
+            break
+        case "diameter-constraint":
+            useBase(context)
+            circle(context, 12, 12, 8)
+            useAccent(context)
+            line(context, 6.4, 17.6, 17.6, 6.4)
+            fillPath(context, [6.4, 17.6, 7.6, 13.5, 10.5, 16.4])
+            fillPath(context, [17.6, 6.4, 16.4, 10.5, 13.5, 7.6])
+            break
+        case "angle-constraint":
+            useBase(context)
+            line(context, 5, 19, 5, 5)
+            line(context, 5, 19, 20, 19)
+            useAccent(context)
+            context.beginPath()
+            context.arc(5, 19, 7, -Math.PI / 2, 0)
+            context.stroke()
+            fillPath(context, [12, 19, 9, 17, 9, 21])
+            break
         case "block":
             useBase(context)
             line(context, 5, 18, 19, 7)
@@ -1056,6 +1137,14 @@ Canvas {
             dot(context, 5, 17.2, 1.7)
             dot(context, 12, 12, 1.7)
             dot(context, 19, 6.8, 1.7)
+            break
+        case "refraction":
+            useBase(context, 0.75)
+            line(context, 3, 12, 21, 12)
+            useAccent(context)
+            line(context, 6, 4, 12, 12)
+            line(context, 12, 12, 16, 20)
+            dot(context, 12, 12, 1.4)
             break
         case "joint":
             circle(context, 7, 12, 3)

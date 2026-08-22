@@ -1872,6 +1872,8 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
           "zero sketch marker view generation was accepted");
   require(markerCategory(SketchMarkerKind::CoincidentConstraint) ==
                   SketchMarkerCategory::Constraint &&
+              markerCategory(SketchMarkerKind::SymmetricConstraint) ==
+                  SketchMarkerCategory::Constraint &&
               markerCategory(SketchMarkerKind::HorizontalInference) ==
                   SketchMarkerCategory::Inference &&
               markerCategory(SketchMarkerKind::TranslationDegreeOfFreedom) ==
@@ -1907,6 +1909,11 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
       SketchMarkerKind::MidpointConstraint,
       SketchMarkerKind::FixedConstraint,
       SketchMarkerKind::CollinearConstraint,
+      SketchMarkerKind::PointOnObjectConstraint,
+      SketchMarkerKind::SymmetricConstraint,
+      SketchMarkerKind::SymmetricAboutPointConstraint,
+      SketchMarkerKind::GroupConstraint,
+      SketchMarkerKind::RefractionConstraint,
       SketchMarkerKind::HorizontalInference,
       SketchMarkerKind::VerticalInference,
       SketchMarkerKind::ParallelInference,
@@ -1967,18 +1974,13 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
                    SketchCanonicalMarkerAnchor{{0.03, 0.04}}});
         else {
           const double value =
-              kind == SketchMarkerKind::SplineDegreeLabel
-                  ? 3.0
-              : kind == SketchMarkerKind::SplineKnotMultiplicityLabel
-                  ? 4.0
-              : kind == SketchMarkerKind::SplinePoleWeightLabel
-                  ? 1.5
+              kind == SketchMarkerKind::SplineDegreeLabel             ? 3.0
+              : kind == SketchMarkerKind::SplineKnotMultiplicityLabel ? 4.0
+              : kind == SketchMarkerKind::SplinePoleWeightLabel       ? 1.5
               : *category == SketchMarkerCategory::Dimension
                   ? random.between(-1.0e3, 1.0e3)
                   : 0.0;
-          one.add(1U, kind,
-                  value,
-                  {SketchCanonicalMarkerAnchor{{0.01, -0.02}}},
+          one.add(1U, kind, value, {SketchCanonicalMarkerAnchor{{0.01, -0.02}}},
                   semantic ? std::optional{id<SketchConstraintId>(index + 1U)}
                            : std::nullopt);
         }
@@ -2056,7 +2058,7 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
       [&](testkit::Random &, std::uint64_t index) {
         MarkerInput invalid;
         const char *expected = "";
-        switch (index % 24U) {
+        switch (index % 25U) {
         case 0U:
           invalid.add(1U, static_cast<SketchMarkerKind>(255), 0.0,
                       {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
@@ -2205,6 +2207,14 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
           invalid.add(1U, SketchMarkerKind::SplinePoleWeightLabel, 0.0,
                       {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
           expected = "render.sketch.marker-invalid-value";
+          break;
+        case 24U:
+          invalid.add(1U, SketchMarkerKind::FixedConstraint, 0.0,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}}},
+                      id<SketchConstraintId>(index + 1U));
+          invalid.markers.front().visual =
+              static_cast<SketchMarkerVisualState>(255U);
+          expected = "render.sketch.marker-invalid-visual-state";
           break;
         }
         auto actual = SketchMarkerPacket::create(

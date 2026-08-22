@@ -10,8 +10,9 @@
 #include <vector>
 
 namespace kearne::render {
+class SketchMarkerPacket;
 class SketchSceneSnapshot;
-}
+} // namespace kearne::render
 
 namespace kearne::ui {
 
@@ -234,6 +235,8 @@ struct StructureItem {
   QString label;
   int depth = 0;
   QString kind;
+  QString icon{};
+  QString status{};
 };
 
 struct RevisionSummary {
@@ -398,6 +401,9 @@ struct FrontendSnapshot {
   bool sketchDegreeLabelsVisible = false;
   bool sketchKnotLabelsVisible = false;
   bool sketchWeightLabelsVisible = false;
+  bool sketchConstraintsVisible = true;
+  bool sketchDimensionsVisible = true;
+  bool sketchReferenceDimensionsVisible = true;
   bool backendConnected = false;
   bool projectPersistenceAvailable = false;
   bool sourceEditingAvailable = false;
@@ -426,6 +432,7 @@ struct FrontendSnapshot {
   SketchInteractionSummary sketchInteraction;
   std::vector<PlanePoint> sketchInputPlanePoints;
   std::shared_ptr<const render::SketchSceneSnapshot> sketchScene;
+  std::shared_ptr<const render::SketchMarkerPacket> sketchConstraintMarkers;
 };
 
 using FrontendSnapshotPtr = std::shared_ptr<const FrontendSnapshot>;
@@ -442,6 +449,8 @@ public:
   virtual void selectWorkspace(const QString &workspaceId) = 0;
   virtual void selectEntity(const QString &entityId) = 0;
   virtual void selectSketchEntity(const SketchSelectionScope &selection) = 0;
+  [[nodiscard]] virtual std::vector<SketchSelectionScope>
+  sketchConstraintScopes(const QString &constraintId) const = 0;
   virtual void requestCommand(const QString &commandId) = 0;
   virtual void setPreference(const QString &preferenceId,
                              const PreferenceValue &value) = 0;

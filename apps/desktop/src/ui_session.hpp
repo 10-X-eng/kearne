@@ -14,14 +14,25 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace kearne::ui {
 
 struct SketchPickSelection {
+  SketchPickSelection() = default;
+  SketchPickSelection(QString requestedEntityId, QString requestedPointKey,
+                      QPointF requestedClosestPointMillimeters,
+                      QString requestedConstraintId = {})
+      : entityId(std::move(requestedEntityId)),
+        pointKey(std::move(requestedPointKey)),
+        closestPointMillimeters(requestedClosestPointMillimeters),
+        constraintId(std::move(requestedConstraintId)) {}
+
   QString entityId;
   QString pointKey;
   QPointF closestPointMillimeters;
+  QString constraintId;
   bool operator==(const SketchPickSelection &) const = default;
 };
 
@@ -77,6 +88,10 @@ class UiSession : public QObject {
       QString modelHealth READ modelHealth NOTIFY projectProjectionChanged)
   Q_PROPERTY(QString selectionSummary READ selectionSummary NOTIFY
                  projectProjectionChanged)
+  Q_PROPERTY(QString selectedEntityId READ selectedEntityId NOTIFY
+                 projectProjectionChanged)
+  Q_PROPERTY(bool sketchConstraintSelected READ sketchConstraintSelected NOTIFY
+                 projectProjectionChanged)
   Q_PROPERTY(
       QString agentStatus READ agentStatus NOTIFY activityProjectionChanged)
   Q_PROPERTY(
@@ -117,6 +132,15 @@ class UiSession : public QObject {
                  sketchHoverChanged)
   Q_PROPERTY(QString sketchHoveredPointKey READ sketchHoveredPointKey NOTIFY
                  sketchHoverChanged)
+  Q_PROPERTY(QString sketchHoveredConstraintId READ sketchHoveredConstraintId
+                 NOTIFY sketchHoverChanged)
+  Q_PROPERTY(bool sketchConstraintsVisible READ sketchConstraintsVisible NOTIFY
+                 sketchProjectionChanged)
+  Q_PROPERTY(bool sketchDimensionsVisible READ sketchDimensionsVisible NOTIFY
+                 sketchProjectionChanged)
+  Q_PROPERTY(
+      bool sketchReferenceDimensionsVisible READ
+          sketchReferenceDimensionsVisible NOTIFY sketchProjectionChanged)
   Q_PROPERTY(bool backendConnected READ backendConnected NOTIFY
                  catalogProjectionChanged)
   Q_PROPERTY(bool projectPersistenceAvailable READ projectPersistenceAvailable
@@ -196,6 +220,8 @@ public:
   [[nodiscard]] QString viewportDetail() const;
   [[nodiscard]] QString modelHealth() const;
   [[nodiscard]] QString selectionSummary() const;
+  [[nodiscard]] QString selectedEntityId() const;
+  [[nodiscard]] bool sketchConstraintSelected() const;
   [[nodiscard]] QString agentStatus() const;
   [[nodiscard]] QString modelSource() const;
   [[nodiscard]] QVariantMap selectedFunction() const;
@@ -216,6 +242,10 @@ public:
   [[nodiscard]] QString sketchInputPrompt() const;
   [[nodiscard]] QString sketchHoveredEntityId() const;
   [[nodiscard]] QString sketchHoveredPointKey() const;
+  [[nodiscard]] QString sketchHoveredConstraintId() const;
+  [[nodiscard]] bool sketchConstraintsVisible() const;
+  [[nodiscard]] bool sketchDimensionsVisible() const;
+  [[nodiscard]] bool sketchReferenceDimensionsVisible() const;
   [[nodiscard]] bool backendConnected() const;
   [[nodiscard]] bool projectPersistenceAvailable() const;
   [[nodiscard]] bool sourceEditingAvailable() const;
@@ -248,6 +278,8 @@ public:
   [[nodiscard]] QVariantList interfaceStates() const;
   [[nodiscard]] std::shared_ptr<const render::SketchSceneSnapshot>
   sketchScene() const;
+  [[nodiscard]] std::shared_ptr<const render::SketchMarkerPacket>
+  sketchConstraintMarkers() const;
 
   Q_INVOKABLE void navigateTo(const QString &surfaceId);
   Q_INVOKABLE void selectSettingsCategory(const QString &categoryId);
@@ -271,8 +303,7 @@ public:
                                      qreal firstYMillimeters,
                                      qreal oppositeXMillimeters,
                                      qreal oppositeYMillimeters);
-  Q_INVOKABLE bool previewSketchPoint(qreal xMillimeters,
-                                      qreal yMillimeters);
+  Q_INVOKABLE bool previewSketchPoint(qreal xMillimeters, qreal yMillimeters);
   Q_INVOKABLE QString formatProjectLength(qreal lengthMillimeters) const;
   Q_INVOKABLE void clearSketchGesturePreview();
   Q_INVOKABLE bool submitSketchEntity(const QString &entityId,
@@ -323,6 +354,10 @@ public:
   selectedSketchScopes() const {
     return snapshot_->selectedSketchScopes;
   }
+  [[nodiscard]] std::vector<SketchSelectionScope>
+  sketchConstraintScopes(const QString &constraintId) const {
+    return controller_->sketchConstraintScopes(constraintId);
+  }
   [[nodiscard]] bool sketchControlPolygonVisible() const {
     return snapshot_->sketchControlPolygonVisible;
   }
@@ -361,6 +396,7 @@ private:
   QString settingsCategoryId_ = QStringLiteral("appearance");
   QString sketchHoveredEntityId_;
   QString sketchHoveredPointKey_;
+  QString sketchHoveredConstraintId_;
   int sketchModifyHoverMisses_ = 0;
   struct SketchCurveDragTarget {
     QString entityId;

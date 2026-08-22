@@ -45,8 +45,8 @@ kearne::ui::LocalSketchSessionConfig localSketchSessionConfig() {
   const QDir applicationDirectory{QCoreApplication::applicationDirPath()};
   QString runtimeRoot = applicationDirectory.filePath(QStringLiteral("python"));
   if (!QDir{runtimeRoot}.exists())
-    runtimeRoot = applicationDirectory.filePath(
-        QStringLiteral("../share/kearne/python"));
+    runtimeRoot =
+        applicationDirectory.filePath(QStringLiteral("../share/kearne/python"));
   QStringList pythonPaths{
       QDir{runtimeRoot}.filePath(QStringLiteral("sdk")),
       QDir{runtimeRoot}.filePath(QStringLiteral("generated")),
@@ -287,6 +287,10 @@ int main(int argc, char *argv[]) {
                                                 parser.values(operationOption)),
             [&sketchViewport] {
               return !sketchViewport || sketchViewport->presentationCurrent();
+            },
+            [&sketchViewport] {
+              return sketchViewport ? sketchViewport->presentationStatus()
+                                    : QStringLiteral("not-required");
             },
             &application);
       } catch (const std::exception &error) {

@@ -65,6 +65,8 @@ function(kearne_add_sketch_fragment family)
         PARENT_SCOPE)
 endfunction()
 kearne_add_sketch_fragment(basic -D KEARNE_BASIC_ONLY=1)
+kearne_add_sketch_fragment(annotation
+    -D KEARNE_BASIC_ONLY=1 -D KEARNE_ANNOTATION_ONLY=1)
 kearne_add_sketch_fragment(nurbs_low_degree
     -D KEARNE_NURBS_ONLY=1 -D KEARNE_NURBS_MAX_DEGREE=3)
 kearne_add_sketch_fragment(nurbs_general -D KEARNE_NURBS_ONLY=1)
@@ -103,6 +105,8 @@ qt_add_resources(kearne_sketch_scene_quick kearne_sketch_scene_shaders
 )
 
 add_library(kearne_local_sketch_session STATIC
+    src/sketch_constraint_markers.cpp
+    src/sketch_constraint_markers.hpp
     src/local_sketch_session.cpp
     src/local_sketch_session.hpp
 )

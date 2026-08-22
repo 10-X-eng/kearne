@@ -8,8 +8,10 @@
 #include <cstdint>
 #include <iostream>
 #include <numbers>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -557,34 +559,37 @@ void verifyConicTools(const testkit::PropertyProfile &profile) {
         const double y = random.between(-100.0, 100.0);
         const double major = random.between(0.01, 10.0);
         const double minor = major * random.between(0.05, 1.0);
-        const double rotation = random.between(-4.0 * std::numbers::pi,
-                                               4.0 * std::numbers::pi);
-        const double start = random.between(-std::numbers::pi,
-                                            std::numbers::pi);
+        const double rotation =
+            random.between(-4.0 * std::numbers::pi, 4.0 * std::numbers::pi);
+        const double start =
+            random.between(-std::numbers::pi, std::numbers::pi);
         const double sweep = random.between(0.01, 2.0 * std::numbers::pi);
         const sketch::Point2 center{length(x), length(y)};
         const SketchEntityId ellipseEntity = id<SketchEntityId>(seed + 1U);
         const SketchEntityId arcEntity = id<SketchEntityId>(seed + 2U);
         sketch::Definition definition{digest<ContentDigest>(seed), {}, {}, {}};
         auto ellipse = sketch::applyTool(
-            definition,
-            sketch::EllipseToolInput{{id<SketchObjectId>(seed + 3U),
-                                      ellipseEntity},
-                                     center,
-                                     length(major),
-                                     length(minor),
-                                     angle(rotation),
-                                     false});
+            definition, sketch::EllipseToolInput{
+                            {id<SketchObjectId>(seed + 3U), ellipseEntity},
+                            center,
+                            length(major),
+                            length(minor),
+                            angle(rotation),
+                            false});
         require(ellipse && ellipse->sourceEdits.size() == 2U &&
                     ellipse->target.objects.back().label == "Ellipse 1" &&
                     sketch::closedProfileCount(ellipse->target) == 1U,
                 "ellipse tool lost exact geometry or human identity");
         auto arc = sketch::applyTool(
-            ellipse->target,
-            sketch::EllipticalArcToolInput{
-                {id<SketchObjectId>(seed + 4U), arcEntity}, center,
-                length(major), length(minor), angle(rotation), angle(start),
-                angle(start + sweep), true});
+            ellipse->target, sketch::EllipticalArcToolInput{
+                                 {id<SketchObjectId>(seed + 4U), arcEntity},
+                                 center,
+                                 length(major),
+                                 length(minor),
+                                 angle(rotation),
+                                 angle(start),
+                                 angle(start + sweep),
+                                 true});
         require(arc && arc->sourceEdits.size() == 2U &&
                     arc->target.objects.back().label == "Elliptical Arc 1" &&
                     sketch::closedProfileCount(arc->target) == 1U &&
@@ -605,16 +610,14 @@ void verifyConicTools(const testkit::PropertyProfile &profile) {
                              (y + minor * std::cos(rotation))) < 1.0e-10,
                 "ellipse semantic handles do not resolve exact axes");
         auto resized = sketch::dragCurve(
-            arc->target,
-            {ellipseEntity,
-             *majorPoint,
-             {length(x + 1.5 * major * std::cos(rotation)),
-              length(y + 1.5 * major * std::sin(rotation))}});
-        require(resized &&
-                    std::abs(std::get<sketch::EllipseEntity>(
-                                 resized->target.entities.front())
-                                     .minorRadius.si() -
-                             1.5 * minor) < 1.0e-10,
+            arc->target, {ellipseEntity,
+                          *majorPoint,
+                          {length(x + 1.5 * major * std::cos(rotation)),
+                           length(y + 1.5 * major * std::sin(rotation))}});
+        require(resized && std::abs(std::get<sketch::EllipseEntity>(
+                                        resized->target.entities.front())
+                                        .minorRadius.si() -
+                                    1.5 * minor) < 1.0e-10,
                 "ellipse curve drag did not preserve its aspect ratio");
       });
 }
@@ -629,24 +632,26 @@ void verifyUnboundedConicTools(const testkit::PropertyProfile &profile) {
         const double major = random.between(0.01, 10.0);
         const double minor = random.between(0.01, 10.0);
         const double focal = random.between(0.01, 10.0);
-        const double rotation = random.between(-4.0 * std::numbers::pi,
-                                               4.0 * std::numbers::pi);
+        const double rotation =
+            random.between(-4.0 * std::numbers::pi, 4.0 * std::numbers::pi);
         const double hyperStart = random.between(-1.5, -0.05);
         const double hyperEnd = random.between(0.05, 1.5);
         const double parabolaStart = random.between(-5.0, -0.05);
         const double parabolaEnd = random.between(0.05, 5.0);
         const sketch::Point2 anchor{length(x), length(y)};
-        const SketchEntityId hyperbolaEntity =
-            id<SketchEntityId>(seed + 1U);
-        const SketchEntityId parabolaEntity =
-            id<SketchEntityId>(seed + 2U);
+        const SketchEntityId hyperbolaEntity = id<SketchEntityId>(seed + 1U);
+        const SketchEntityId parabolaEntity = id<SketchEntityId>(seed + 2U);
         sketch::Definition definition{digest<ContentDigest>(seed), {}, {}, {}};
         auto hyperbola = sketch::applyTool(
-            definition,
-            sketch::HyperbolicArcToolInput{
-                {id<SketchObjectId>(seed + 3U), hyperbolaEntity}, anchor,
-                length(major), length(minor), angle(rotation),
-                dimensionless(hyperStart), dimensionless(hyperEnd), false});
+            definition, sketch::HyperbolicArcToolInput{
+                            {id<SketchObjectId>(seed + 3U), hyperbolaEntity},
+                            anchor,
+                            length(major),
+                            length(minor),
+                            angle(rotation),
+                            dimensionless(hyperStart),
+                            dimensionless(hyperEnd),
+                            false});
         require(hyperbola && hyperbola->sourceEdits.size() == 2U &&
                     hyperbola->target.objects.back().label ==
                         "Hyperbolic Arc 1" &&
@@ -656,9 +661,13 @@ void verifyUnboundedConicTools(const testkit::PropertyProfile &profile) {
         auto parabola = sketch::applyTool(
             hyperbola->target,
             sketch::ParabolicArcToolInput{
-                {id<SketchObjectId>(seed + 4U), parabolaEntity}, anchor,
-                length(focal), angle(rotation), length(parabolaStart),
-                length(parabolaEnd), true});
+                {id<SketchObjectId>(seed + 4U), parabolaEntity},
+                anchor,
+                length(focal),
+                angle(rotation),
+                length(parabolaStart),
+                length(parabolaEnd),
+                true});
         require(parabola && parabola->sourceEdits.size() == 2U &&
                     parabola->target.objects.back().label ==
                         "Parabolic Arc 1" &&
@@ -679,44 +688,41 @@ void verifyUnboundedConicTools(const testkit::PropertyProfile &profile) {
         const double hyperFocusDistance = std::hypot(major, minor);
         const double hyperLocalX = major * std::cosh(hyperStart);
         const double hyperLocalY = minor * std::sinh(hyperStart);
-        const double parabolaLocalX =
-            parabolaEnd * parabolaEnd / (4.0 * focal);
-        require(
-            hyperFocus && hyperStartPoint && parabolaFocus &&
-                parabolaEndPoint &&
-                std::abs(hyperFocus->x.si() -
-                         (x + cosine * hyperFocusDistance)) < 1.0e-10 &&
-                std::abs(hyperFocus->y.si() -
-                         (y + sine * hyperFocusDistance)) < 1.0e-10 &&
-                std::abs(hyperStartPoint->x.si() -
-                         (x + cosine * hyperLocalX - sine * hyperLocalY)) <
-                    1.0e-10 &&
-                std::abs(parabolaFocus->x.si() - (x + cosine * focal)) <
-                    1.0e-10 &&
-                std::abs(parabolaEndPoint->x.si() -
-                         (x + cosine * parabolaLocalX - sine * parabolaEnd)) <
-                    1.0e-10,
-            "unbounded conic semantic points lost exact geometry");
+        const double parabolaLocalX = parabolaEnd * parabolaEnd / (4.0 * focal);
+        require(hyperFocus && hyperStartPoint && parabolaFocus &&
+                    parabolaEndPoint &&
+                    std::abs(hyperFocus->x.si() -
+                             (x + cosine * hyperFocusDistance)) < 1.0e-10 &&
+                    std::abs(hyperFocus->y.si() -
+                             (y + sine * hyperFocusDistance)) < 1.0e-10 &&
+                    std::abs(hyperStartPoint->x.si() -
+                             (x + cosine * hyperLocalX - sine * hyperLocalY)) <
+                        1.0e-10 &&
+                    std::abs(parabolaFocus->x.si() - (x + cosine * focal)) <
+                        1.0e-10 &&
+                    std::abs(parabolaEndPoint->x.si() -
+                             (x + cosine * parabolaLocalX -
+                              sine * parabolaEnd)) < 1.0e-10,
+                "unbounded conic semantic points lost exact geometry");
 
         const sketch::Point2 majorPoint{length(x + cosine * major),
                                         length(y + sine * major)};
         const double scale = 1.25;
-        auto resized = sketch::dragCurve(
-            parabola->target,
-            {hyperbolaEntity,
-             majorPoint,
-             {length(x + cosine * major * scale),
-              length(y + sine * major * scale)}});
+        auto resized = sketch::dragCurve(parabola->target,
+                                         {hyperbolaEntity,
+                                          majorPoint,
+                                          {length(x + cosine * major * scale),
+                                           length(y + sine * major * scale)}});
         const auto resizedEntity =
             resized ? std::ranges::find(resized->target.entities,
                                         hyperbolaEntity, sketch::entityId)
                     : parabola->target.entities.end();
-        require(resized && resizedEntity != resized->target.entities.end() &&
-                    std::abs(std::get<sketch::HyperbolicArcEntity>(
-                                 *resizedEntity)
-                                 .minorRadius.si() -
-                             scale * minor) < 1.0e-10,
-                "hyperbolic arc drag did not preserve its axis ratio");
+        require(
+            resized && resizedEntity != resized->target.entities.end() &&
+                std::abs(std::get<sketch::HyperbolicArcEntity>(*resizedEntity)
+                             .minorRadius.si() -
+                         scale * minor) < 1.0e-10,
+            "hyperbolic arc drag did not preserve its axis ratio");
       });
 }
 
@@ -740,14 +746,19 @@ void verifyBSplineTool(const testkit::PropertyProfile &profile) {
             dimensionless(0.0), dimensionless(1.0), dimensionless(1.0),
             dimensionless(1.0), dimensionless(1.0)};
         const std::vector<sketch::DimensionlessValue> weights{
-            dimensionless(1.0), dimensionless(weight1),
-            dimensionless(weight2), dimensionless(1.0)};
+            dimensionless(1.0), dimensionless(weight1), dimensionless(weight2),
+            dimensionless(1.0)};
         const SketchEntityId splineId = id<SketchEntityId>(seed + 1U);
         sketch::Definition definition{digest<ContentDigest>(seed), {}, {}, {}};
         auto applied = sketch::applyTool(
             definition,
             sketch::BSplineToolInput{{id<SketchObjectId>(seed + 2U), splineId},
-                                     poles, knots, weights, 3U, false, false});
+                                     poles,
+                                     knots,
+                                     weights,
+                                     3U,
+                                     false,
+                                     false});
         require(applied && applied->sourceEdits.size() == 2U &&
                     applied->target.objects.front().label == "B-spline 1" &&
                     sketch::validate(applied->target, {}).has_value() &&
@@ -782,9 +793,10 @@ void verifyBSplineTool(const testkit::PropertyProfile &profile) {
         sketch::Definition incidence = applied->target;
         incidence.entities.push_back(
             sketch::PointEntity{pointId, {length(pointX), length(pointY)}});
-        incidence.constraints.push_back(sketch::PointOnObject{
-            id<SketchConstraintId>(seed + 4U),
-            {pointId, sketch::PointKey::Point}, splineId});
+        incidence.constraints.push_back(
+            sketch::PointOnObject{id<SketchConstraintId>(seed + 4U),
+                                  {pointId, sketch::PointKey::Point},
+                                  splineId});
         auto residuals =
             sketch::evaluateResiduals(incidence, incidence.entities, {});
         require(residuals && residuals->size() == 1U &&
@@ -835,6 +847,79 @@ void verifyAxisAlignmentRemoval(const testkit::PropertyProfile &profile) {
       });
 }
 
+void verifyConstraintAuthorship(const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "constraint authorship and derived health", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const std::uint64_t seed = random.next() ^ (index * 32U);
+        const SketchEntityId line = id<SketchEntityId>(seed + 1U);
+        const SketchConstraintId conflict = id<SketchConstraintId>(seed + 2U);
+        const SketchConstraintId reference = id<SketchConstraintId>(seed + 3U);
+        const SketchConstraintId suppressed = id<SketchConstraintId>(seed + 4U);
+        const SketchConstraintId redundant = id<SketchConstraintId>(seed + 5U);
+        const sketch::ConstraintProperties named{
+            std::string{"Baseline"}, sketch::ConstraintActivity::Active,
+            sketch::DimensionMode::Driving};
+        const sketch::ConstraintProperties referenceProperties{
+            std::string{"Overall width"}, sketch::ConstraintActivity::Active,
+            sketch::DimensionMode::Reference};
+        const sketch::ConstraintProperties suppressedProperties{
+            std::nullopt, sketch::ConstraintActivity::Suppressed,
+            sketch::DimensionMode::Driving};
+        sketch::Definition definition{
+            digest<ContentDigest>(seed),
+            {},
+            {sketch::LineEntity{
+                line, {length(0.0), length(0.0)}, {length(1.0), length(0.0)}}},
+            {sketch::Horizontal{conflict, line, named},
+             sketch::Distance{reference,
+                              {line, sketch::PointKey::Start},
+                              {line, sketch::PointKey::End},
+                              length(4.0),
+                              referenceProperties},
+             sketch::Vertical{suppressed, line, suppressedProperties},
+             sketch::Horizontal{redundant, line}}};
+        require(sketch::validate(definition, {}).has_value(),
+                "valid constraint authorship was rejected");
+        require(sketch::isDrivingConstraint(definition.constraints[0]) &&
+                    !sketch::isDrivingConstraint(definition.constraints[1]) &&
+                    !sketch::isDrivingConstraint(definition.constraints[2]),
+                "constraint activity did not control solver participation");
+        require(sketch::constraintDisplayLabel(definition.constraints[0], 1U) ==
+                        "Baseline" &&
+                    sketch::constraintDisplayLabel(definition.constraints[3],
+                                                   2U) == "Horizontal 2",
+                "constraint labels are not human-readable");
+
+        auto residuals = sketch::evaluateResiduals(
+            definition, definition.entities, sketch::NumericalProfile{});
+        require(residuals && residuals->size() == 2U &&
+                    std::ranges::all_of(*residuals,
+                                        &sketch::ConstraintResidual::satisfied),
+                "non-driving constraints leaked into solver residuals");
+
+        sketch::SolveResult solve;
+        solve.residuals = *residuals;
+        solve.redundantConstraints = {conflict, redundant};
+        solve.conflicts = {{{conflict}, true}};
+        const auto health = sketch::constraintHealth(definition, solve);
+        require(health.size() == 4U &&
+                    health[0].state == sketch::ConstraintState::Conflicting &&
+                    health[1].state == sketch::ConstraintState::Reference &&
+                    health[2].state == sketch::ConstraintState::Suppressed &&
+                    health[3].state == sketch::ConstraintState::Redundant,
+                "derived constraint health lost state precedence");
+
+        sketch::Definition invalid = definition;
+        sketch::constraintProperties(invalid.constraints[3]).dimensionMode =
+            sketch::DimensionMode::Reference;
+        auto rejected = sketch::validate(invalid, {});
+        require(!rejected && rejected.error().code ==
+                                 "sketch.constraint.invalid-dimension-mode",
+                "reference mode was accepted on a geometric constraint");
+      });
+}
+
 } // namespace
 
 int main() {
@@ -848,6 +933,7 @@ int main() {
     verifyUnboundedConicTools(profile);
     verifyBSplineTool(profile);
     verifyAxisAlignmentRemoval(profile);
+    verifyConstraintAuthorship(profile);
     return 0;
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';

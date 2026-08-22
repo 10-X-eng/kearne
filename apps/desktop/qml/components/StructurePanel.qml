@@ -9,14 +9,17 @@ Rectangle {
     id: root
 
     function entitySemanticId(record, index) {
+        if (!record || record.id === undefined || record.kind === undefined)
+            return ""
         const identity = String(record.id)
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
                 .test(identity))
             return "entity." + identity
         let occurrence = 0
-        const records = App.ui.structure
-        for (let current = 0; current <= index; ++current) {
-            if (records[current].kind === record.kind)
+        const records = App.ui.structure ?? []
+        const last = Math.min(index, records.length - 1)
+        for (let current = 0; current <= last; ++current) {
+            if (records[current] && records[current].kind === record.kind)
                 ++occurrence
         }
         const kind = String(record.kind).replace(/^sketch-/, "")
@@ -28,6 +31,10 @@ Rectangle {
     function iconFor(record) {
         if (root.activePage === 1)
             return "checkpoint"
+        if (!record)
+            return "model"
+        if (record.icon)
+            return record.icon
         switch (record.kind) {
         case "sketch": return "sketch"
         case "sketch-rectangle": return "rectangle"
@@ -57,6 +64,14 @@ Rectangle {
         case "group": return "folder"
         default: return "model"
         }
+    }
+
+    function statusColor(status) {
+        if (status === "Conflict") return Theme.error
+        if (status === "Redundant") return Theme.warning
+        if (status === "Reference") return Theme.textMuted
+        if (status === "Suppressed") return Theme.textFaint
+        return Theme.textFaint
     }
 
     property string semanticId: "panel.structure"
@@ -138,15 +153,22 @@ Rectangle {
                                                 ? root.entitySemanticId(
                                                       row.modelData, row.index)
                                                 : "revision." + row.modelData.id
-                property string semanticName: row.modelData.label
+                property string semanticName: row.modelData?.label ?? ""
                 property string semanticRole: "listitem"
                 property var semanticActions: root.activePage === 0 ? ["select"] : []
+                property bool retainedSelection: root.activePage === 0
+                                                   && row.modelData
+                                                   && row.modelData.id === App.ui.selectedEntityId
                 property string semanticValue: root.activePage === 0
-                                                   ? row.modelData.kind
-                                                   : row.modelData.detail
+                                                   ? String(row.modelData?.kind ?? "")
+                                                     + (row.modelData?.status
+                                                     ? ":" + row.modelData.status : "")
+                                                   : String(row.modelData?.detail ?? "")
 
                 function selectEntity() {
                     if (root.activePage !== 0)
+                        return false
+                    if (!row.modelData || row.modelData.id === undefined)
                         return false
                     App.ui.selectEntity(row.modelData.id)
                     return true
@@ -167,7 +189,8 @@ Rectangle {
 
                 contentItem: RowLayout {
                     anchors.fill: parent
-                    anchors.leftMargin: Theme.space2 + (row.modelData.depth ?? 0) * Theme.space4
+                    anchors.leftMargin: Theme.space2
+                                        + (row.modelData?.depth ?? 0) * Theme.space4
                     anchors.rightMargin: Theme.space2
                     spacing: Theme.space2
 
@@ -175,30 +198,44 @@ Rectangle {
                         Layout.preferredWidth: Theme.iconSizeSmall
                         Layout.preferredHeight: Theme.iconSizeSmall
                         name: root.iconFor(row.modelData)
-                        color: root.activePage === 0 ? Theme.accent : Theme.textFaint
+                        color: root.activePage === 0 && row.modelData?.status
+                               ? root.statusColor(row.modelData.status)
+                               : (root.activePage === 0 ? Theme.accent : Theme.textFaint)
                     }
 
                     Text {
                         Layout.fillWidth: true
-                        text: row.modelData.label
+                        text: row.modelData?.label ?? ""
                         color: Theme.text
                         font.pixelSize: Theme.fontBody
                         elide: Text.ElideRight
                     }
 
                     Text {
+                        visible: root.activePage === 0
+                                 && Boolean(row.modelData?.status)
+                        text: row.modelData?.status ?? ""
+                        color: root.statusColor(text)
+                        font.pixelSize: Theme.fontSmall
+                    }
+
+                    Text {
                         visible: root.activePage === 1
-                        text: row.modelData.detail ?? ""
+                        text: row.modelData?.detail ?? ""
                         color: Theme.textFaint
                         font.pixelSize: Theme.fontSmall
                     }
                 }
 
                 background: Rectangle {
-                    color: row.hovered || row.visualFocus
-                           ? Theme.surfaceMuted : Theme.surface
-                    border.width: row.visualFocus ? Theme.focusRingWidth : 0
-                    border.color: Theme.focus
+                    color: row.retainedSelection ? Theme.accentSoft
+                                                 : row.hovered || row.visualFocus
+                                                   ? Theme.surfaceMuted
+                                                   : Theme.surface
+                    border.width: row.retainedSelection || row.visualFocus
+                                  ? Theme.focusRingWidth : 0
+                    border.color: row.retainedSelection ? Theme.selection
+                                                        : Theme.focus
                 }
             }
         }

@@ -75,6 +75,17 @@ Rectangle {
                 }
 
                 KButton {
+                    visible: App.ui.activeCommandId.length === 0
+                             && App.ui.sketchConstraintSelected
+                    semanticId: visible ? "constraint.delete" : ""
+                    semanticName: "Delete selected constraint"
+                    iconName: "delete"
+                    quiet: true
+                    compact: true
+                    onClicked: App.ui.requestCommand("sketch.constraint.delete")
+                }
+
+                KButton {
                     semanticId: visible ? "inspector.collapse" : ""
                     semanticName: "Collapse inspector panel"
                     iconName: "collapse-right"
@@ -162,7 +173,7 @@ Rectangle {
                 Repeater {
                     model: App.ui.fields
 
-                    ColumnLayout {
+                    RowLayout {
                         id: fieldGroup
                         required property var modelData
                         property string semanticId: "field." + fieldGroup.modelData.id
@@ -172,16 +183,21 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.leftMargin: Theme.space3
                         Layout.rightMargin: Theme.space3
-                        spacing: Theme.space1
+                        spacing: Theme.space2
 
                         Text {
+                            Layout.preferredWidth: 96
+                            Layout.maximumWidth: 96
+                            Layout.alignment: Qt.AlignVCenter
                             text: fieldGroup.modelData.label
                             color: Theme.textMuted
                             font.pixelSize: Theme.fontSmall
+                            elide: Text.ElideRight
                         }
 
                         StackLayout {
                             Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
                             currentIndex: fieldGroup.modelData.kind === "choice" ? 1
                                           : (fieldGroup.modelData.kind === "toggle" ? 2 : 0)
 
@@ -202,6 +218,7 @@ Rectangle {
                                 semanticName: fieldGroup.modelData.label
                                 model: fieldGroup.modelData.options
                                 semanticOptions: fieldGroup.modelData.optionIds
+                                enabled: !(fieldGroup.modelData.readOnly ?? false)
                                 currentIndex: Math.max(
                                                   0,
                                                   fieldGroup.modelData.optionIds.indexOf(

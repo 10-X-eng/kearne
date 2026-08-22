@@ -21,8 +21,8 @@
 #include <QMouseEvent>
 #include <QQuickItem>
 #include <QQuickWindow>
-#include <QSaveFile>
 #include <QSGRendererInterface>
+#include <QSaveFile>
 #include <QSet>
 #include <QTimer>
 #include <QUuid>
@@ -447,17 +447,27 @@ parseSemanticOperations(const QStringList &actions,
 ObservationController::ObservationController(
     QQuickWindow &window, UiSession &session, ThemeManager &themes,
     QString outputDirectory, QList<QJsonObject> operations,
-    std::function<bool()> presentationCurrent, QObject *parent)
+    std::function<bool()> presentationCurrent,
+    std::function<QString()> presentationStatus, QObject *parent)
     : QObject(parent), window_(window), session_(session), themes_(themes),
       outputDirectory_(std::move(outputDirectory)),
       pendingOperations_(std::move(operations)),
       sessionId_(QUuid::createUuid().toString(QUuid::WithoutBraces)),
-      presentationCurrent_(std::move(presentationCurrent)) {
+      presentationCurrent_(std::move(presentationCurrent)),
+      presentationStatus_(std::move(presentationStatus)) {
   connect(&window_, &QQuickWindow::frameSwapped, this,
           [this] { framePresented(); });
   QTimer::singleShot(30'000, this, [this] {
     if (!captureScheduled_) {
-      std::cerr << "capture deadline expired before two presented frames\n";
+      std::cerr << "capture deadline expired: command="
+                << session_.commandDraftState().toStdString()
+                << " transition=" << hasActiveSemanticTransition(window_)
+                << " presentation-current="
+                << (!presentationCurrent_ || presentationCurrent_())
+                << " settled-frames=" << settledFrames_;
+      if (presentationStatus_)
+        std::cerr << " presentation=" << presentationStatus_().toStdString();
+      std::cerr << '\n';
       QCoreApplication::exit(3);
     }
   });
@@ -480,8 +490,7 @@ void ObservationController::framePresented() {
          session_.sketchGesturePreviewVisible()},
         {QStringLiteral("preview_generation"),
          static_cast<qint64>(session_.sketchGesturePreviewGeneration())},
-        {QStringLiteral("hovered_entity"),
-         session_.sketchHoveredEntityId()},
+        {QStringLiteral("hovered_entity"), session_.sketchHoveredEntityId()},
         {QStringLiteral("hovered_point"), session_.sketchHoveredPointKey()}});
     pointerMotion_->moveDispatched.reset();
     if (pointerMotion_->capturePreview && !pointerMotion_->previewCaptured &&

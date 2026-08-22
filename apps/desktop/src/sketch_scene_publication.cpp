@@ -708,9 +708,9 @@ Result<SketchPreparationSubmission> SketchPreparationExecutor::submit(
   try {
     if (impl_->fault)
       impl_->fault(FaultSite::Submission);
-    request = std::make_shared<const Impl::Request>(Impl::Request{
-        subscription, SketchPreparationEpoch{epoch}, std::move(products),
-        options});
+    request = std::make_shared<const Impl::Request>(
+        Impl::Request{subscription, SketchPreparationEpoch{epoch},
+                      std::move(products), options});
   } catch (...) {
     return std::unexpected(
         publicationDiagnostic("desktop.sketch.preparation-request-allocation",
@@ -1197,10 +1197,7 @@ Result<bool> SketchScenePublicationController::validateAdvance(
   if (currentProducts_) {
     const render::SceneStamp &current = currentProducts_->scene->stamp();
     const render::SceneStamp &next = products.scene->stamp();
-    if (next.generation < current.generation)
-      return std::unexpected(publicationDiagnostic(
-          "desktop.sketch.publication-stale-scene",
-          "sketch scene generation is older than the current packet"));
+    // Product generations order presentation; undo may replay an older scene.
     if (next.generation == current.generation && next != current)
       return std::unexpected(publicationDiagnostic(
           "desktop.sketch.publication-scene-conflict",

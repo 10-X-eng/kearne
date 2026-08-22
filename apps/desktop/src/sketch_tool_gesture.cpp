@@ -139,6 +139,8 @@ constexpr std::array constraintDefinitions{
                                     "sketch.diameter", "Diameter", 1U},
     LocalSketchConstraintDefinition{LocalSketchConstraintKind::Angle,
                                     "sketch.angle", "Angle", 2U},
+    LocalSketchConstraintDefinition{LocalSketchConstraintKind::Snell,
+                                    "sketch.snell", "Refraction", 3U},
 };
 
 SketchPrimitiveProjection pointPrimitive(const PlanePoint &point, QString id,
@@ -583,8 +585,7 @@ projectLocalSketchToolGesture(const LocalSketchToolGesture &gesture,
          ++index) {
       const sketch::Point2 &control = geometry->controlPoints[index];
       curve.points.push_back({control.x.si(), control.y.si()});
-      curve.pointKeys.push_back(
-          QStringLiteral("control.%1").arg(index + 1U));
+      curve.pointKeys.push_back(QStringLiteral("control.%1").arg(index + 1U));
     }
     curve.splineKnots = std::move(knots);
     curve.splineWeights = std::move(weights);
@@ -787,8 +788,7 @@ projectLocalSketchToolGesture(const LocalSketchToolGesture &gesture,
     if (gesture.kind != LocalSketchToolKind::EllipticalArc)
       return std::vector{ellipsePrimitive(
           ellipse->center, ellipse->majorRadius, ellipse->minorRadius,
-          ellipse->rotation, QStringLiteral("draft.0"),
-          gesture.construction)};
+          ellipse->rotation, QStringLiteral("draft.0"), gesture.construction)};
     if (points.size() < 5U) {
       std::vector result{ellipsePrimitive(
           ellipse->center, ellipse->majorRadius, ellipse->minorRadius,

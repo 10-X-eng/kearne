@@ -37,6 +37,7 @@ An accepted ADR is immutable except for status and links. Reversal creates a new
 | [0020](0020-inline-qrhi-sketch-renderer.md) | Proposed | Sketch uses one inline QSGRenderNode/QRhi renderer |
 | [0021](0021-git-project-packages.md) | Accepted | Git owns project history; `.kearne` packages the complete repository |
 | [0022](0022-sketch-operation-objects.md) | Accepted | Recognized Sketch source retains human operation objects |
+| [0023](0023-sketch-constraint-declarations.md) | Accepted | Sketch constraint declarations own intent |
 
 ## Template
 

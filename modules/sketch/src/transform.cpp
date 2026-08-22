@@ -1,5 +1,5 @@
-#include <kearne/sketch/transform.hpp>
 #include <kearne/sketch/tools.hpp>
+#include <kearne/sketch/transform.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -210,6 +210,12 @@ Result<Constraint> copyConstraint(const Constraint &constraint,
           if (auto mapped = remapPoint(value.point); !mapped)
             return mapped;
           return remapEntity(value.curve);
+        } else if constexpr (std::is_same_v<Type, Snell>) {
+          if (auto mapped = remapPoint(value.incident); !mapped)
+            return mapped;
+          if (auto mapped = remapPoint(value.refracted); !mapped)
+            return mapped;
+          return remapEntity(value.boundary);
         } else if constexpr (std::is_same_v<Type, Symmetric>) {
           if (auto mapped = remapPoint(value.first); !mapped)
             return mapped;
@@ -468,8 +474,7 @@ transformSelection(const Definition &current,
         });
     if (object.kind != SketchObjectKind::CurveGroup && selectedMembers != 0U &&
         selectedMembers != object.members.size())
-      edits.emplace_back(
-          ReplaceObject{curveGroupAfterPartialEdit(object)});
+      edits.emplace_back(ReplaceObject{curveGroupAfterPartialEdit(object)});
   }
 
   const bool axesPreserved = preservesCoordinateAxes(transform, profile);

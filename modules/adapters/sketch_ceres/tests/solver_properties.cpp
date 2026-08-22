@@ -312,6 +312,55 @@ void solverContract(const PropertyProfile &baseProfile) {
       });
 }
 
+void underconstrainedStabilityContract() {
+  constexpr double startX = -0.06;
+  constexpr double startY = -0.03;
+  constexpr double endX = 0.08;
+  constexpr double endY = 0.05;
+  constexpr double targetLength = 0.05;
+  const SketchEntityId lineId = id<SketchEntityId>(2'000'001U);
+  model::Definition definition{
+      digest(2'000'000U),
+      {},
+      {model::LineEntity{lineId, point(startX, startY), point(endX, endY)}},
+      {model::Distance{id<SketchConstraintId>(2'000'002U),
+                       {lineId, model::PointKey::Start},
+                       {lineId, model::PointKey::End},
+                       length(targetLength)}}};
+  CeresSketchSolver solver;
+  auto solved = solver.solve(solveInput(definition));
+  require(solved && solved->status == model::SolveStatus::Underconstrained,
+          "underconstrained distance did not solve");
+  const auto &line = std::get<model::LineEntity>(solved->geometry.front());
+  const double solvedX = line.end.x.si() - line.start.x.si();
+  const double solvedY = line.end.y.si() - line.start.y.si();
+  const double sourceX = endX - startX;
+  const double sourceY = endY - startY;
+  const double sourceLength = std::hypot(sourceX, sourceY);
+  const double tolerance = model::NumericalProfile{}.lengthToleranceMeters;
+  const double poseTolerance = tolerance * 10.0;
+  const double lengthError =
+      std::abs(std::hypot(solvedX, solvedY) - targetLength);
+  const double midpointXError = std::abs(
+      (line.start.x.si() + line.end.x.si()) * 0.5 - (startX + endX) * 0.5);
+  const double midpointYError = std::abs(
+      (line.start.y.si() + line.end.y.si()) * 0.5 - (startY + endY) * 0.5);
+  const double directionError =
+      std::abs(sourceX * solvedY - sourceY * solvedX) / sourceLength;
+  require(lengthError <= tolerance && midpointXError <= tolerance &&
+              midpointYError <= tolerance && directionError <= poseTolerance &&
+              sourceX * solvedX + sourceY * solvedY > 0.0,
+          "underconstrained distance changed the line's pose: start=(" +
+              std::to_string(line.start.x.si()) + ", " +
+              std::to_string(line.start.y.si()) + "), end=(" +
+              std::to_string(line.end.x.si()) + ", " +
+              std::to_string(line.end.y.si()) + "), errors nm=(" +
+              std::to_string(lengthError * 1.0e9) + ", " +
+              std::to_string(midpointXError * 1.0e9) + ", " +
+              std::to_string(midpointYError * 1.0e9) + ", " +
+              std::to_string(directionError * 1.0e9) + ")");
+}
+
 void generatedScaleAndOrderStress(const PropertyProfile &baseProfile) {
   PropertyProfile profile = baseProfile;
   profile.iterations =
@@ -598,6 +647,16 @@ void stateSemantics() {
                               }),
           "blocked drag has no diagnostic");
 
+  model::Definition suppressedDefinition = free;
+  model::constraintProperties(suppressedDefinition.constraints.front())
+      .activity = model::ConstraintActivity::Suppressed;
+  auto suppressed = solver.solve(solveInput(suppressedDefinition));
+  require(suppressed &&
+              suppressed->status == model::SolveStatus::Underconstrained &&
+              suppressed->degreesOfFreedom == 2U &&
+              suppressed->residuals.empty(),
+          "suppressed constraint still participated in the solve");
+
   kearne::CancellationSource cancellation;
   cancellation.request_stop();
   model::SolveInput cancelled = solveInput(free);
@@ -623,6 +682,56 @@ void stateSemantics() {
               !inconsistent->conflicts.empty() &&
               !inconsistent->conflicts.front().exact,
           "contradiction was not reported as an approximate conflict");
+
+  model::constraintProperties(contradictory.constraints.back()).dimensionMode =
+      model::DimensionMode::Reference;
+  auto reference = solver.solve(solveInput(contradictory));
+  require(reference && reference->status == model::SolveStatus::Solved &&
+              reference->conflicts.empty() &&
+              reference->residuals.size() + 1U ==
+                  contradictory.constraints.size(),
+          "reference dimension still drove or conflicted with the solve");
+}
+
+void snellConstraintContract() {
+  CeresSketchSolver solver;
+  const SketchEntityId incident = id<SketchEntityId>(110'001);
+  const SketchEntityId refracted = id<SketchEntityId>(110'002);
+  const SketchEntityId boundary = id<SketchEntityId>(110'003);
+  const auto fixedRefraction = [&](double incidentY,
+                                   double ratio) -> model::Definition {
+    return {
+        digest(110'000),
+        {},
+        {model::LineEntity{incident, point(-1.0, incidentY), point(0.0, 0.0)},
+         model::LineEntity{refracted, point(0.0, 0.0), point(1.0, 1.0)},
+         model::LineEntity{boundary, point(-1.0, 0.0), point(1.0, 0.0)}},
+        {model::Block{id<SketchConstraintId>(110'011), incident},
+         model::Block{id<SketchConstraintId>(110'012), refracted},
+         model::Block{id<SketchConstraintId>(110'013), boundary},
+         model::Snell{id<SketchConstraintId>(110'014),
+                      {incident, model::PointKey::End},
+                      {refracted, model::PointKey::Start},
+                      boundary,
+                      dimensionless(ratio)}}};
+  };
+
+  auto transmitted = solver.solve(solveInput(fixedRefraction(-1.0, 1.0)));
+  require(transmitted && transmitted->status == model::SolveStatus::Solved &&
+              transmitted->degreesOfFreedom == 0U &&
+              std::ranges::all_of(transmitted->residuals,
+                                  &model::ConstraintResidual::satisfied),
+          "valid refraction constraint did not solve exactly");
+
+  auto reflected = solver.solve(solveInput(fixedRefraction(-0.1, 0.5)));
+  require(reflected && reflected->status == model::SolveStatus::Inconsistent &&
+              std::ranges::any_of(
+                  reflected->diagnostics,
+                  [](const auto &value) {
+                    return value.code ==
+                           "sketch.constraint.snell-total-internal-reflection";
+                  }),
+          "total internal reflection was not diagnosed");
 }
 
 void exactConicSolverContract() {
@@ -853,12 +962,14 @@ int main() {
     const PropertyProfile profile = kearne::testkit::propertyProfile();
     residualContract(profile);
     solverContract(profile);
+    underconstrainedStabilityContract();
     generatedScaleAndOrderStress(profile);
     nonlinearSolverContract(profile);
     rigidGroupContract(profile);
     validationAndDegeneracy();
     rankAndCancellationStress();
     stateSemantics();
+    snellConstraintContract();
     exactConicSolverContract();
     exactBSplineSolverContract();
     return 0;

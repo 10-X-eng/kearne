@@ -29,6 +29,7 @@ public:
                         ThemeManager &themes, QString outputDirectory,
                         QList<QJsonObject> operations,
                         std::function<bool()> presentationCurrent,
+                        std::function<QString()> presentationStatus,
                         QObject *parent);
   ~ObservationController() override;
 
@@ -51,6 +52,7 @@ private:
   QList<QJsonObject> actionReceipts_;
   QString sessionId_;
   std::function<bool()> presentationCurrent_;
+  std::function<QString()> presentationStatus_;
   int presentedFrames_ = 0;
   int settledFrames_ = 0;
   QByteArray lastFrameFingerprint_;

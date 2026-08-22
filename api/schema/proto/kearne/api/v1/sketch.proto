@@ -22,6 +22,18 @@ enum SketchTangency {
   SKETCH_TANGENCY_INTERNAL = 2;
 }
 
+enum SketchConstraintActivity {
+  SKETCH_CONSTRAINT_ACTIVITY_UNSPECIFIED = 0;
+  SKETCH_CONSTRAINT_ACTIVITY_ACTIVE = 1;
+  SKETCH_CONSTRAINT_ACTIVITY_SUPPRESSED = 2;
+}
+
+enum SketchDimensionMode {
+  SKETCH_DIMENSION_MODE_UNSPECIFIED = 0;
+  SKETCH_DIMENSION_MODE_DRIVING = 1;
+  SKETCH_DIMENSION_MODE_REFERENCE = 2;
+}
+
 enum SketchObjectKind {
   SKETCH_OBJECT_KIND_UNSPECIFIED = 0;
   SKETCH_OBJECT_KIND_RECTANGLE = 1;
@@ -494,9 +506,7 @@ message SketchEntitySetConstraint {
     surface : SURFACE_KIND_VALUE
     max_serialized_bytes : 65536
   };
-  repeated UuidV7 entities = 1 [ (field_rules) = {
-    max_items : 1024
-  } ];
+  repeated UuidV7 entities = 1 [ (field_rules) = {max_items : 1024} ];
 }
 
 message SketchPointPairLengthConstraint {
@@ -555,10 +565,30 @@ message SketchEntityPairAngleConstraint {
   } ];
 }
 
+message SketchSnellConstraint {
+  option (message_rules) = {
+    stable_name : "sketch.constraint.snell"
+    schema_version : 1
+    surface : SURFACE_KIND_VALUE
+    max_serialized_bytes : 232
+  };
+  SketchPointReference incident = 1 [ (field_rules) = {required : true} ];
+  SketchPointReference refracted = 2 [ (field_rules) = {required : true} ];
+  UuidV7 boundary = 3
+      [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
+  double ratio = 4 [ (field_rules) = {
+    required : true
+    dimension : "Dimensionless"
+    has_numeric_range : true
+    minimum : 0
+    maximum : 1.7976931348623157e+308
+  } ];
+}
+
 message SketchConstraint {
   option (message_rules) = {
     stable_name : "sketch.constraint"
-    schema_version : 1
+    schema_version : 2
     surface : SURFACE_KIND_WIRE
     max_serialized_bytes : 65536
     required_oneof : "relation"
@@ -566,6 +596,11 @@ message SketchConstraint {
   UuidV7 id = 1 [
     (field_rules) = {required : true semantic_type : "SketchConstraintId"}
   ];
+  string label = 2 [ (field_rules) = {max_length : 128} ];
+  SketchConstraintActivity activity = 3
+      [ (field_rules) = {required : true disallow_default : true} ];
+  SketchDimensionMode dimension_mode = 4
+      [ (field_rules) = {required : true disallow_default : true} ];
   oneof relation {
     SketchPointPairConstraint coincident = 20;
     SketchLineConstraint horizontal = 21;
@@ -589,6 +624,7 @@ message SketchConstraint {
     SketchPointPositionConstraint lock = 39;
     SketchPointTripleConstraint symmetric_about_point = 40;
     SketchEntitySetConstraint group = 41;
+    SketchSnellConstraint snell = 42;
   }
 }
 
@@ -599,11 +635,8 @@ message SketchObjectMember {
     surface : SURFACE_KIND_VALUE
     max_serialized_bytes : 96
   };
-  string role = 1 [ (field_rules) = {
-    required : true
-    min_length : 1
-    max_length : 32
-  } ];
+  string role = 1
+      [ (field_rules) = {required : true min_length : 1 max_length : 32} ];
   UuidV7 entity = 2
       [ (field_rules) = {required : true semantic_type : "SketchEntityId"} ];
 }
@@ -617,11 +650,8 @@ message SketchObject {
   };
   UuidV7 id = 1
       [ (field_rules) = {required : true semantic_type : "SketchObjectId"} ];
-  string label = 2 [ (field_rules) = {
-    required : true
-    min_length : 1
-    max_length : 128
-  } ];
+  string label = 2
+      [ (field_rules) = {required : true min_length : 1 max_length : 128} ];
   SketchObjectKind kind = 3
       [ (field_rules) = {required : true disallow_default : true} ];
   repeated SketchObjectMember members = 4

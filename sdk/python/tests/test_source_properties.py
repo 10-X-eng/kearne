@@ -1161,13 +1161,19 @@ class HelperProperties(unittest.TestCase):
                 (
                     argument
                     for argument in spec.positional
-                    if argument.kind in {"length", "angle"}
+                    if argument.kind in {"length", "angle", "scalar"}
                 ),
                 None,
             )
-            value: Length | Angle | None = None
+            value: Length | Angle | float | None = None
             if value_argument is not None:
-                value = mm(1) if value_argument.kind == "length" else deg(1)
+                value = (
+                    mm(1)
+                    if value_argument.kind == "length"
+                    else deg(1)
+                    if value_argument.kind == "angle"
+                    else 1.5
+                )
             position = (
                 (mm(1), mm(2))
                 if any(argument.kind == "point" for argument in spec.positional)

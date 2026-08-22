@@ -202,9 +202,10 @@ std::size_t foregroundPixels(const QImage &image) {
   return count;
 }
 
-std::size_t foregroundPixelsInsideEllipse(const QImage &image, QPointF center,
-                                          double radiusX, double radiusY,
-                                          double maximumNormalizedSquared) {
+std::size_t colorPixelsInsideEllipse(const QImage &image, QPointF center,
+                                     double radiusX, double radiusY,
+                                     double maximumNormalizedSquared,
+                                     QColor expected) {
   const QImage pixels = image.convertToFormat(QImage::Format_ARGB32);
   std::size_t count = 0U;
   for (int y = std::max(0, qFloor(center.y() - radiusY));
@@ -214,9 +215,12 @@ std::size_t foregroundPixelsInsideEllipse(const QImage &image, QPointF center,
          x <= std::min(pixels.width() - 1, qCeil(center.x() + radiusX)); ++x) {
       const double normalizedX = (x - center.x()) / radiusX;
       const double normalizedY = (y - center.y()) / radiusY;
+      const QColor actual = QColor::fromRgba(row[x]);
       if (normalizedX * normalizedX + normalizedY * normalizedY <=
               maximumNormalizedSquared &&
-          foreground(row[x]))
+          std::abs(actual.red() - expected.red()) < 36 &&
+          std::abs(actual.green() - expected.green()) < 36 &&
+          std::abs(actual.blue() - expected.blue()) < 36)
         ++count;
     }
   }
@@ -304,8 +308,8 @@ provisionalCircle(const std::shared_ptr<const SketchSceneSnapshot> &base) {
                       {*ellipseHandle,
                        {{{0.08, 0.035}, {}}},
                        1U,
-                      SketchPrimitiveKind::Ellipse,
-                      SketchProvisionalClassification::Regular,
+                       SketchPrimitiveKind::Ellipse,
+                       SketchProvisionalClassification::Regular,
                        0.03},
                       {*ellipticalArcHandle,
                        {{{-0.08, 0.02}, {}}},
@@ -315,10 +319,8 @@ provisionalCircle(const std::shared_ptr<const SketchSceneSnapshot> &base) {
                        0.028}};
   batch.primitives[1].spline = 0U;
   batch.primitives[2].secondaryRadius = 0.018;
-  batch.primitives[3].startAngleRadians =
-      40.0 * std::numbers::pi / 180.0;
-  batch.primitives[3].sweepAngleRadians =
-      230.0 * std::numbers::pi / 180.0;
+  batch.primitives[3].startAngleRadians = 40.0 * std::numbers::pi / 180.0;
+  batch.primitives[3].sweepAngleRadians = 230.0 * std::numbers::pi / 180.0;
   batch.primitives[3].secondaryRadius = 0.017;
   batch.splineControlPointCoordinates = {-0.03, 0.06, -0.03, 0.08, -0.05, 0.08};
   batch.splineKnots = {0.0, 0.0, 0.0, 1.0, 1.0, 1.0};
@@ -335,21 +337,39 @@ provisionalCircle(const std::shared_ptr<const SketchSceneSnapshot> &base) {
 }
 
 std::shared_ptr<const SketchMarkerPacket>
-degreeLabel(const std::shared_ptr<const SketchSceneSnapshot> &base) {
+constraintAnnotations(const std::shared_ptr<const SketchSceneSnapshot> &base) {
   auto generation = SketchMarkerGeneration::create(1U);
-  auto handle = SketchMarkerHandle::create(1U);
-  require(generation && handle, "native label identity fixture failed");
-  const std::array<SketchMarkerAnchor, 1> anchors{
-      SketchCanonicalMarkerAnchor{{0.0, -0.07}}};
-  const std::array<PackedSketchMarker, 1> markers{{
-      {*handle, std::nullopt, 0U, 1U, SketchMarkerKind::SplineDegreeLabel,
-       3.0},
+  auto label = SketchMarkerHandle::create(1U);
+  auto horizontal = SketchMarkerHandle::create(2U);
+  auto radius = SketchMarkerHandle::create(3U);
+  auto angle = SketchMarkerHandle::create(4U);
+  require(generation && label && horizontal && radius && angle,
+          "native annotation identity fixture failed");
+  const std::array<SketchMarkerAnchor, 8> anchors{
+      SketchCanonicalMarkerAnchor{{0.0, -0.07}},
+      SketchCanonicalMarkerAnchor{{-0.06, 0.0}},
+      SketchCanonicalMarkerAnchor{{0.06, 0.0}},
+      SketchCanonicalMarkerAnchor{{0.0, 0.035}},
+      SketchCanonicalMarkerAnchor{{0.018, 0.035}},
+      SketchCanonicalMarkerAnchor{{0.04, -0.02}},
+      SketchCanonicalMarkerAnchor{{0.08, 0.02}},
+      SketchCanonicalMarkerAnchor{{0.04, 0.02}},
+  };
+  const std::array<PackedSketchMarker, 4> markers{{
+      {*label, std::nullopt, 0U, 1U, SketchMarkerKind::SplineDegreeLabel, 3.0},
+      {*horizontal, id<SketchConstraintId>(714U), 1U, 2U,
+       SketchMarkerKind::HorizontalDistanceDimension, 0.12},
+      {*radius, id<SketchConstraintId>(715U), 3U, 2U,
+       SketchMarkerKind::RadiusDimension, 0.018},
+      {*angle, id<SketchConstraintId>(716U), 5U, 3U,
+       SketchMarkerKind::AngleDimension, std::numbers::pi / 2.0},
   }};
   auto created = SketchMarkerPacket::create(
-      {{base->stamp(), std::nullopt, std::nullopt, std::nullopt}, *generation,
+      {{base->stamp(), std::nullopt, std::nullopt, std::nullopt},
+       *generation,
        digest<SketchMarkerDigest>(713U)},
       base, nullptr, anchors, markers);
-  require(created.has_value(), "native label marker fixture failed");
+  require(created.has_value(), "native annotation marker fixture failed");
   return std::move(*created);
 }
 
@@ -360,12 +380,14 @@ products(const std::shared_ptr<const SketchSceneSnapshot> &base) {
                           base,
                           selectedLine(base),
                           provisionalCircle(base),
-                          degreeLabel(base)});
+                          constraintAnnotations(base),
+                          {},
+                          {2U, 0U}});
   auto prepared = prepareSketchProducts(source);
   require(prepared.has_value() && (*prepared)->base()->packet() &&
               (*prepared)->provisional() &&
-              (*prepared)->provisional()->packet() &&
-              (*prepared)->markers() && (*prepared)->markerPacket(),
+              (*prepared)->provisional()->packet() && (*prepared)->markers() &&
+              (*prepared)->markerPacket(),
           "native vector products failed");
   return std::move(*prepared);
 }
@@ -428,6 +450,10 @@ void verifyNativeVectorRender(OffscreenQuickRenderer &renderer) {
   const QPointF labelAnchor = transform->toItem({0.0, -0.07});
   require(colorNear(image, labelAnchor + QPointF{14.0, -16.5}, regular, 3),
           "native vector text label did not render at its screen offset");
+  require(colorNear(image,
+                    transform->toItem({0.0, 0.0}) + QPointF{-34.0, -24.0},
+                    selected, 3),
+          "native horizontal dimension did not render its analytic baseline");
   require(colorNear(image, transform->toItem({-0.023, -0.035}), preview),
           "provisional native circle did not render during interaction");
   require(colorNear(image,
@@ -438,19 +464,18 @@ void verifyNativeVectorRender(OffscreenQuickRenderer &renderer) {
   const QPointF ellipseCenter = transform->toItem({0.08, 0.035});
   require(colorNear(image, transform->toItem({0.11, 0.035}), preview),
           "provisional native ellipse did not render at its analytic radius");
-  require(foregroundPixelsInsideEllipse(image, ellipseCenter, 60.0, 36.0,
-                                        0.72) == 0U,
+  require(colorPixelsInsideEllipse(image, ellipseCenter, 60.0, 36.0, 0.72,
+                                   preview) == 0U,
           "native ellipse leaked coverage into its interior");
   const QPointF ellipticalArcCenter = transform->toItem({-0.08, 0.02});
   const double arcParameter = 130.0 * std::numbers::pi / 180.0;
   require(colorNear(image,
-                    transform->toItem(
-                        {-0.08 + 0.028 * std::cos(arcParameter),
-                         0.02 + 0.017 * std::sin(arcParameter)}),
+                    transform->toItem({-0.08 + 0.028 * std::cos(arcParameter),
+                                       0.02 + 0.017 * std::sin(arcParameter)}),
                     preview),
           "provisional native elliptical arc did not render analytically");
-  require(foregroundPixelsInsideEllipse(image, ellipticalArcCenter, 56.0,
-                                        34.0, 0.72) == 0U,
+  require(colorPixelsInsideEllipse(image, ellipticalArcCenter, 56.0, 34.0, 0.72,
+                                   preview) == 0U,
           "native elliptical arc leaked coverage into its interior");
 
   auto picked =

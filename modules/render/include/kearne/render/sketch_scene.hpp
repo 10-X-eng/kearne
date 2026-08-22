@@ -597,9 +597,9 @@ private:
       std::vector<PackedSketchProvisionalPrimitive> primitives,
       std::vector<double> splineControlPointCoordinates,
       std::vector<double> splineKnots, std::vector<double> splineWeights,
-      std::vector<PackedSketchSpline> splines,
-      std::size_t inputBytes, std::size_t retainedBytes,
-      std::size_t scratchBytes, std::size_t peakBuildBytes);
+      std::vector<PackedSketchSpline> splines, std::size_t inputBytes,
+      std::size_t retainedBytes, std::size_t scratchBytes,
+      std::size_t peakBuildBytes);
 
   SketchProvisionalStamp stamp_;
   std::vector<PackedSketchProvisionalPrimitive> primitives_;
@@ -767,6 +767,11 @@ enum class SketchMarkerKind : std::uint8_t {
   MidpointConstraint,
   FixedConstraint,
   CollinearConstraint,
+  PointOnObjectConstraint,
+  SymmetricConstraint,
+  SymmetricAboutPointConstraint,
+  GroupConstraint,
+  RefractionConstraint,
   HorizontalInference = 32,
   VerticalInference,
   ParallelInference,
@@ -795,6 +800,14 @@ enum class SketchMarkerKind : std::uint8_t {
   SplinePoleWeightLabel,
 };
 
+enum class SketchMarkerVisualState : std::uint8_t {
+  Active = 1,
+  Reference = 2,
+  Suppressed = 3,
+  Redundant = 4,
+  Conflicting = 5,
+};
+
 enum class SketchMarkerCategory : std::uint8_t {
   Constraint = 1,
   Inference = 2,
@@ -819,6 +832,7 @@ struct PackedSketchMarker {
   std::uint8_t anchorCount = 0;
   SketchMarkerKind kind = SketchMarkerKind::CoincidentConstraint;
   double valueSi = 0.0;
+  SketchMarkerVisualState visual = SketchMarkerVisualState::Active;
   bool operator==(const PackedSketchMarker &) const = default;
 };
 

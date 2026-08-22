@@ -192,10 +192,11 @@ void verifyCompletePreparedPacket() {
   auto controlPoleHandle = SketchMarkerHandle::create(3U);
   auto curvatureHandle = SketchMarkerHandle::create(4U);
   auto labelHandle = SketchMarkerHandle::create(5U);
+  auto dimensionHandle = SketchMarkerHandle::create(6U);
   auto draftHandle = SketchProvisionalPrimitiveHandle::create(1U);
   require(edit && tool && markerGeneration && markerView && markerHandle &&
               controlSegmentHandle && controlPoleHandle && curvatureHandle &&
-              labelHandle && draftHandle,
+              labelHandle && dimensionHandle && draftHandle,
           "complete packet marker identity was invalid");
   const SketchMarkerStamp markerStamp{
       {baseStamp, SketchMarkerInteraction{*edit, *tool},
@@ -204,7 +205,7 @@ void verifyCompletePreparedPacket() {
        *markerView},
       *markerGeneration,
       digest<SketchMarkerDigest>(1U)};
-  const std::array<SketchMarkerAnchor, 7> anchors{
+  const std::array<SketchMarkerAnchor, 9> anchors{
       SketchProvisionalMarkerAnchor{
           *draftHandle, SketchMarkerPointLocation{sketch::PointKey::Point}},
       SketchCanonicalMarkerAnchor{{0.01, 0.02}},
@@ -213,8 +214,10 @@ void verifyCompletePreparedPacket() {
       SketchCanonicalMarkerAnchor{{0.01, 0.02}},
       SketchCanonicalMarkerAnchor{{0.01, 0.05}},
       SketchCanonicalMarkerAnchor{{0.02, 0.03}},
+      SketchCanonicalMarkerAnchor{{-0.025, -0.01}},
+      SketchCanonicalMarkerAnchor{{0.025, -0.01}},
   };
-  const std::array<PackedSketchMarker, 5> markerValues{{
+  const std::array<PackedSketchMarker, 6> markerValues{{
       {*markerHandle, std::nullopt, 0U, 1U, SketchMarkerKind::EndpointSnap,
        0.0},
       {*controlSegmentHandle, std::nullopt, 1U, 2U,
@@ -223,8 +226,10 @@ void verifyCompletePreparedPacket() {
        SketchMarkerKind::SplineControlPole, 0.0},
       {*curvatureHandle, std::nullopt, 4U, 2U,
        SketchMarkerKind::SplineCurvatureSegment, 0.0},
-      {*labelHandle, std::nullopt, 6U, 1U,
-       SketchMarkerKind::SplineDegreeLabel, 3.0},
+      {*labelHandle, std::nullopt, 6U, 1U, SketchMarkerKind::SplineDegreeLabel,
+       3.0},
+      {*dimensionHandle, id<SketchConstraintId>(26U), 7U, 2U,
+       SketchMarkerKind::HorizontalDistanceDimension, 0.05},
   }};
   auto markers = SketchMarkerPacket::create(markerStamp, base, draft, anchors,
                                             markerValues);
@@ -234,28 +239,30 @@ void verifyCompletePreparedPacket() {
       SketchSceneProducts{productStamp(baseStamp.target, 1U, 240U), base,
                           *overlay, draft, *markers});
   auto prepared = prepareSketchProducts(source);
-  require(
-      prepared && (*prepared)->source() == source &&
-          (*prepared)->base()->scene() == base &&
-          (*prepared)->overlay()->source() == *overlay &&
-          (*prepared)->provisional()->source() == draft &&
-          (*prepared)->markers()->source() == *markers &&
-          (*prepared)->overlayPointPacket() && (*prepared)->markerPacket() &&
-          !(*prepared)->provisional()->provenance().empty() &&
-          (*prepared)->metrics().overlayPointPacketRetainedBytes ==
-              (*prepared)->overlayPointPacket()->metrics().retainedBytes &&
-          (*prepared)->metrics().markerPacketRetainedBytes ==
-              (*prepared)->markerPacket()->metrics().retainedBytes &&
-          (*prepared)->metrics().totalRetainedBytes ==
-              sizeof(PreparedSketchProducts) +
-                  (*prepared)->metrics().baseRetainedBytes +
-                  (*prepared)->metrics().overlayRetainedBytes +
-                  (*prepared)->metrics().overlayPointPacketRetainedBytes +
-                  (*prepared)->metrics().provisionalRetainedBytes +
-                  (*prepared)->metrics().markerRetainedBytes +
-                  (*prepared)->metrics().markerPacketRetainedBytes,
-      "complete product packet lost an exact prepared component");
-  std::array<bool, 4> markerVectorKinds{};
+  require(prepared && (*prepared)->source() == source &&
+              (*prepared)->base()->scene() == base &&
+              (*prepared)->overlay()->source() == *overlay &&
+              (*prepared)->provisional()->source() == draft &&
+              (*prepared)->markers()->source() == *markers &&
+              (*prepared)->overlayPointPacket() &&
+              (*prepared)->markerPacket() &&
+              (*prepared)->markerProvenance().size() == markerValues.size() &&
+              !(*prepared)->provisional()->provenance().empty() &&
+              (*prepared)->metrics().overlayPointPacketRetainedBytes ==
+                  (*prepared)->overlayPointPacket()->metrics().retainedBytes &&
+              (*prepared)->metrics().markerPacketRetainedBytes ==
+                  (*prepared)->markerPacket()->metrics().retainedBytes &&
+              (*prepared)->metrics().totalRetainedBytes ==
+                  sizeof(PreparedSketchProducts) +
+                      (*prepared)->metrics().baseRetainedBytes +
+                      (*prepared)->metrics().overlayRetainedBytes +
+                      (*prepared)->metrics().overlayPointPacketRetainedBytes +
+                      (*prepared)->metrics().provisionalRetainedBytes +
+                      (*prepared)->metrics().markerRetainedBytes +
+                      (*prepared)->metrics().markerPacketRetainedBytes +
+                      (*prepared)->metrics().markerProvenanceRetainedBytes,
+          "complete product packet lost an exact prepared component");
+  std::array<bool, 5> markerVectorKinds{};
   for (const auto &chunk : (*prepared)->markerPacket()->chunks())
     for (const SketchVectorRecord &record : chunk->records()) {
       if (record.meta[0] == static_cast<std::uint32_t>(SketchVectorKind::Glyph))
@@ -266,10 +273,20 @@ void verifyCompletePreparedPacket() {
         markerVectorKinds[2] = true;
       if (record.meta[0] == static_cast<std::uint32_t>(SketchVectorKind::Text))
         markerVectorKinds[3] = true;
+      if (record.meta[0] ==
+          static_cast<std::uint32_t>(SketchVectorKind::Dimension)) {
+        markerVectorKinds[4] = true;
+        const auto data = chunk->data();
+        require(record.meta[1] + 1U < data.size() &&
+                    data[record.meta[1] + 1U].value[0] == 53.0F &&
+                    data[record.meta[1] + 1U].value[1] == 48.0F,
+                "millimetre dimension text was not formatted as 50");
+      }
     }
   require(std::ranges::all_of(markerVectorKinds,
                               [](bool present) { return present; }),
-          "marker packet did not retain glyph, guide, pole, and text vectors");
+          "marker packet did not retain glyph, guide, pole, text, and "
+          "dimension vectors");
 
   auto nextSource = std::make_shared<const SketchSceneProducts>(
       SketchSceneProducts{productStamp(baseStamp.target, 2U, 241U), base,
@@ -282,8 +299,42 @@ void verifyCompletePreparedPacket() {
               (*reused)->markers() == (*prepared)->markers() &&
               (*reused)->overlayPointPacket() ==
                   (*prepared)->overlayPointPacket() &&
-              (*reused)->markerPacket() == (*prepared)->markerPacket(),
+              (*reused)->markerPacket() == (*prepared)->markerPacket() &&
+              (*reused)->markerProvenance().data() ==
+                  (*prepared)->markerProvenance().data(),
           "same-component product update rebuilt immutable preparation");
+
+  auto inchSource = std::make_shared<const SketchSceneProducts>(
+      SketchSceneProducts{productStamp(baseStamp.target, 3U, 242U),
+                          base,
+                          *overlay,
+                          draft,
+                          *markers,
+                          {SketchLengthDisplayUnit::Inch}});
+  auto inchPrepared = prepareSketchProducts(inchSource, {}, *reused);
+  require(inchPrepared && (*inchPrepared)->base() == (*reused)->base() &&
+              (*inchPrepared)->overlay() == (*reused)->overlay() &&
+              (*inchPrepared)->provisional() == (*reused)->provisional() &&
+              (*inchPrepared)->markers() != (*reused)->markers() &&
+              (*inchPrepared)->markerPacket() != (*reused)->markerPacket(),
+          "unit-only dimension presentation rebuilt geometry or reused stale "
+          "annotation text");
+  auto emphasizedSource = std::make_shared<const SketchSceneProducts>(
+      SketchSceneProducts{productStamp(baseStamp.target, 4U, 243U),
+                          base,
+                          *overlay,
+                          draft,
+                          *markers,
+                          {SketchLengthDisplayUnit::Inch},
+                          {dimensionHandle->value(), markerHandle->value()}});
+  auto emphasized = prepareSketchProducts(emphasizedSource, {}, *inchPrepared);
+  require(emphasized &&
+              (*emphasized)->markerPacket() ==
+                  (*inchPrepared)->markerPacket() &&
+              (*emphasized)->markerProvenance().data() ==
+                  (*inchPrepared)->markerProvenance().data() &&
+              (*emphasized)->markers() == (*inchPrepared)->markers(),
+          "hover or selection emphasis rebuilt immutable marker geometry");
 
   auto incomplete = PreparedSketchProducts::create(
       nextSource, (*prepared)->base(), (*prepared)->overlay(),
@@ -294,7 +345,7 @@ void verifyCompletePreparedPacket() {
   std::stop_source cancellation;
   cancellation.request_stop();
   auto cancelled = prepareSketchProducts(nextSource, {}, *prepared,
-                                          cancellation.get_token());
+                                         cancellation.get_token());
   require(!cancelled &&
               cancelled.error().code == "desktop.sketch.preparation-cancelled",
           "pre-cancelled complete packet preparation performed work");
@@ -1790,6 +1841,32 @@ void verifyGlobalProductStamp() {
   executor.join();
 }
 
+void verifySceneReplay() {
+  SketchPreparationExecutor executor{{2, 1, 2}};
+  SketchSceneItem item;
+  SketchScenePublicationController controller{item, executor};
+  const SceneStamp firstStamp = stamp(207, 1, 207, 207, 207, 1);
+  const SceneStamp secondStamp = stamp(207, 2, 207, 207, 207, 2);
+  auto first = scene(1, 207, firstStamp);
+  auto second = scene(1, 208, secondStamp);
+  require(controller.retarget(firstStamp.target).has_value(),
+          "scene replay target was rejected");
+  require(controller.publishProducts(products(second, 1, 207)).has_value(),
+          "newer scene was rejected before replay");
+  pumpUntil([&] { return controller.metrics().itemPublications == 1U; });
+  require(controller.publishProducts(products(first, 2, 208)).has_value(),
+          "history replay was mistaken for stale publication");
+  pumpUntil([&] { return controller.metrics().itemPublications == 2U; });
+  const auto current = controller.currentProducts();
+  require(current && current->scene == first,
+          "history replay did not retain the exact restored scene");
+  shutdownController(controller, "scene replay controller shutdown failed");
+  executor.requestShutdown();
+  require(executor.waitUntilDrained(std::chrono::seconds{5}),
+          "scene replay executor did not drain");
+  executor.join();
+}
+
 void verifyRetargetPreservesLastEvidence() {
   SketchPreparationExecutor executor{{2, 1, 2}};
   SketchSceneItem item;
@@ -1980,6 +2057,7 @@ int main(int argc, char **argv) {
     verifyWorkerSideStaleRelease();
     verifyBoundedWorkerRetirement();
     verifyGlobalProductStamp();
+    verifySceneReplay();
     verifyRetargetPreservesLastEvidence();
     verifyMultiViewIsolation();
     verifyTerminalShutdownDrain();

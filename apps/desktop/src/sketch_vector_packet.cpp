@@ -95,7 +95,7 @@ void include(SketchVectorBounds &target, const SketchVectorBounds &value) {
 [[nodiscard]] Result<SketchVectorSourceBounds>
 analyticBounds(const SketchVectorSourcePrimitive &primitive) {
   if (!finite(primitive.first) || !finite(primitive.second) ||
-      !std::isfinite(primitive.radius) ||
+      !finite(primitive.third) || !std::isfinite(primitive.radius) ||
       !std::isfinite(primitive.secondaryRadius) ||
       !std::isfinite(primitive.startAngleRadians) ||
       !std::isfinite(primitive.sweepAngleRadians) ||
@@ -118,6 +118,24 @@ analyticBounds(const SketchVectorSourcePrimitive &primitive) {
             [](std::uint8_t value) { return value >= 32U && value <= 126U; }))
       break;
     return pointBounds(primitive.first);
+  case SketchVectorKind::Dimension:
+    if (primitive.textLength == 0U ||
+        primitive.textLength > primitive.text.size() ||
+        !(primitive.radius > 0.0) || !(primitive.secondaryRadius > 0.0) ||
+        primitive.glyph < 96U || primitive.glyph > 101U ||
+        !std::ranges::all_of(primitive.text.begin(),
+                             primitive.text.begin() + primitive.textLength,
+                             [](std::uint8_t value) {
+                               return (value >= 32U && value <= 126U) ||
+                                      value == 176U;
+                             }))
+      break;
+    return SketchVectorSourceBounds{
+        {std::min({primitive.first.x, primitive.second.x, primitive.third.x}),
+         std::min({primitive.first.y, primitive.second.y, primitive.third.y})},
+        {std::max({primitive.first.x, primitive.second.x, primitive.third.x}),
+         std::max({primitive.first.y, primitive.second.y, primitive.third.y})},
+        false};
   case SketchVectorKind::Line:
     if (primitive.first == primitive.second)
       return std::unexpected(diagnostic("desktop.sketch.zero-vector-line",
@@ -291,21 +309,28 @@ record(const SketchVectorSourcePrimitive &primitive,
   result.shape = {static_cast<float>(primitive.radius),
                   static_cast<float>(primitive.secondaryRadius),
                   static_cast<float>(
-                      primitive.kind == SketchVectorKind::Text
+                      primitive.kind == SketchVectorKind::Text ||
+                              primitive.kind == SketchVectorKind::Dimension ||
+                              primitive.kind == SketchVectorKind::Glyph
                           ? primitive.screenOffsetXLogicalPixels
                           : primitive.startAngleRadians),
                   static_cast<float>(
-                      primitive.kind == SketchVectorKind::Text
+                      primitive.kind == SketchVectorKind::Text ||
+                              primitive.kind == SketchVectorKind::Dimension ||
+                              primitive.kind == SketchVectorKind::Glyph
                           ? primitive.screenOffsetYLogicalPixels
                           : primitive.sweepAngleRadians)};
-  result.domain = {static_cast<float>(primitive.rotationAngleRadians),
-                   static_cast<float>(firstParameter),
-                   static_cast<float>(lastParameter),
-                   static_cast<float>(pathStart)};
+  result.domain = {
+      static_cast<float>(primitive.kind == SketchVectorKind::Dimension
+                             ? primitive.textLength
+                             : primitive.rotationAngleRadians),
+      static_cast<float>(firstParameter), static_cast<float>(lastParameter),
+      static_cast<float>(pathStart)};
   const SketchDashPattern pattern = dashPattern(style);
   result.appearance = {style.strokeWidthPixels, style.pointDiameterPixels,
                        pattern.onLogicalPixels, pattern.periodLogicalPixels};
-  if (primitive.kind == SketchVectorKind::Glyph)
+  if (primitive.kind == SketchVectorKind::Glyph ||
+      primitive.kind == SketchVectorKind::Dimension)
     result.meta[2] = primitive.glyph;
   if (primitive.kind == SketchVectorKind::Text)
     result.meta[2] = primitive.textLength;
@@ -747,7 +772,11 @@ Result<SketchVectorPacketBuildOutput> SketchVectorPacketBuildAccess::build(
             pending.push_back(
                 {std::move(value), std::move(data),
                  bounds(recordBounds, screenRadius), primitive.sourceKey,
-                 primitive.kind != SketchVectorKind::BSpline
+                 primitive.kind == SketchVectorKind::Glyph ||
+                         primitive.kind == SketchVectorKind::Text ||
+                         primitive.kind == SketchVectorKind::Dimension
+                     ? SketchVectorShaderFamily::Annotation
+                 : primitive.kind != SketchVectorKind::BSpline
                      ? SketchVectorShaderFamily::Basic
                      : (spline.degree <= 3U
                             ? SketchVectorShaderFamily::NurbsLowDegree
@@ -822,15 +851,28 @@ Result<SketchVectorPacketBuildOutput> SketchVectorPacketBuildAccess::build(
                          primitive.secondaryRadius * 0.5 +
                              std::abs(primitive.screenOffsetYLogicalPixels)) +
               1.0;
+        else if (primitive.kind == SketchVectorKind::Dimension)
+          screenRadius = std::max(48.0, primitive.radius * 0.5 + 40.0) +
+                         std::hypot(primitive.screenOffsetXLogicalPixels,
+                                    primitive.screenOffsetYLogicalPixels) +
+                         2.0;
         else if (primitive.kind == SketchVectorKind::Point ||
                  primitive.kind == SketchVectorKind::Glyph)
           screenRadius = style.pointDiameterPixels * 0.5 + 1.0;
+        if (primitive.kind == SketchVectorKind::Glyph)
+          screenRadius += std::hypot(primitive.screenOffsetXLogicalPixels,
+                                     primitive.screenOffsetYLogicalPixels);
         std::vector<SketchVectorData> data;
-        if (primitive.kind == SketchVectorKind::Text) {
-          data.resize((primitive.textLength + 3U) / 4U);
-          for (std::size_t character = 0U;
-               character < primitive.textLength; ++character)
-            data[character / 4U].value[character % 4U] =
+        if (primitive.kind == SketchVectorKind::Text ||
+            primitive.kind == SketchVectorKind::Dimension) {
+          const std::size_t prefix =
+              primitive.kind == SketchVectorKind::Dimension ? 1U : 0U;
+          data.resize(prefix + (primitive.textLength + 3U) / 4U);
+          if (prefix != 0U)
+            data[0U].value = splitPoint(primitive.third, origin);
+          for (std::size_t character = 0U; character < primitive.textLength;
+               ++character)
+            data[prefix + character / 4U].value[character % 4U] =
                 static_cast<float>(primitive.text[character]);
         }
         if (!append(record(primitive, *primitiveBounds, origin, style,

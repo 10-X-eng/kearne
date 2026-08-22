@@ -107,6 +107,7 @@ enum class LocalSketchConstraintKind : std::uint8_t {
   HorizontalVertical = 21,
   Group = 22,
   RemoveAxisAlignment = 23,
+  Snell = 24,
 };
 
 struct LocalSketchConstraintSelection {
@@ -118,6 +119,20 @@ struct LocalSketchConstraintGesture {
   LocalSketchConstraintKind kind = LocalSketchConstraintKind::Coincident;
   std::vector<LocalSketchConstraintSelection> selections;
   std::optional<double> valueSi;
+};
+
+// Present fields replace authored values. An empty present label restores the
+// deterministic automatic name; an absent field is unchanged.
+struct LocalSketchConstraintPatch {
+  QString constraintId;
+  std::optional<QString> label;
+  std::optional<bool> active;
+  std::optional<bool> driving;
+  std::optional<double> valueSi;
+};
+
+struct LocalSketchConstraintDeletion {
+  QString constraintId;
 };
 
 struct LocalSketchConstructionToggle {
@@ -264,7 +279,10 @@ struct LocalSketchProjection {
   std::size_t profileCount = 0U;
   std::vector<sketch::SketchObject> objects;
   std::vector<sketch::Constraint> constraints;
+  std::vector<sketch::ConstraintHealth> constraintHealth;
+  std::vector<sketch::ConflictSet> conflictSets;
   std::shared_ptr<const render::SketchSceneSnapshot> scene;
+  std::shared_ptr<const render::SketchMarkerPacket> constraintMarkers;
   bool canUndo = false;
   bool canRedo = false;
 };
@@ -298,6 +316,10 @@ public:
                                Completion completion);
   [[nodiscard]] bool applyConstraint(LocalSketchConstraintGesture gesture,
                                      Completion completion);
+  [[nodiscard]] bool patchConstraint(LocalSketchConstraintPatch patch,
+                                     Completion completion);
+  [[nodiscard]] bool deleteConstraint(LocalSketchConstraintDeletion deletion,
+                                      Completion completion);
   [[nodiscard]] bool toggleConstruction(LocalSketchConstructionToggle toggle,
                                         Completion completion);
   [[nodiscard]] bool editBSpline(LocalBSplineEdit edit, Completion completion);

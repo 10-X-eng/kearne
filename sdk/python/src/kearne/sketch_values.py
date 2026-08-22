@@ -586,9 +586,12 @@ class Constraint:
     kind: str
     points: tuple[PointRef, ...] = ()
     entities: tuple[str, ...] = ()
-    value: Length | Angle | None = None
+    value: Length | Angle | float | None = None
     mode: str | None = None
     position: Point2 | None = None
+    label: str | None = None
+    active: bool = True
+    driving: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", validate_stable_id(self.id))
@@ -614,22 +617,41 @@ class Constraint:
             raise SketchDefinitionError("constraint reference count is invalid")
         if not all(isinstance(reference, PointRef) for reference in self.points):
             raise SketchDefinitionError("constraint point reference is invalid")
-        quantity = next(
-            (value for value in arguments if value.kind in {"length", "angle"}),
+        parameter = next(
+            (
+                value
+                for value in arguments
+                if value.kind in {"length", "angle", "scalar"}
+            ),
             None,
         )
-        quantity_type = (
-            Length if quantity is not None and quantity.kind == "length" else Angle
+        parameter_type: type[Length] | type[Angle] | type[float] = (
+            Length
+            if parameter is not None and parameter.kind == "length"
+            else Angle
+            if parameter is not None and parameter.kind == "angle"
+            else float
         )
-        if quantity is not None and not isinstance(self.value, quantity_type):
+        if parameter is not None and not isinstance(self.value, parameter_type):
             raise SketchDefinitionError("constraint value has the wrong quantity type")
-        if quantity is None and self.value is not None:
+        if parameter is None and self.value is not None:
             raise SketchDefinitionError("constraint does not accept a value")
-        if quantity is not None and isinstance(self.value, Length):
-            if quantity.limit == "positive" and self.value.metres <= 0.0:
+        if parameter is not None and isinstance(self.value, Length):
+            if parameter.limit == "positive" and self.value.metres <= 0.0:
                 raise SketchDefinitionError("constraint value is not positive")
-            if quantity.limit == "nonnegative" and self.value.metres < 0.0:
+            if parameter.limit == "nonnegative" and self.value.metres < 0.0:
                 raise SketchDefinitionError("constraint value is negative")
+        if parameter is not None and parameter.kind == "scalar":
+            if not isinstance(self.value, float):
+                raise SketchDefinitionError(
+                    "constraint value has the wrong quantity type"
+                )
+            scalar = _scalar(self.value)
+            if parameter.limit == "positive" and scalar <= 0.0:
+                raise SketchDefinitionError("constraint value is not positive")
+            if parameter.limit == "nonnegative" and scalar < 0.0:
+                raise SketchDefinitionError("constraint value is negative")
+            object.__setattr__(self, "value", scalar)
         accepts_position = any(value.kind == "point" for value in arguments)
         if accepts_position:
             if self.position is None:
@@ -647,6 +669,18 @@ class Constraint:
             object.__setattr__(self, "mode", mode)
         elif self.mode is not None:
             raise SketchDefinitionError("constraint does not accept a mode")
+        if self.label is not None and (
+            not isinstance(self.label, str)
+            or not self.label.strip()
+            or len(self.label.encode("utf-8")) > 128
+        ):
+            raise SketchDefinitionError("constraint label is invalid")
+        if not isinstance(self.active, bool) or not isinstance(self.driving, bool):
+            raise SketchDefinitionError("constraint state is invalid")
+        if (parameter is None or parameter.kind == "scalar") and not self.driving:
+            raise SketchDefinitionError(
+                "only dimensional constraints can be reference dimensions"
+            )
 
 
 SketchValue: TypeAlias = SketchObject | Entity | Constraint
@@ -946,110 +980,408 @@ def focus(entity: str, /) -> PointRef:
     return PointRef(entity, "focus")
 
 
-def _point_pair(id: str, kind: str, first: PointRef, second: PointRef) -> Constraint:
-    return Constraint(id, kind, points=(first, second))
+def _constraint(
+    id: str,
+    kind: str,
+    *,
+    points: tuple[PointRef, ...] = (),
+    entities: tuple[str, ...] = (),
+    value: Length | Angle | float | None = None,
+    mode: str | None = None,
+    position: Point2 | None = None,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
+) -> Constraint:
+    return Constraint(
+        id, kind, points, entities, value, mode, position, label, active, driving
+    )
 
 
-def _entity_pair(id: str, kind: str, first: str, second: str) -> Constraint:
-    return Constraint(id, kind, entities=(first, second))
+def _point_pair(
+    id: str,
+    kind: str,
+    first: PointRef,
+    second: PointRef,
+    label: str | None,
+    active: bool,
+) -> Constraint:
+    return _constraint(id, kind, points=(first, second), label=label, active=active)
 
 
-def coincident(id: str, first: PointRef, second: PointRef, /) -> Constraint:
-    return _point_pair(id, "coincident", first, second)
+def _entity_pair(
+    id: str,
+    kind: str,
+    first: str,
+    second: str,
+    label: str | None,
+    active: bool,
+) -> Constraint:
+    return _constraint(id, kind, entities=(first, second), label=label, active=active)
 
 
-def horizontal(id: str, line: str, /) -> Constraint:
-    return Constraint(id, "horizontal", entities=(line,))
+def coincident(
+    id: str,
+    first: PointRef,
+    second: PointRef,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _point_pair(id, "coincident", first, second, label, active)
 
 
-def vertical(id: str, line: str, /) -> Constraint:
-    return Constraint(id, "vertical", entities=(line,))
+def horizontal(
+    id: str, line: str, /, *, label: str | None = None, active: bool = True
+) -> Constraint:
+    return _constraint(id, "horizontal", entities=(line,), label=label, active=active)
 
 
-def parallel(id: str, first: str, second: str, /) -> Constraint:
-    return _entity_pair(id, "parallel", first, second)
+def vertical(
+    id: str, line: str, /, *, label: str | None = None, active: bool = True
+) -> Constraint:
+    return _constraint(id, "vertical", entities=(line,), label=label, active=active)
 
 
-def perpendicular(id: str, first: str, second: str, /) -> Constraint:
-    return _entity_pair(id, "perpendicular", first, second)
+def parallel(
+    id: str,
+    first: str,
+    second: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _entity_pair(id, "parallel", first, second, label, active)
+
+
+def perpendicular(
+    id: str,
+    first: str,
+    second: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _entity_pair(id, "perpendicular", first, second, label, active)
 
 
 def tangent(
-    id: str, first: str, second: str, /, *, mode: str = "external"
+    id: str,
+    first: str,
+    second: str,
+    /,
+    *,
+    mode: str = "external",
+    label: str | None = None,
+    active: bool = True,
 ) -> Constraint:
-    return Constraint(id, "tangent", entities=(first, second), mode=mode)
+    return _constraint(
+        id,
+        "tangent",
+        entities=(first, second),
+        mode=mode,
+        label=label,
+        active=active,
+    )
 
 
-def concentric(id: str, first: str, second: str, /) -> Constraint:
-    return _entity_pair(id, "concentric", first, second)
+def concentric(
+    id: str,
+    first: str,
+    second: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _entity_pair(id, "concentric", first, second, label, active)
 
 
-def equal(id: str, first: str, second: str, /) -> Constraint:
-    return _entity_pair(id, "equal", first, second)
+def equal(
+    id: str,
+    first: str,
+    second: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _entity_pair(id, "equal", first, second, label, active)
 
 
-def midpoint(id: str, point: PointRef, line: str, /) -> Constraint:
-    return Constraint(id, "midpoint", points=(point,), entities=(line,))
+def midpoint(
+    id: str,
+    point: PointRef,
+    line: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "midpoint",
+        points=(point,),
+        entities=(line,),
+        label=label,
+        active=active,
+    )
 
 
-def point_on_object(id: str, point: PointRef, curve: str, /) -> Constraint:
-    return Constraint(id, "point_on_object", points=(point,), entities=(curve,))
+def point_on_object(
+    id: str,
+    point: PointRef,
+    curve: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "point_on_object",
+        points=(point,),
+        entities=(curve,),
+        label=label,
+        active=active,
+    )
 
 
-def symmetric(id: str, first: PointRef, second: PointRef, axis: str, /) -> Constraint:
-    return Constraint(id, "symmetric", points=(first, second), entities=(axis,))
+def symmetric(
+    id: str,
+    first: PointRef,
+    second: PointRef,
+    axis: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "symmetric",
+        points=(first, second),
+        entities=(axis,),
+        label=label,
+        active=active,
+    )
 
 
 def symmetric_about_point(
-    id: str, first: PointRef, second: PointRef, center: PointRef, /
+    id: str,
+    first: PointRef,
+    second: PointRef,
+    center: PointRef,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
 ) -> Constraint:
-    return Constraint(id, "symmetric_about_point", points=(first, second, center))
+    return _constraint(
+        id,
+        "symmetric_about_point",
+        points=(first, second, center),
+        label=label,
+        active=active,
+    )
 
 
-def lock(id: str, point: PointRef, position: Point2, /) -> Constraint:
-    return Constraint(id, "lock", points=(point,), position=position)
+def lock(
+    id: str,
+    point: PointRef,
+    position: Point2,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _constraint(
+        id, "lock", points=(point,), position=position, label=label, active=active
+    )
 
 
-def block(id: str, entity: str, /) -> Constraint:
-    return Constraint(id, "block", entities=(entity,))
+def block(
+    id: str, entity: str, /, *, label: str | None = None, active: bool = True
+) -> Constraint:
+    return _constraint(id, "block", entities=(entity,), label=label, active=active)
 
 
-def group(id: str, entities: tuple[str, ...], /) -> Constraint:
-    return Constraint(id, "group", entities=entities)
+def group(
+    id: str,
+    entities: tuple[str, ...],
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _constraint(id, "group", entities=entities, label=label, active=active)
 
 
-def collinear(id: str, first: str, second: str, /) -> Constraint:
-    return _entity_pair(id, "collinear", first, second)
+def collinear(
+    id: str,
+    first: str,
+    second: str,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _entity_pair(id, "collinear", first, second, label, active)
+
+
+def snell(
+    id: str,
+    incident: PointRef,
+    refracted: PointRef,
+    boundary: str,
+    ratio: float,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "snell",
+        points=(incident, refracted),
+        entities=(boundary,),
+        value=ratio,
+        label=label,
+        active=active,
+    )
 
 
 def distance(
-    id: str, first: PointRef, second: PointRef, value: Length, /
+    id: str,
+    first: PointRef,
+    second: PointRef,
+    value: Length,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
 ) -> Constraint:
-    return Constraint(id, "distance", points=(first, second), value=value)
+    return _constraint(
+        id,
+        "distance",
+        points=(first, second),
+        value=value,
+        label=label,
+        active=active,
+        driving=driving,
+    )
 
 
 def horizontal_distance(
-    id: str, first: PointRef, second: PointRef, value: Length, /
+    id: str,
+    first: PointRef,
+    second: PointRef,
+    value: Length,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
 ) -> Constraint:
-    return Constraint(id, "horizontal_distance", points=(first, second), value=value)
+    return _constraint(
+        id,
+        "horizontal_distance",
+        points=(first, second),
+        value=value,
+        label=label,
+        active=active,
+        driving=driving,
+    )
 
 
 def vertical_distance(
-    id: str, first: PointRef, second: PointRef, value: Length, /
+    id: str,
+    first: PointRef,
+    second: PointRef,
+    value: Length,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
 ) -> Constraint:
-    return Constraint(id, "vertical_distance", points=(first, second), value=value)
+    return _constraint(
+        id,
+        "vertical_distance",
+        points=(first, second),
+        value=value,
+        label=label,
+        active=active,
+        driving=driving,
+    )
 
 
-def radius(id: str, curve: str, value: Length, /) -> Constraint:
-    return Constraint(id, "radius", entities=(curve,), value=value)
+def radius(
+    id: str,
+    curve: str,
+    value: Length,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "radius",
+        entities=(curve,),
+        value=value,
+        label=label,
+        active=active,
+        driving=driving,
+    )
 
 
-def diameter(id: str, curve: str, value: Length, /) -> Constraint:
-    return Constraint(id, "diameter", entities=(curve,), value=value)
+def diameter(
+    id: str,
+    curve: str,
+    value: Length,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "diameter",
+        entities=(curve,),
+        value=value,
+        label=label,
+        active=active,
+        driving=driving,
+    )
 
 
-def angle(id: str, first: str, second: str, value: Angle, /) -> Constraint:
-    return Constraint(id, "angle", entities=(first, second), value=value)
+def angle(
+    id: str,
+    first: str,
+    second: str,
+    value: Angle,
+    /,
+    *,
+    label: str | None = None,
+    active: bool = True,
+    driving: bool = True,
+) -> Constraint:
+    return _constraint(
+        id,
+        "angle",
+        entities=(first, second),
+        value=value,
+        label=label,
+        active=active,
+        driving=driving,
+    )
 
 
 def validate_definition_values(
@@ -1241,6 +1573,7 @@ __all__ = [
     "rectangle",
     "regular_polygon",
     "slot",
+    "snell",
     "start",
     "symmetric",
     "symmetric_about_point",

@@ -102,12 +102,14 @@ enum class SketchVectorKind : std::uint32_t {
   BSpline = 9,
   Glyph = 10,
   Text = 11,
+  Dimension = 12,
 };
 
 enum class SketchVectorShaderFamily : std::uint8_t {
   Basic = 1,
   NurbsLowDegree = 2,
   NurbsGeneral = 3,
+  Annotation = 4,
 };
 
 // std430-compatible. Coordinates are relative to the packet origin and split
@@ -370,6 +372,23 @@ private:
 };
 
 struct SketchVectorSourcePrimitive {
+  SketchVectorSourcePrimitive() = default;
+  SketchVectorSourcePrimitive(
+      std::uint32_t requestedSourceKey, std::uint16_t requestedStyle,
+      SketchVectorKind requestedKind, bool requestedVisible,
+      render::Point2d requestedFirst, render::Point2d requestedSecond = {},
+      double requestedRadius = 0.0, double requestedStartAngleRadians = 0.0,
+      double requestedSweepAngleRadians = 0.0,
+      std::uint16_t requestedGlyph = 0U, double requestedSecondaryRadius = 0.0,
+      double requestedRotationAngleRadians = 0.0)
+      : sourceKey(requestedSourceKey), style(requestedStyle),
+        kind(requestedKind), visible(requestedVisible), first(requestedFirst),
+        second(requestedSecond), radius(requestedRadius),
+        startAngleRadians(requestedStartAngleRadians),
+        sweepAngleRadians(requestedSweepAngleRadians), glyph(requestedGlyph),
+        secondaryRadius(requestedSecondaryRadius),
+        rotationAngleRadians(requestedRotationAngleRadians) {}
+
   std::uint32_t sourceKey = 0U;
   std::uint16_t style = 0U;
   SketchVectorKind kind = SketchVectorKind::Point;
@@ -386,6 +405,7 @@ struct SketchVectorSourcePrimitive {
   double screenOffsetYLogicalPixels = 0.0;
   std::array<std::uint8_t, 32> text{};
   std::uint8_t textLength = 0U;
+  render::Point2d third;
 };
 
 struct SketchVectorSourceBounds {

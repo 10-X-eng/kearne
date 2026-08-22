@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import tau
 from types import MappingProxyType
 from typing import Literal, TypeAlias
@@ -58,7 +58,7 @@ ValueKind: TypeAlias = Literal[
     "point_ref",
 ]
 ValueLimit: TypeAlias = Literal["positive", "nonnegative"]
-KeywordKind: TypeAlias = Literal["boolean", "enum"]
+KeywordKind: TypeAlias = Literal["boolean", "enum", "string"]
 
 ALL_ENTITIES = frozenset(
     {
@@ -73,6 +73,7 @@ ALL_ENTITIES = frozenset(
         "bspline",
     }
 )
+CURVES = ALL_ENTITIES - {"point"}
 POINTS = frozenset({"point"})
 LINES = frozenset({"line"})
 RADIAL = frozenset({"circle", "arc"})
@@ -148,7 +149,7 @@ SECOND_POINT = ArgumentSpec("second", "point_ref")
 CONSTRUCTION = KeywordSpec("construction", "boolean", default=False)
 PERIODIC = KeywordSpec("periodic", "boolean", default=False)
 
-HELPER_SPECS = (
+_BASE_HELPER_SPECS = (
     HelperSpec(
         "point_object",
         "objects",
@@ -584,6 +585,17 @@ HELPER_SPECS = (
     HelperSpec("group", "constraints", (ID, ANY_ENTITIES)),
     HelperSpec("collinear", "constraints", (ID, FIRST_LINE, SECOND_LINE)),
     HelperSpec(
+        "snell",
+        "constraints",
+        (
+            ID,
+            ArgumentSpec("incident", "point_ref"),
+            ArgumentSpec("refracted", "point_ref"),
+            ArgumentSpec("boundary", "entity_ref", CURVES),
+            ArgumentSpec("ratio", "scalar", limit="positive"),
+        ),
+    ),
+    HelperSpec(
         "distance",
         "constraints",
         (
@@ -626,6 +638,29 @@ HELPER_SPECS = (
         "constraints",
         (ID, FIRST_LINE, SECOND_LINE, ArgumentSpec("value", "angle")),
     ),
+)
+
+_CONSTRAINT_COMMON_KEYWORDS = (
+    KeywordSpec("label", "string"),
+    KeywordSpec("active", "boolean", default=True),
+)
+HELPER_SPECS: tuple[HelperSpec, ...] = tuple(
+    replace(
+        spec,
+        keywords=(
+            *spec.keywords,
+            *_CONSTRAINT_COMMON_KEYWORDS,
+            *(
+                (KeywordSpec("driving", "boolean", default=True),)
+                if spec.section == "constraints"
+                and any(value.kind in {"length", "angle"} for value in spec.positional)
+                else ()
+            ),
+        ),
+    )
+    if spec.section == "constraints"
+    else spec
+    for spec in _BASE_HELPER_SPECS
 )
 
 HELPERS: Mapping[str, HelperSpec] = MappingProxyType(

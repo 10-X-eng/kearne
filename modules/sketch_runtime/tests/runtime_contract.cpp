@@ -163,7 +163,7 @@ void verifyRuntimeContract(const testkit::PropertyProfile &profile) {
   testkit::checkProperty(
       "sketch runtime orchestration model", profile,
       [](testkit::Random &random, std::uint64_t index) {
-        const std::uint64_t seed = index * 32U + 1'000U;
+        const std::uint64_t seed = index * 33U + 1'000U;
         const double x = random.between(-10.0, 10.0);
         const double y = random.between(-10.0, 10.0);
         const double scale = random.between(0.01, 5.0);
@@ -172,11 +172,12 @@ void verifyRuntimeContract(const testkit::PropertyProfile &profile) {
         model::SolveResult honest =
             resultFor(source, model::SolveStatus::Underconstrained, 1U);
 
-        switch (index % 32U) {
+        switch (index % 33U) {
         case 0: {
           ScriptedSolver solver{honest};
           auto evaluated = runtime::evaluateSketch(input, solver);
           require(evaluated && evaluated->replacementScene &&
+                      evaluated->geometry == honest.geometry &&
                       evaluated->solve.solverResultValid && solver.calls == 1U,
                   "honest underconstrained solve was not published");
           require(evaluated->replacementScene->stamp() == input.evidence.scene,
@@ -617,6 +618,27 @@ void verifyRuntimeContract(const testkit::PropertyProfile &profile) {
           require(evaluated.has_value(),
                   "freedom-mode budget escaped the outcome boundary");
           requireInvalidSolverEvidence(*evaluated);
+          break;
+        }
+        case 32: {
+          model::constraintProperties(source.constraints.front()).activity =
+              model::ConstraintActivity::Suppressed;
+          source.constraints.push_back(model::Distance{
+              id<SketchConstraintId>(seed + 12U),
+              {model::entityId(source.entities[1]), model::PointKey::Start},
+              {model::entityId(source.entities[1]), model::PointKey::End},
+              quantity<Length>(scale * 2.0),
+              {std::string{"Measured length"},
+               model::ConstraintActivity::Active,
+               model::DimensionMode::Reference}});
+          input = request(source, seed + 100U);
+          honest = resultFor(source, model::SolveStatus::Underconstrained, 1U);
+          ScriptedSolver solver{honest};
+          auto evaluated = runtime::evaluateSketch(input, solver);
+          require(evaluated && evaluated->solve.solverResultValid &&
+                      evaluated->solve.residuals.empty() &&
+                      evaluated->replacementScene,
+                  "non-driving constraints failed runtime validation");
           break;
         }
         }

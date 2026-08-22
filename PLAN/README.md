@@ -59,6 +59,7 @@ Do not abbreviate Kearne to `cadx` in new interfaces. File-format identity and M
 
 - [Rendering and selection](capabilities/01-rendering-and-selection.md)
 - [Sketch](capabilities/02-sketch.md)
+- [Sketch constraint inventory](capabilities/02-sketch-constraint-inventory.md)
 - [Solid modeling](capabilities/03-solid-modeling.md)
 - [Import and export](capabilities/04-import-export.md)
 - [Python and build123d](capabilities/05-python-and-build123d.md)

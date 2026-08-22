@@ -191,7 +191,8 @@ validateReferencedEvidence(const sketch::Definition &definition,
   ConstraintSet constraintIds;
   constraintIds.reserve(definition.constraints.size());
   for (const sketch::Constraint &constraint : definition.constraints)
-    constraintIds.insert(sketch::constraintId(constraint));
+    if (sketch::isDrivingConstraint(constraint))
+      constraintIds.insert(sketch::constraintId(constraint));
 
   ReferencedEvidence normalized;
   normalized.redundantConstraints = result.redundantConstraints;
@@ -279,10 +280,9 @@ bool equivalentResidual(double first, double second) {
 }
 
 Result<std::vector<sketch::ConstraintResidual>> validateResidualClaims(
-    const sketch::Definition &definition,
     const std::vector<sketch::ConstraintResidual> &independent,
     const std::vector<sketch::ConstraintResidual> &claimed) {
-  if (claimed.size() != definition.constraints.size())
+  if (claimed.size() != independent.size())
     return std::unexpected(diagnostic("sketch.runtime.residual-count",
                                       "solver residual count is incorrect"));
   std::unordered_map<SketchConstraintId, const sketch::ConstraintResidual *,
@@ -390,8 +390,7 @@ validateSolverResult(const SketchRequest &request,
       request.definition, result.geometry, request.numerical);
   if (!independent)
     return std::unexpected(std::move(independent.error()));
-  auto residuals = validateResidualClaims(request.definition, *independent,
-                                          result.residuals);
+  auto residuals = validateResidualClaims(*independent, result.residuals);
   if (!residuals)
     return std::unexpected(std::move(residuals.error()));
   const bool satisfied =
@@ -453,6 +452,7 @@ Result<SketchEvaluation> evaluateSketch(const SketchRequest &request,
                                {},
                                solved->iterations},
                               solved->diagnostics,
+                              {},
                               {}};
   auto validated = validateSolverResult(request, *solved);
   if (!validated) {
@@ -494,6 +494,7 @@ Result<SketchEvaluation> evaluateSketch(const SketchRequest &request,
                    Severity::Information));
     return evaluation;
   }
+  evaluation.geometry = std::move(validated->geometry);
   evaluation.replacementScene =
       std::make_shared<const render::SketchSceneSnapshot>(
           std::move(*projected));

@@ -5,6 +5,9 @@
 - **Depends on:** [project/function model](../foundations/01-document-model.md), [Python/build123d](05-python-and-build123d.md), [evaluation](../foundations/03-evaluation-and-jobs.md), [rendering](01-rendering-and-selection.md)
 - **Unblocks:** solid and surface modeling
 
+The [constraint inventory](02-sketch-constraint-inventory.md) is authoritative
+for declaration, solve, presentation, and interaction coverage.
+
 ## 1. Purpose
 
 Provide a responsive constrained sketch editor whose durable result is native Python/build123d source, not a parallel sketch document.
@@ -111,6 +114,36 @@ Dragging adds an ephemeral target constraint to a generation-tagged solve. Relea
 Constraint inference produces ranked proposals. Accepted proposals become ordinary helper calls in source with provenance. DOF visualization consumes stable IDs and solver modes, not solver variable offsets.
 
 The edit session distinguishes driving, driven/reference, active, suppressed, conflicting, and redundant constraints without exposing solver row numbers. Repair tools propose stable-ID source changes; they never delete or weaken constraints automatically.
+
+### SKH-010 — Constraint declarations own intent
+
+Under [ADR-0023](../adr/0023-sketch-constraint-declarations.md), one recognized
+source declaration owns each constraint's stable ID, human label, lifecycle,
+typed operands, and kind payload. Dimensional declarations are driving with a
+typed value or reference with a derived measurement. Compatibility defaults for
+older generated source are deterministic and do not rewrite source until an
+edit is accepted.
+
+### SKH-011 — Constraint health is derived
+
+One revision-scoped projection joins declaration validation, residuals,
+redundancy, conflicts, and derived measurements by stable constraint ID. It
+reports driving, reference, suppressed, redundant, or conflicting state and
+associated semantic elements without solver row numbers; malformed source is
+refused before declaration. Suppressed and reference declarations contribute
+no solver equation. No repair weakens or deletes intent without an explicit
+source command.
+
+### SKH-012 — Constraint presentation is linked and bounded
+
+The active Sketch presents screen-stable native vector glyphs and engineering
+dimensions derived from the exact solved scene and health projection. Hover or
+selection links a marker, its Structure entry, Inspector properties, and every
+affected element. Constraints sharing one semantic anchor use deterministic,
+bounded screen-space lanes. Geometric, dimensional, and reference visibility
+controls plus diagnostic and selection emphasis keep dense sketches readable.
+Picks resolve through the displayed marker to the stable constraint ID;
+presentation data never becomes constraint identity or geometry intent.
 
 ### SKH-008 — Typed viewport input
 

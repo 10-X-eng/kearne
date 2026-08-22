@@ -139,7 +139,8 @@ def _assert_schema_coverage() -> None:
     constraint = _message_type("SketchConstraint").DESCRIPTOR
     relation = constraint.oneofs_by_name.get("relation")
     if (
-        set(constraint.fields_by_name) != {"id", *CONSTRAINT_HELPERS}
+        set(constraint.fields_by_name)
+        != {"id", "label", "activity", "dimension_mode", *CONSTRAINT_HELPERS}
         or relation is None
         or {field.name for field in relation.fields} != CONSTRAINT_HELPERS
     ):
@@ -158,7 +159,9 @@ def _assert_schema_coverage() -> None:
         spec = HELPERS[kind]
         expected = {argument.name for argument in spec.positional[1:]}
         expected.update(
-            keyword.name for keyword in spec.keywords if keyword.name != "construction"
+            keyword.name
+            for keyword in spec.keywords
+            if keyword.name not in {"construction", "label", "active", "driving"}
         )
         if set(payload.fields_by_name) != expected:
             raise SketchWireError(
@@ -600,6 +603,29 @@ def _write_constraint(message: _WireMessage, constraint: Constraint) -> None:
             "sketch constraint is unsupported",
         )
     _write_uuid(_child(message, "id"), constraint.id)
+    _set_scalar(message, "label", constraint.label or "")
+    _set_scalar(
+        message,
+        "activity",
+        _enum_number(
+            message,
+            "activity",
+            "SKETCH_CONSTRAINT_ACTIVITY_ACTIVE"
+            if constraint.active
+            else "SKETCH_CONSTRAINT_ACTIVITY_SUPPRESSED",
+        ),
+    )
+    _set_scalar(
+        message,
+        "dimension_mode",
+        _enum_number(
+            message,
+            "dimension_mode",
+            "SKETCH_DIMENSION_MODE_DRIVING"
+            if constraint.driving
+            else "SKETCH_DIMENSION_MODE_REFERENCE",
+        ),
+    )
     payload = _child(message, constraint.kind)
     points = iter(constraint.points)
     entities = iter(constraint.entities)
@@ -630,6 +656,12 @@ def _write_constraint(message: _WireMessage, constraint: Constraint) -> None:
                     "sketch.wire.invalid-value", "constraint angle is missing"
                 )
             _set_scalar(payload, argument.name, constraint.value.radians)
+        elif argument.kind == "scalar":
+            if not isinstance(constraint.value, float):
+                raise SketchWireError(
+                    "sketch.wire.invalid-value", "constraint scalar is missing"
+                )
+            _set_scalar(payload, argument.name, constraint.value)
         else:
             raise SketchWireError(
                 "sketch.wire.conversion-registry-stale",
@@ -653,9 +685,40 @@ def _read_constraint(message: _WireMessage) -> Constraint:
             "wire sketch constraint is unsupported",
         )
     payload = _child(message, kind)
+    label = cast(str, _scalar(message, "label")) or None
+    activity_number = int(cast(int, _scalar(message, "activity")))
+    activity_value = message.DESCRIPTOR.fields_by_name[
+        "activity"
+    ].enum_type.values_by_number.get(activity_number)
+    activities = {
+        "SKETCH_CONSTRAINT_ACTIVITY_ACTIVE": True,
+        "SKETCH_CONSTRAINT_ACTIVITY_SUPPRESSED": False,
+    }
+    active = activities.get(activity_value.name if activity_value is not None else "")
+    if active is None:
+        raise SketchWireError(
+            "sketch.wire.invalid-constraint-activity",
+            "wire constraint activity is unsupported",
+        )
+    dimension_number = int(cast(int, _scalar(message, "dimension_mode")))
+    dimension_value = message.DESCRIPTOR.fields_by_name[
+        "dimension_mode"
+    ].enum_type.values_by_number.get(dimension_number)
+    dimensions = {
+        "SKETCH_DIMENSION_MODE_DRIVING": True,
+        "SKETCH_DIMENSION_MODE_REFERENCE": False,
+    }
+    driving = dimensions.get(
+        dimension_value.name if dimension_value is not None else ""
+    )
+    if driving is None:
+        raise SketchWireError(
+            "sketch.wire.invalid-dimension-mode",
+            "wire dimension mode is unsupported",
+        )
     points: list[PointRef] = []
     entities: list[str] = []
-    quantity: Length | Angle | None = None
+    quantity: Length | Angle | float | None = None
     position: Point2 | None = None
     for argument in spec.positional[1:]:
         if argument.kind == "point_ref":
@@ -675,6 +738,13 @@ def _read_constraint(message: _WireMessage) -> Constraint:
                     "sketch.wire.non-finite", "constraint value is not finite"
                 )
             quantity = Length(value) if argument.kind == "length" else Angle(value)
+        elif argument.kind == "scalar":
+            value = float(cast(float, _scalar(payload, argument.name)))
+            if not isfinite(value):
+                raise SketchWireError(
+                    "sketch.wire.non-finite", "constraint value is not finite"
+                )
+            quantity = value
         else:
             raise SketchWireError(
                 "sketch.wire.conversion-registry-stale",
@@ -702,6 +772,9 @@ def _read_constraint(message: _WireMessage) -> Constraint:
         quantity,
         mode,
         position,
+        label,
+        active,
+        driving,
     )
 
 

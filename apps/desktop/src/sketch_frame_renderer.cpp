@@ -334,11 +334,14 @@ struct SketchFrameRenderer::Impl {
   std::unique_ptr<QRhiShaderResourceBindings> resourceBindings;
   std::unique_ptr<QRhiGraphicsPipeline> pipeline;
   std::unique_ptr<QRhiGraphicsPipeline> stencilPipeline;
+  std::unique_ptr<QRhiGraphicsPipeline> annotationPipeline;
+  std::unique_ptr<QRhiGraphicsPipeline> annotationStencilPipeline;
   std::unique_ptr<QRhiGraphicsPipeline> lowDegreeNurbsPipeline;
   std::unique_ptr<QRhiGraphicsPipeline> lowDegreeNurbsStencilPipeline;
   std::unique_ptr<QRhiGraphicsPipeline> generalNurbsPipeline;
   std::unique_ptr<QRhiGraphicsPipeline> generalNurbsStencilPipeline;
   QVector<QRhiShaderStage> basicShaders;
+  QVector<QRhiShaderStage> annotationShaders;
   QVector<QRhiShaderStage> lowDegreeNurbsShaders;
   QVector<QRhiShaderStage> generalNurbsShaders;
   QVector<quint32> renderPassFormat;
@@ -359,14 +362,17 @@ struct SketchFrameRenderer::Impl {
     renderEpoch = nextEpoch.fetch_add(1U, std::memory_order_relaxed);
     auto vertex = loadShader(":/kearne/shaders/sketch_scene.vert.qsb");
     auto basic = loadShader(":/kearne/shaders/sketch_scene_basic.frag.qsb");
+    auto annotation =
+        loadShader(":/kearne/shaders/sketch_scene_annotation.frag.qsb");
     auto lowDegreeNurbs =
         loadShader(":/kearne/shaders/sketch_scene_nurbs_low_degree.frag.qsb");
     auto generalNurbs =
         loadShader(":/kearne/shaders/sketch_scene_nurbs_general.frag.qsb");
-    if (!vertex || !basic || !lowDegreeNurbs || !generalNurbs) {
+    if (!vertex || !basic || !annotation || !lowDegreeNurbs || !generalNurbs) {
       shaderFailure = true;
       state->report(!vertex           ? vertex.error()
                     : !basic          ? basic.error()
+                    : !annotation     ? annotation.error()
                     : !lowDegreeNurbs ? lowDegreeNurbs.error()
                                       : generalNurbs.error(),
                     metrics);
@@ -374,6 +380,8 @@ struct SketchFrameRenderer::Impl {
     }
     basicShaders = {{QRhiShaderStage::Vertex, *vertex},
                     {QRhiShaderStage::Fragment, std::move(*basic)}};
+    annotationShaders = {{QRhiShaderStage::Vertex, *vertex},
+                         {QRhiShaderStage::Fragment, std::move(*annotation)}};
     lowDegreeNurbsShaders = {
         {QRhiShaderStage::Vertex, *vertex},
         {QRhiShaderStage::Fragment, std::move(*lowDegreeNurbs)}};
@@ -1097,6 +1105,8 @@ struct SketchFrameRenderer::Impl {
         (format != renderPassFormat || nextSamples != sampleCount)) {
       pipeline.reset();
       stencilPipeline.reset();
+      annotationPipeline.reset();
+      annotationStencilPipeline.reset();
       lowDegreeNurbsPipeline.reset();
       lowDegreeNurbsStencilPipeline.reset();
       generalNurbsPipeline.reset();
@@ -1123,6 +1133,18 @@ struct SketchFrameRenderer::Impl {
       }
       return false;
     };
+    if (needsFamily(SketchVectorShaderFamily::Annotation) &&
+        !annotationPipeline &&
+        (!buildPipeline(annotationShaders, false, annotationPipeline) ||
+         !buildPipeline(annotationShaders, true, annotationStencilPipeline))) {
+      annotationPipeline.reset();
+      annotationStencilPipeline.reset();
+      fail(diagnostic(
+               "desktop.sketch.annotation-pipeline-create",
+               "sketch renderer could not create its annotation pipeline"),
+           true);
+      return false;
+    }
     if ((pipelineWarmup.lowDegreeNurbs ||
          needsFamily(SketchVectorShaderFamily::NurbsLowDegree)) &&
         !lowDegreeNurbsPipeline &&
@@ -1344,6 +1366,9 @@ struct SketchFrameRenderer::Impl {
       else if (family == SketchVectorShaderFamily::NurbsGeneral)
         selected = stencilEnabled ? generalNurbsStencilPipeline.get()
                                   : generalNurbsPipeline.get();
+      else if (family == SketchVectorShaderFamily::Annotation)
+        selected = stencilEnabled ? annotationStencilPipeline.get()
+                                  : annotationPipeline.get();
       else
         selected = stencilEnabled ? stencilPipeline.get() : pipeline.get();
       if (!selected) {
@@ -1449,6 +1474,56 @@ struct SketchFrameRenderer::Impl {
         return std::nullopt;
     }
 
+    const auto drawMarkerEmphasis = [&](std::uint32_t marker,
+                                        render::SketchStyleRole role) -> bool {
+      if (marker == 0U)
+        return true;
+      const PreparedSketchProducts &products =
+          *presented->synchronized->products();
+      const auto provenance = products.markerProvenance();
+      const auto span = std::ranges::lower_bound(
+          provenance, marker, {}, &SketchVectorPrimitiveSpanRecord::sourceKey);
+      if (span == provenance.end() || span->sourceKey != marker)
+        return true;
+      const auto &packet = products.markerPacket();
+      if (!packet || span->chunk >= packet->chunks().size()) {
+        fail(diagnostic("desktop.sketch.marker-emphasis-provenance",
+                        "sketch marker emphasis has invalid provenance"),
+             true);
+        return false;
+      }
+      const auto &chunk = packet->chunks()[span->chunk];
+      if (span->firstRecord >= chunk->records().size() ||
+          span->recordCount == 0U ||
+          span->recordCount > chunk->records().size() - span->firstRecord) {
+        fail(diagnostic("desktop.sketch.marker-emphasis-range",
+                        "sketch marker emphasis has an invalid draw range"),
+             true);
+        return false;
+      }
+      const auto resource = resources.find(chunk.get());
+      if (resource == resources.end())
+        return true;
+      if (!setChunkPipeline(chunk->shaderFamily()))
+        return false;
+      const render::SketchStyle &baseStyle = packet->styles()[chunk->style()];
+      const auto offset = static_cast<quint32>(
+          uniformStride * uniformIndex(role, baseStyle.linePattern,
+                                       layerIndex(GeometryLayer::Markers)));
+      const QRhiCommandBuffer::DynamicOffset dynamicOffset{0, offset};
+      commands->setShaderResources(resource->second.bindings.get(), 1,
+                                   &dynamicOffset);
+      commands->draw(6U, span->recordCount, 0U, span->firstRecord);
+      return true;
+    };
+    const SketchMarkerEmphasis emphasis =
+        presented->synchronized->products()->source()->markerEmphasis;
+    if (!drawMarkerEmphasis(emphasis.hoveredMarker,
+                            render::SketchStyleRole::Hovered) ||
+        !drawMarkerEmphasis(emphasis.selectedMarker,
+                            render::SketchStyleRole::Selected))
+      return std::nullopt;
+
     if (drawn != presented->synchronized) {
       state->invalidate();
       return std::nullopt;
@@ -1484,6 +1559,8 @@ struct SketchFrameRenderer::Impl {
     state->invalidate();
     pipeline.reset();
     stencilPipeline.reset();
+    annotationPipeline.reset();
+    annotationStencilPipeline.reset();
     lowDegreeNurbsPipeline.reset();
     lowDegreeNurbsStencilPipeline.reset();
     generalNurbsPipeline.reset();
@@ -1596,12 +1673,11 @@ void SketchFrameRenderer::render(const RenderState *renderState) {
         new PresentedSketchFrame{std::move(recorded->synchronized),
                                  std::move(recorded->productCoverage),
                                  std::move(recorded->evidence)});
-    impl_->state->publish(std::move(presented), packetMetrics, impl_->metrics,
-                          impl_->geometryBuildCount, exactCurrent,
-                          {.lowDegreeNurbs =
-                               bool(impl_->lowDegreeNurbsPipeline),
-                           .generalNurbs =
-                               bool(impl_->generalNurbsPipeline)});
+    impl_->state->publish(
+        std::move(presented), packetMetrics, impl_->metrics,
+        impl_->geometryBuildCount, exactCurrent,
+        {.lowDegreeNurbs = bool(impl_->lowDegreeNurbsPipeline),
+         .generalNurbs = bool(impl_->generalNurbsPipeline)});
   } catch (const std::bad_alloc &) {
     impl_->fail(diagnostic("desktop.sketch.presented-frame-allocation",
                            "sketch presented frame allocation failed"),

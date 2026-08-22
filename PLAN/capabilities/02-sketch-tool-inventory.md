@@ -70,12 +70,12 @@ Every row must use stable IDs, typed units, structural source edits, exact prese
 | Tool | Canonical effect | Input | State |
 |---|---|---|---|
 | Auto dimension | Inferred driving dimension | Compatible geometry selection | partial |
-| Distance | Driving or reference distance constraint | Line or two point references | partial |
-| Horizontal distance | Driving or reference horizontal-distance constraint | Two point references | partial |
-| Vertical distance | Driving or reference vertical-distance constraint | Two point references | partial |
-| Radius | Driving or reference radius constraint | Circle or arc | partial |
-| Diameter | Driving or reference diameter constraint | Circle or arc | partial |
-| Angle | Driving or reference angle constraint | Two lines | partial |
+| Distance | Driving or reference distance constraint | Line or two point references | local |
+| Horizontal distance | Driving or reference horizontal-distance constraint | Two point references | local |
+| Vertical distance | Driving or reference vertical-distance constraint | Two point references | local |
+| Radius | Driving or reference radius constraint | Circle or arc | local |
+| Diameter | Driving or reference diameter constraint | Circle or arc | local |
+| Angle | Driving or reference angle constraint | Two lines | local |
 | Lock | Explicit position constraint | Point | local |
 | Coincident | Coincident constraint | Two point references | local |
 | Point-on-object | Point-on-curve constraint | Point and curve | local |
@@ -92,9 +92,11 @@ Every row must use stable IDs, typed units, structural source edits, exact prese
 | Block | Rigid object constraint | Object | local |
 | Collinear | Collinear constraint | Two lines | local |
 | Group | Rigid group constraint | Two to 1024 geometry entities | local |
-| Snell | Refraction constraint | Curves, interface, refractive ratio | missing |
-| Driving / reference toggle | Replace dimension mode | Dimensions | missing |
-| Active / suppressed toggle | Replace constraint activation | Constraints | missing |
+| Snell | Refraction constraint | Curves, interface, refractive ratio | local |
+| Driving / reference toggle | Replace dimension mode | Dimensions | local |
+| Active / suppressed toggle | Replace constraint activation | Constraints | local |
+| Constraint visibility | Show or hide geometric, dimensional, and reference markers | Active Sketch | local |
+| Constraint inspection | Linked canvas, Structure, Inspector, associated elements, status, and delete action | Constraint or geometry | local |
 
 ## Modify and reuse
 
@@ -139,11 +141,11 @@ Every row must use stable IDs, typed units, structural source edits, exact prese
 |---|---|---|---|
 | Hover preselection | Hover overlay only | Pointer; nearest eligible hit | local |
 | Select geometry | Selection overlay only | Curve, endpoint, center, profile, reference | partial |
-| Select constraints | Selection set | Constraint filter | missing |
-| Select associated elements | Selection set | Constraint or geometry | missing |
+| Select constraints | Linked canvas and Structure selection | Constraint | local |
+| Select associated elements | Linked selection | Constraint or geometry | partial |
 | Arc overlay | Presentation toggle | Arcs | missing |
 | Restore internal alignment | Explicit repair proposal | Derived alignment geometry | missing |
 | Virtual-space review | Presentation filter | Suppressed or virtual geometry | missing |
 | DOF inspection | Solver-mode overlay and human explanation | Geometry or Sketch | missing |
-| Conflict inspection | Stable-ID conflict set and explanation | Sketch | core |
-| Redundancy inspection | Stable-ID redundancy set and explanation | Sketch | core |
+| Conflict inspection | Stable-ID conflict set and explanation | Sketch | local |
+| Redundancy inspection | Stable-ID redundancy set and explanation | Sketch | local |
