@@ -3,7 +3,6 @@
 #include "bounded_artifact_reclaimer.hpp"
 #include "sketch_prepared_products.hpp"
 #include "sketch_projection_support.hpp"
-#include "sketch_stroke_pattern.hpp"
 
 #include <QElapsedTimer>
 #include <QFile>
@@ -49,18 +48,18 @@ enum class GeometryLayer : std::uint8_t {
   return static_cast<std::size_t>(layer);
 }
 
-[[nodiscard]] const std::shared_ptr<const SketchSceneMesh> &
-productMesh(const PreparedSketchProducts &products, std::size_t layer) {
-  static const std::shared_ptr<const SketchSceneMesh> absent;
+[[nodiscard]] const std::shared_ptr<const SketchVectorPacket> &
+productPacket(const PreparedSketchProducts &products, std::size_t layer) {
+  static const std::shared_ptr<const SketchVectorPacket> absent;
   switch (static_cast<GeometryLayer>(layer)) {
   case GeometryLayer::Base:
-    return products.base()->mesh();
+    return products.base()->packet();
   case GeometryLayer::OverlayPoints:
-    return products.overlayPointMesh();
+    return products.overlayPointPacket();
   case GeometryLayer::Provisional:
-    return products.provisional() ? products.provisional()->mesh() : absent;
+    return products.provisional() ? products.provisional()->packet() : absent;
   case GeometryLayer::Markers:
-    return products.markerMesh();
+    return products.markerPacket();
   }
   return absent;
 }
@@ -191,9 +190,10 @@ SketchFrameRendererState::presented() const {
   return presented_.load(std::memory_order_acquire);
 }
 
-SketchMeshMetrics SketchFrameRendererState::meshMetrics() const {
+SketchVectorPacketMetrics
+SketchFrameRendererState::vectorPacketMetrics() const {
   std::scoped_lock lock{mutex_};
-  return meshMetrics_;
+  return vectorPacketMetrics_;
 }
 
 SketchGpuUploadMetrics SketchFrameRendererState::uploadMetrics() const {
@@ -211,22 +211,37 @@ Diagnostic SketchFrameRendererState::lastDiagnostic() const {
   return diagnostic_;
 }
 
+bool SketchFrameRendererState::pipelineReady(
+    SketchPipelineWarmup warmup) const noexcept {
+  return (!warmup.lowDegreeNurbs ||
+          lowDegreeNurbsReady_.load(std::memory_order_acquire)) &&
+         (!warmup.generalNurbs ||
+          generalNurbsReady_.load(std::memory_order_acquire));
+}
+
 void SketchFrameRendererState::invalidate() noexcept {
   presented_.store({}, std::memory_order_release);
+  lowDegreeNurbsReady_.store(false, std::memory_order_release);
+  generalNurbsReady_.store(false, std::memory_order_release);
 }
 
 void SketchFrameRendererState::publish(
     std::shared_ptr<const PresentedSketchFrame> frame,
-    SketchMeshMetrics meshMetrics, SketchGpuUploadMetrics uploadMetrics,
-    std::uint64_t geometryBuildCount, bool clearDiagnostic) {
+    SketchVectorPacketMetrics vectorPacketMetrics,
+    SketchGpuUploadMetrics uploadMetrics, std::uint64_t geometryBuildCount,
+    bool clearDiagnostic, SketchPipelineWarmup readyPipelines) {
   {
     std::scoped_lock lock{mutex_};
-    meshMetrics_ = meshMetrics;
+    vectorPacketMetrics_ = vectorPacketMetrics;
     uploadMetrics_ = uploadMetrics;
     geometryBuildCount_ = geometryBuildCount;
     if (clearDiagnostic)
       diagnostic_ = {};
   }
+  lowDegreeNurbsReady_.store(readyPipelines.lowDegreeNurbs,
+                             std::memory_order_release);
+  generalNurbsReady_.store(readyPipelines.generalNurbs,
+                           std::memory_order_release);
   presented_.store(std::move(frame), std::memory_order_release);
 }
 
@@ -239,8 +254,9 @@ void SketchFrameRendererState::report(Diagnostic diagnostic,
 
 struct SketchFrameRenderer::Impl {
   struct GpuChunk {
-    std::unique_ptr<QRhiBuffer> vertices;
-    std::unique_ptr<QRhiBuffer> indices;
+    std::unique_ptr<QRhiBuffer> records;
+    std::unique_ptr<QRhiBuffer> data;
+    std::unique_ptr<QRhiShaderResourceBindings> bindings;
     std::size_t payloadBytes = 0U;
     std::size_t leases = 0U;
   };
@@ -306,16 +322,25 @@ struct SketchFrameRenderer::Impl {
       retired;
   std::size_t retiredRead = 0U;
   std::size_t retiredCount = 0U;
-  std::unordered_map<const SketchUploadChunk *, GpuChunk> resources;
+  std::unordered_map<const SketchVectorChunk *, GpuChunk> resources;
   SketchScenePalette palette;
+  SketchPipelineWarmup pipelineWarmup;
   std::uint64_t paletteGeneration = 0U;
   QRectF itemRect;
   QRhi *rhi = nullptr;
   std::unique_ptr<QRhiBuffer> uniformBuffer;
+  std::unique_ptr<QRhiBuffer> layoutRecordBuffer;
+  std::unique_ptr<QRhiBuffer> layoutDataBuffer;
   std::unique_ptr<QRhiShaderResourceBindings> resourceBindings;
   std::unique_ptr<QRhiGraphicsPipeline> pipeline;
   std::unique_ptr<QRhiGraphicsPipeline> stencilPipeline;
-  QVector<QRhiShaderStage> shaders;
+  std::unique_ptr<QRhiGraphicsPipeline> lowDegreeNurbsPipeline;
+  std::unique_ptr<QRhiGraphicsPipeline> lowDegreeNurbsStencilPipeline;
+  std::unique_ptr<QRhiGraphicsPipeline> generalNurbsPipeline;
+  std::unique_ptr<QRhiGraphicsPipeline> generalNurbsStencilPipeline;
+  QVector<QRhiShaderStage> basicShaders;
+  QVector<QRhiShaderStage> lowDegreeNurbsShaders;
+  QVector<QRhiShaderStage> generalNurbsShaders;
   QVector<quint32> renderPassFormat;
   std::shared_ptr<const std::vector<std::uint32_t>> publishedRenderPassFormat;
   int sampleCount = 0;
@@ -333,14 +358,28 @@ struct SketchFrameRenderer::Impl {
     static std::atomic_uint64_t nextEpoch = 1U;
     renderEpoch = nextEpoch.fetch_add(1U, std::memory_order_relaxed);
     auto vertex = loadShader(":/kearne/shaders/sketch_scene.vert.qsb");
-    auto fragment = loadShader(":/kearne/shaders/sketch_scene.frag.qsb");
-    if (!vertex || !fragment) {
+    auto basic = loadShader(":/kearne/shaders/sketch_scene_basic.frag.qsb");
+    auto lowDegreeNurbs =
+        loadShader(":/kearne/shaders/sketch_scene_nurbs_low_degree.frag.qsb");
+    auto generalNurbs =
+        loadShader(":/kearne/shaders/sketch_scene_nurbs_general.frag.qsb");
+    if (!vertex || !basic || !lowDegreeNurbs || !generalNurbs) {
       shaderFailure = true;
-      state->report(vertex ? fragment.error() : vertex.error(), metrics);
+      state->report(!vertex           ? vertex.error()
+                    : !basic          ? basic.error()
+                    : !lowDegreeNurbs ? lowDegreeNurbs.error()
+                                      : generalNurbs.error(),
+                    metrics);
       return;
     }
-    shaders = {{QRhiShaderStage::Vertex, std::move(*vertex)},
-               {QRhiShaderStage::Fragment, std::move(*fragment)}};
+    basicShaders = {{QRhiShaderStage::Vertex, *vertex},
+                    {QRhiShaderStage::Fragment, std::move(*basic)}};
+    lowDegreeNurbsShaders = {
+        {QRhiShaderStage::Vertex, *vertex},
+        {QRhiShaderStage::Fragment, std::move(*lowDegreeNurbs)}};
+    generalNurbsShaders = {
+        {QRhiShaderStage::Vertex, std::move(*vertex)},
+        {QRhiShaderStage::Fragment, std::move(*generalNurbs)}};
   }
 
   ~Impl() { release(); }
@@ -374,7 +413,7 @@ struct SketchFrameRenderer::Impl {
     state->report(std::move(diagnostic), metrics);
   }
 
-  void releaseChunk(const SketchUploadChunk *identity) {
+  void releaseChunk(const SketchVectorChunk *identity) {
     auto found = resources.find(identity);
     if (found == resources.end() || found->second.leases == 0U)
       return;
@@ -394,13 +433,13 @@ struct SketchFrameRenderer::Impl {
       for (std::size_t layerIndex = 0U; layerIndex < frame.layers.size();
            ++layerIndex) {
         RetiredLayer &layer = frame.layers[layerIndex];
-        const auto &mesh =
-            productMesh(*frame.synchronized->products(), layerIndex);
-        Q_ASSERT(mesh || layer.leasedChunks == 0U);
-        while (mesh &&
+        const auto &packet =
+            productPacket(*frame.synchronized->products(), layerIndex);
+        Q_ASSERT(packet || layer.leasedChunks == 0U);
+        while (packet &&
                retiredChunks < SketchGpuUploadPolicy::maximumChunksPerFrame &&
                layer.cursor < layer.leasedChunks) {
-          const auto &chunk = mesh->chunks()[layer.chunks[layer.cursor]];
+          const auto &chunk = packet->chunks()[layer.chunks[layer.cursor]];
           releaseChunk(chunk.get());
           layer.referencedBytes -= chunk->payloadBytes();
           ++layer.cursor;
@@ -502,7 +541,7 @@ struct SketchFrameRenderer::Impl {
 
   void beginStaging() {
     auto visibility = ProgressiveSketchVisibility::create(
-        desired->mesh(), desired->transform(), desired->pickCoverage());
+        desired->packet(), desired->transform(), desired->pickCoverage());
     if (!visibility) {
       fail(std::move(visibility.error()));
       return;
@@ -522,33 +561,59 @@ struct SketchFrameRenderer::Impl {
   }
 
   [[nodiscard]] bool
-  createChunkResource(const std::shared_ptr<const SketchUploadChunk> &chunk,
+  createChunkResource(const std::shared_ptr<const SketchVectorChunk> &chunk,
                       QRhiResourceUpdateBatch &updates) {
-    if (chunk->vertices().size() >
-            std::numeric_limits<quint32>::max() / sizeof(SketchMeshVertex) ||
-        chunk->indices().size() >
-            std::numeric_limits<quint32>::max() / sizeof(std::uint32_t)) {
+    if (chunk->records().empty() ||
+        chunk->records().size() >
+            std::numeric_limits<quint32>::max() / sizeof(SketchVectorRecord) ||
+        chunk->data().size() >
+            std::numeric_limits<quint32>::max() / sizeof(SketchVectorData)) {
       fail(diagnostic("desktop.sketch.gpu-buffer-limit",
-                      "sketch upload chunk exceeds the QRhi buffer limit"));
+                      "sketch vector chunk exceeds the QRhi buffer limit"));
       return false;
     }
-    const auto vertexBytes = static_cast<quint32>(chunk->vertices().size() *
-                                                  sizeof(SketchMeshVertex));
-    const auto indexBytes =
-        static_cast<quint32>(chunk->indices().size() * sizeof(std::uint32_t));
+    const auto recordBytes = static_cast<quint32>(chunk->records().size() *
+                                                  sizeof(SketchVectorRecord));
+    const auto dataBytes =
+        static_cast<quint32>(std::max<std::size_t>(1U, chunk->data().size()) *
+                             sizeof(SketchVectorData));
     GpuChunk gpu;
-    gpu.vertices.reset(rhi->newBuffer(QRhiBuffer::Immutable,
-                                      QRhiBuffer::VertexBuffer, vertexBytes));
-    gpu.indices.reset(rhi->newBuffer(QRhiBuffer::Immutable,
-                                     QRhiBuffer::IndexBuffer, indexBytes));
-    if (!gpu.vertices || !gpu.indices || !gpu.vertices->create() ||
-        !gpu.indices->create()) {
+    gpu.records.reset(rhi->newBuffer(QRhiBuffer::Immutable,
+                                     QRhiBuffer::StorageBuffer, recordBytes));
+    gpu.data.reset(rhi->newBuffer(QRhiBuffer::Immutable,
+                                  QRhiBuffer::StorageBuffer, dataBytes));
+    gpu.bindings.reset(rhi->newShaderResourceBindings());
+    if (!gpu.records || !gpu.data || !gpu.bindings || !gpu.records->create() ||
+        !gpu.data->create()) {
       fail(diagnostic("desktop.sketch.gpu-buffer-create",
-                      "sketch renderer could not create a GPU buffer"));
+                      "sketch renderer could not create a vector buffer"));
       return false;
     }
-    updates.uploadStaticBuffer(gpu.vertices.get(), chunk->vertices().data());
-    updates.uploadStaticBuffer(gpu.indices.get(), chunk->indices().data());
+    gpu.bindings->setBindings(
+        {QRhiShaderResourceBinding::uniformBufferWithDynamicOffset(
+             0,
+             QRhiShaderResourceBinding::VertexStage |
+                 QRhiShaderResourceBinding::FragmentStage,
+             uniformBuffer.get(), static_cast<quint32>(uniformRecordBytes)),
+         QRhiShaderResourceBinding::bufferLoad(
+             1,
+             QRhiShaderResourceBinding::VertexStage |
+                 QRhiShaderResourceBinding::FragmentStage,
+             gpu.records.get()),
+         QRhiShaderResourceBinding::bufferLoad(
+             2, QRhiShaderResourceBinding::FragmentStage, gpu.data.get())});
+    if (!gpu.bindings->create()) {
+      fail(diagnostic("desktop.sketch.gpu-binding-create",
+                      "sketch renderer could not bind vector data"));
+      return false;
+    }
+    updates.uploadStaticBuffer(gpu.records.get(), chunk->records().data());
+    if (chunk->data().empty()) {
+      static constexpr SketchVectorData zero{};
+      updates.uploadStaticBuffer(gpu.data.get(), &zero);
+    } else {
+      updates.uploadStaticBuffer(gpu.data.get(), chunk->data().data());
+    }
     gpu.payloadBytes = chunk->payloadBytes();
     try {
       auto [_, inserted] = resources.emplace(chunk.get(), std::move(gpu));
@@ -567,11 +632,11 @@ struct SketchFrameRenderer::Impl {
 
   enum class StageProgress : std::uint8_t { Failed, Pending, Complete };
 
-  [[nodiscard]] StageProgress
-  advanceVisibilityLayer(std::optional<ProgressiveSketchVisibility> &visibility,
-                         std::optional<ProgressiveSketchUpload> &upload,
-                         const std::shared_ptr<const SketchSceneMesh> &mesh,
-                         bool comparePresentedBase) {
+  [[nodiscard]] StageProgress advanceVisibilityLayer(
+      std::optional<ProgressiveSketchVisibility> &visibility,
+      std::optional<ProgressiveSketchUpload> &upload,
+      const std::shared_ptr<const SketchVectorPacket> &packet,
+      bool comparePresentedBase) {
     if (!staging || !visibility)
       return StageProgress::Complete;
     auto slice = visibility->takeNextSlice(
@@ -622,7 +687,7 @@ struct SketchFrameRenderer::Impl {
       return StageProgress::Pending;
     }
     auto createdUpload = ProgressiveSketchUpload::create(
-        mesh, visibility->releaseSelectedChunks(), {});
+        packet, visibility->releaseSelectedChunks(), {});
     visibility.reset();
     if (!createdUpload) {
       fail(std::move(createdUpload.error()));
@@ -639,11 +704,11 @@ struct SketchFrameRenderer::Impl {
     if (staging->activeLayer >= geometryLayerCount)
       return true;
     StagingLayer &layer = staging->layers[staging->activeLayer];
-    const auto &mesh =
-        productMesh(*staging->synchronized->products(), staging->activeLayer);
-    Q_ASSERT(mesh);
+    const auto &packet =
+        productPacket(*staging->synchronized->products(), staging->activeLayer);
+    Q_ASSERT(packet);
     if (layer.visibility)
-      return advanceVisibilityLayer(layer.visibility, layer.upload, mesh,
+      return advanceVisibilityLayer(layer.visibility, layer.upload, packet,
                                     staging->activeLayer ==
                                         layerIndex(GeometryLayer::Base)) ==
              StageProgress::Complete;
@@ -667,7 +732,7 @@ struct SketchFrameRenderer::Impl {
     QRhiResourceUpdateBatch *updates = nullptr;
     std::size_t uploadedChunks = 0U;
     std::size_t uploadedBytes = 0U;
-    const auto chunks = upload.mesh()->chunks();
+    const auto chunks = upload.packet()->chunks();
     for (const SketchUploadSliceEntry entry : slice->entries) {
       const auto &chunk = chunks[entry.chunk];
       std::size_t nextReferencedBytes = 0U;
@@ -733,12 +798,12 @@ struct SketchFrameRenderer::Impl {
   [[nodiscard]] bool beginNextLayer() {
     Q_ASSERT(staging);
     while (++staging->activeLayer < geometryLayerCount) {
-      const auto &mesh =
-          productMesh(*staging->synchronized->products(), staging->activeLayer);
-      if (!mesh)
+      const auto &packet = productPacket(*staging->synchronized->products(),
+                                         staging->activeLayer);
+      if (!packet)
         continue;
       auto visibility = ProgressiveSketchVisibility::create(
-          mesh, staging->synchronized->transform(),
+          packet, staging->synchronized->transform(),
           staging->synchronized->pickCoverage());
       if (!visibility) {
         fail(std::move(visibility.error()));
@@ -760,14 +825,14 @@ struct SketchFrameRenderer::Impl {
     if (!staging || staging->activeLayer >= geometryLayerCount)
       return false;
     StagingLayer &layer = staging->layers[staging->activeLayer];
-    const auto &mesh =
-        productMesh(*staging->synchronized->products(), staging->activeLayer);
-    if (!mesh || !layer.upload || !layer.upload->complete())
+    const auto &packet =
+        productPacket(*staging->synchronized->products(), staging->activeLayer);
+    if (!packet || !layer.upload || !layer.upload->complete())
       return false;
     layer.completedChunks.emplace(layer.upload->releaseRequiredChunks());
     layer.upload.reset();
     auto coverage =
-        SketchPresentedChunkCoverage::create(*mesh, *layer.completedChunks);
+        SketchPresentedChunkCoverage::create(*packet, *layer.completedChunks);
     if (!coverage) {
       fail(std::move(coverage.error()));
       staging->rejected = true;
@@ -802,7 +867,7 @@ struct SketchFrameRenderer::Impl {
     for (std::size_t layerIndex = 0U; layerIndex < geometryLayerCount;
          ++layerIndex) {
       const bool required =
-          bool(productMesh(*staging->synchronized->products(), layerIndex));
+          bool(productPacket(*staging->synchronized->products(), layerIndex));
       if (required != bool(staging->layers[layerIndex].completedChunks) ||
           required != bool(staging->layers[layerIndex].coverage))
         return false;
@@ -831,8 +896,8 @@ struct SketchFrameRenderer::Impl {
            ++layerIndex)
         newGeometry =
             newGeometry ||
-            productMesh(*presented->synchronized->products(), layerIndex) !=
-                productMesh(*synchronized->products(), layerIndex);
+            productPacket(*presented->synchronized->products(), layerIndex) !=
+                productPacket(*synchronized->products(), layerIndex);
     if (presented) {
       RetiredFrame previous;
       previous.synchronized = std::move(presented->synchronized);
@@ -874,19 +939,15 @@ struct SketchFrameRenderer::Impl {
       return;
     for (std::size_t layerIndex = 0U; layerIndex < geometryLayerCount;
          ++layerIndex) {
-      const auto &mesh = productMesh(*desired->products(), layerIndex);
-      if (!mesh)
+      const auto &packet = productPacket(*desired->products(), layerIndex);
+      if (!packet)
         continue;
-      auto gpuView = desired->transform().gpuView(mesh->originMetres());
+      auto gpuView = desired->transform().gpuView(packet->originMetres());
       if (!gpuView) {
         fail(std::move(gpuView.error()));
         return;
       }
-      if (auto phase = mesh->validatePatternedPhase(*gpuView); !phase) {
-        fail(std::move(phase.error()));
-        return;
-      }
-      if (mesh->maximumChunkBytes() >
+      if (packet->maximumChunkBytes() >
           SketchGpuUploadPolicy::maximumChunkBytes) {
         ++metrics.rejectedPackets;
         fail(diagnostic(
@@ -960,8 +1021,15 @@ struct SketchFrameRenderer::Impl {
       }
     }
     if (!resourceBindings) {
+      layoutRecordBuffer.reset(
+          rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::StorageBuffer,
+                         static_cast<quint32>(sizeof(SketchVectorRecord))));
+      layoutDataBuffer.reset(
+          rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::StorageBuffer,
+                         static_cast<quint32>(sizeof(SketchVectorData))));
       resourceBindings.reset(rhi->newShaderResourceBindings());
-      if (!resourceBindings) {
+      if (!layoutRecordBuffer || !layoutDataBuffer || !resourceBindings ||
+          !layoutRecordBuffer->create() || !layoutDataBuffer->create()) {
         fail(diagnostic("desktop.sketch.resource-binding-create",
                         "sketch renderer could not create resource bindings"),
              true);
@@ -969,10 +1037,18 @@ struct SketchFrameRenderer::Impl {
       }
       resourceBindings->setBindings(
           {QRhiShaderResourceBinding::uniformBufferWithDynamicOffset(
-              0,
-              QRhiShaderResourceBinding::VertexStage |
-                  QRhiShaderResourceBinding::FragmentStage,
-              uniformBuffer.get(), static_cast<quint32>(uniformRecordBytes))});
+               0,
+               QRhiShaderResourceBinding::VertexStage |
+                   QRhiShaderResourceBinding::FragmentStage,
+               uniformBuffer.get(), static_cast<quint32>(uniformRecordBytes)),
+           QRhiShaderResourceBinding::bufferLoad(
+               1,
+               QRhiShaderResourceBinding::VertexStage |
+                   QRhiShaderResourceBinding::FragmentStage,
+               layoutRecordBuffer.get()),
+           QRhiShaderResourceBinding::bufferLoad(
+               2, QRhiShaderResourceBinding::FragmentStage,
+               layoutDataBuffer.get())});
       if (!resourceBindings->create()) {
         fail(diagnostic("desktop.sketch.resource-binding-create",
                         "sketch renderer could not create resource bindings"),
@@ -983,7 +1059,8 @@ struct SketchFrameRenderer::Impl {
     return ensurePipelines();
   }
 
-  [[nodiscard]] bool buildPipeline(bool stencil,
+  [[nodiscard]] bool buildPipeline(const QVector<QRhiShaderStage> &shaders,
+                                   bool stencil,
                                    std::unique_ptr<QRhiGraphicsPipeline> &out) {
     out.reset(rhi->newGraphicsPipeline());
     if (!out)
@@ -996,24 +1073,7 @@ struct SketchFrameRenderer::Impl {
     out->setSampleCount(owner.renderTarget()->sampleCount());
     out->setShaderResourceBindings(resourceBindings.get());
     out->setShaderStages(shaders.cbegin(), shaders.cend());
-    QRhiVertexInputLayout input;
-    input.setBindings({{static_cast<quint32>(sizeof(SketchMeshVertex))}});
-    input.setAttributes(
-        {{0, 0, QRhiVertexInputAttribute::Float2,
-          static_cast<quint32>(offsetof(SketchMeshVertex, x))},
-         {0, 1, QRhiVertexInputAttribute::Float2,
-          static_cast<quint32>(offsetof(SketchMeshVertex, xLow))},
-         {0, 2, QRhiVertexInputAttribute::Float2,
-          static_cast<quint32>(offsetof(SketchMeshVertex, extrusionX))},
-         {0, 3, QRhiVertexInputAttribute::Float,
-          static_cast<quint32>(offsetof(SketchMeshVertex, pathDistanceMetres))},
-         {0, 4, QRhiVertexInputAttribute::Float2,
-          static_cast<quint32>(
-              offsetof(SketchMeshVertex, coverageDistancePixels))},
-         {0, 5, QRhiVertexInputAttribute::Float2,
-          static_cast<quint32>(
-              offsetof(SketchMeshVertex, patternOnLogicalPixels))}});
-    out->setVertexInputLayout(input);
+    out->setVertexInputLayout({});
     QRhiGraphicsPipeline::Flags flags = QRhiGraphicsPipeline::UsesScissor;
     if (stencil) {
       flags |= QRhiGraphicsPipeline::UsesStencilRef;
@@ -1037,30 +1097,74 @@ struct SketchFrameRenderer::Impl {
         (format != renderPassFormat || nextSamples != sampleCount)) {
       pipeline.reset();
       stencilPipeline.reset();
+      lowDegreeNurbsPipeline.reset();
+      lowDegreeNurbsStencilPipeline.reset();
+      generalNurbsPipeline.reset();
+      generalNurbsStencilPipeline.reset();
       publishedRenderPassFormat.reset();
     }
-    if (pipeline)
-      return true;
-    if (!buildPipeline(false, pipeline) ||
-        !buildPipeline(true, stencilPipeline)) {
+    if (!pipeline && (!buildPipeline(basicShaders, false, pipeline) ||
+                      !buildPipeline(basicShaders, true, stencilPipeline))) {
       pipeline.reset();
       stencilPipeline.reset();
-      fail(diagnostic("desktop.sketch.pipeline-create",
-                      "sketch renderer could not create its graphics pipeline"),
+      fail(diagnostic(
+               "desktop.sketch.pipeline-create",
+               "sketch renderer could not create its basic vector pipeline"),
            true);
       return false;
     }
-    renderPassFormat = format;
-    sampleCount = nextSamples;
-    try {
-      publishedRenderPassFormat =
-          std::make_shared<const std::vector<std::uint32_t>>(format.cbegin(),
-                                                             format.cend());
-    } catch (const std::bad_alloc &) {
-      fail(diagnostic("desktop.sketch.pipeline-format-allocation",
-                      "sketch render-target format allocation failed"),
+    const auto needsFamily = [&](SketchVectorShaderFamily family) {
+      if (!desired)
+        return false;
+      for (std::size_t layer = 0U; layer < geometryLayerCount; ++layer) {
+        const auto &packet = productPacket(*desired->products(), layer);
+        if (packet && packet->requiresShaderFamily(family))
+          return true;
+      }
+      return false;
+    };
+    if ((pipelineWarmup.lowDegreeNurbs ||
+         needsFamily(SketchVectorShaderFamily::NurbsLowDegree)) &&
+        !lowDegreeNurbsPipeline &&
+        (!buildPipeline(lowDegreeNurbsShaders, false, lowDegreeNurbsPipeline) ||
+         !buildPipeline(lowDegreeNurbsShaders, true,
+                        lowDegreeNurbsStencilPipeline))) {
+      lowDegreeNurbsPipeline.reset();
+      lowDegreeNurbsStencilPipeline.reset();
+      fail(
+          diagnostic(
+              "desktop.sketch.nurbs-pipeline-create",
+              "sketch renderer could not create its low-degree NURBS pipeline"),
+          true);
+      return false;
+    }
+    if ((pipelineWarmup.generalNurbs ||
+         needsFamily(SketchVectorShaderFamily::NurbsGeneral)) &&
+        !generalNurbsPipeline &&
+        (!buildPipeline(generalNurbsShaders, false, generalNurbsPipeline) ||
+         !buildPipeline(generalNurbsShaders, true,
+                        generalNurbsStencilPipeline))) {
+      generalNurbsPipeline.reset();
+      generalNurbsStencilPipeline.reset();
+      fail(diagnostic(
+               "desktop.sketch.nurbs-pipeline-create",
+               "sketch renderer could not create its general NURBS pipeline"),
            true);
       return false;
+    }
+    if (!publishedRenderPassFormat) {
+      renderPassFormat = format;
+      sampleCount = nextSamples;
+      try {
+        publishedRenderPassFormat =
+            std::make_shared<const std::vector<std::uint32_t>>(format.cbegin(),
+                                                               format.cend());
+      } catch (const std::bad_alloc &) {
+        fail(diagnostic("desktop.sketch.pipeline-format-allocation",
+                        "sketch render-target format allocation failed"),
+             true);
+        return false;
+      }
     }
     return true;
   }
@@ -1072,9 +1176,9 @@ struct SketchFrameRenderer::Impl {
     const QMatrix4x4 mvp = *owner.projectionMatrix() * *owner.matrix();
     const QSizeF viewport = drawn->transform().viewportLogical();
     const float opacity = static_cast<float>(owner.inheritedOpacity());
-    const auto writeLayer = [&](const SketchSceneMesh &mesh,
+    const auto writeLayer = [&](const SketchVectorPacket &packet,
                                 std::size_t layer) -> bool {
-      auto gpuView = drawn->transform().gpuView(mesh.originMetres());
+      auto gpuView = drawn->transform().gpuView(packet.originMetres());
       if (!gpuView) {
         fail(std::move(gpuView.error()));
         return false;
@@ -1092,8 +1196,6 @@ struct SketchFrameRenderer::Impl {
              ++patternIndex) {
           const auto pattern =
               static_cast<render::SketchLinePattern>(patternIndex + 1U);
-          const render::SketchStyle style{role, pattern, 1.0F, 1.0F, 0U};
-          const SketchStrokePattern stroke = strokePattern(style);
           std::byte *record =
               uniformData.data() +
               uniformStride * uniformIndex(role, pattern, layer);
@@ -1105,8 +1207,7 @@ struct SketchFrameRenderer::Impl {
               gpuView->cosine, gpuView->sine};
           const std::array<float, 4> viewportPattern{
               static_cast<float>(viewport.width()),
-              static_cast<float>(viewport.height()), stroke.onLogicalPixels,
-              stroke.periodLogicalPixels};
+              static_cast<float>(viewport.height()), 0.0F, 0.0F};
           std::memcpy(record, mvp.constData(), 64U);
           std::memcpy(record + 64U, color.data(), sizeof(color));
           std::memcpy(record + 80U, cameraHigh.data(), sizeof(cameraHigh));
@@ -1120,9 +1221,9 @@ struct SketchFrameRenderer::Impl {
     };
     for (std::size_t layerIndex = 0U; layerIndex < geometryLayerCount;
          ++layerIndex) {
-      const auto &mesh =
-          productMesh(*presented->synchronized->products(), layerIndex);
-      if (!writeLayer(mesh ? *mesh : *presented->synchronized->mesh(),
+      const auto &packet =
+          productPacket(*presented->synchronized->products(), layerIndex);
+      if (!writeLayer(packet ? *packet : *presented->synchronized->packet(),
                       layerIndex))
         return;
     }
@@ -1223,8 +1324,6 @@ struct SketchFrameRenderer::Impl {
     }
 
     QRhiCommandBuffer *commands = owner.commandBuffer();
-    commands->setGraphicsPipeline(stencilEnabled ? stencilPipeline.get()
-                                                 : pipeline.get());
     commands->setViewport(
         QRhiViewport{0.0F, 0.0F, static_cast<float>(targetSize.width()),
                      static_cast<float>(targetSize.height())});
@@ -1234,11 +1333,36 @@ struct SketchFrameRenderer::Impl {
       commands->setStencilRef(
           static_cast<quint32>(renderState->stencilValue()));
 
-    const auto drawMesh = [&](const SketchSceneMesh &mesh,
-                              const SketchChunkSequence &sequence,
-                              std::size_t layer) -> bool {
-      const auto chunks = mesh.chunks();
-      const auto styles = mesh.styles();
+    std::optional<SketchVectorShaderFamily> activeShaderFamily;
+    const auto setChunkPipeline = [&](SketchVectorShaderFamily family) {
+      if (activeShaderFamily == family)
+        return true;
+      QRhiGraphicsPipeline *selected = nullptr;
+      if (family == SketchVectorShaderFamily::NurbsLowDegree)
+        selected = stencilEnabled ? lowDegreeNurbsStencilPipeline.get()
+                                  : lowDegreeNurbsPipeline.get();
+      else if (family == SketchVectorShaderFamily::NurbsGeneral)
+        selected = stencilEnabled ? generalNurbsStencilPipeline.get()
+                                  : generalNurbsPipeline.get();
+      else
+        selected = stencilEnabled ? stencilPipeline.get() : pipeline.get();
+      if (!selected) {
+        fail(diagnostic(
+                 "desktop.sketch.missing-vector-pipeline",
+                 "presented sketch frame has no matching vector pipeline"),
+             true);
+        return false;
+      }
+      commands->setGraphicsPipeline(selected);
+      activeShaderFamily = family;
+      return true;
+    };
+
+    const auto drawPacket = [&](const SketchVectorPacket &packet,
+                                const SketchChunkSequence &sequence,
+                                std::size_t layer) -> bool {
+      const auto chunks = packet.chunks();
+      const auto styles = packet.styles();
       for (std::size_t index = 0U; index < sequence.size(); ++index) {
         const auto &chunk = chunks[sequence[index]];
         const auto found = resources.find(chunk.get());
@@ -1248,29 +1372,28 @@ struct SketchFrameRenderer::Impl {
                true);
           return false;
         }
+        if (!setChunkPipeline(chunk->shaderFamily()))
+          return false;
         const render::SketchStyle &style = styles[chunk->style()];
         const auto offset = static_cast<quint32>(
             uniformStride * uniformIndex(style.role, style.linePattern, layer));
         const QRhiCommandBuffer::DynamicOffset dynamicOffset{0, offset};
-        commands->setShaderResources(resourceBindings.get(), 1, &dynamicOffset);
-        const QRhiCommandBuffer::VertexInput binding{
-            found->second.vertices.get(), 0U};
-        commands->setVertexInput(0, 1, &binding, found->second.indices.get(),
-                                 0U, QRhiCommandBuffer::IndexUInt32);
-        commands->drawIndexed(static_cast<quint32>(chunk->indices().size()));
+        commands->setShaderResources(found->second.bindings.get(), 1,
+                                     &dynamicOffset);
+        commands->draw(6U, static_cast<quint32>(chunk->records().size()));
       }
       return true;
     };
     const GpuLayer &baseLayer =
         presented->layers[layerIndex(GeometryLayer::Base)];
-    if (!drawMesh(*presented->synchronized->mesh(), baseLayer.chunks,
-                  layerIndex(GeometryLayer::Base)))
+    if (!drawPacket(*presented->synchronized->packet(), baseLayer.chunks,
+                    layerIndex(GeometryLayer::Base)))
       return std::nullopt;
     const auto &overlay = presented->synchronized->products()->overlay();
     if (overlay) {
-      const SketchSceneMesh &mesh = *presented->synchronized->mesh();
-      const auto chunks = mesh.chunks();
-      const auto styles = mesh.styles();
+      const SketchVectorPacket &packet = *presented->synchronized->packet();
+      const auto chunks = packet.chunks();
+      const auto styles = packet.styles();
       std::size_t drawCalls = 0U;
       for (const PreparedSketchOverlayRoleSetPtr &role : overlay->roleSets()) {
         if (!role)
@@ -1298,19 +1421,16 @@ struct SketchFrameRenderer::Impl {
                    true);
               return std::nullopt;
             }
+            if (!setChunkPipeline(chunk->shaderFamily()))
+              return std::nullopt;
             const render::SketchStyle &baseStyle = styles[chunk->style()];
             const auto offset = static_cast<quint32>(
                 uniformStride * uniformIndex(overlayStyleRole(role->role()),
                                              baseStyle.linePattern, 0U));
             const QRhiCommandBuffer::DynamicOffset dynamicOffset{0, offset};
-            commands->setShaderResources(resourceBindings.get(), 1,
+            commands->setShaderResources(resource->second.bindings.get(), 1,
                                          &dynamicOffset);
-            const QRhiCommandBuffer::VertexInput binding{
-                resource->second.vertices.get(), 0U};
-            commands->setVertexInput(0, 1, &binding,
-                                     resource->second.indices.get(), 0U,
-                                     QRhiCommandBuffer::IndexUInt32);
-            commands->drawIndexed(span->indexCount, 1U, span->firstIndex);
+            commands->draw(6U, span->recordCount, 0U, span->firstRecord);
           }
         }
       }
@@ -1322,9 +1442,10 @@ struct SketchFrameRenderer::Impl {
     };
     for (const GeometryLayer layer : decorationOrder) {
       const std::size_t index = layerIndex(layer);
-      const auto &mesh =
-          productMesh(*presented->synchronized->products(), index);
-      if (mesh && !drawMesh(*mesh, presented->layers[index].chunks, index))
+      const auto &packet =
+          productPacket(*presented->synchronized->products(), index);
+      if (packet &&
+          !drawPacket(*packet, presented->layers[index].chunks, index))
         return std::nullopt;
     }
 
@@ -1363,7 +1484,13 @@ struct SketchFrameRenderer::Impl {
     state->invalidate();
     pipeline.reset();
     stencilPipeline.reset();
+    lowDegreeNurbsPipeline.reset();
+    lowDegreeNurbsStencilPipeline.reset();
+    generalNurbsPipeline.reset();
+    generalNurbsStencilPipeline.reset();
     resourceBindings.reset();
+    layoutRecordBuffer.reset();
+    layoutDataBuffer.reset();
     uniformBuffer.reset();
     resources.clear();
     renderPassFormat.clear();
@@ -1445,11 +1572,12 @@ SketchFrameRenderer::~SketchFrameRenderer() = default;
 void SketchFrameRenderer::synchronize(
     std::shared_ptr<const SynchronizedSketchScene> desired,
     SketchScenePalette palette, std::uint64_t paletteGeneration,
-    QRectF itemRect) {
+    QRectF itemRect, SketchPipelineWarmup warmup) {
   impl_->desired = std::move(desired);
   impl_->palette = palette;
   impl_->paletteGeneration = paletteGeneration;
   impl_->itemRect = itemRect;
+  impl_->pipelineWarmup = warmup;
   markDirty(QSGNode::DirtyGeometry | QSGNode::DirtyMaterial);
 }
 
@@ -1460,16 +1588,20 @@ void SketchFrameRenderer::render(const RenderState *renderState) {
   if (!recorded)
     return;
   try {
-    const SketchMeshMetrics meshMetrics =
-        recorded->synchronized->mesh()->metrics();
+    const SketchVectorPacketMetrics packetMetrics =
+        recorded->synchronized->packet()->metrics();
     const bool exactCurrent =
         impl_->desired && sameView(*recorded->synchronized, *impl_->desired);
     auto presented = std::shared_ptr<const PresentedSketchFrame>(
         new PresentedSketchFrame{std::move(recorded->synchronized),
                                  std::move(recorded->productCoverage),
                                  std::move(recorded->evidence)});
-    impl_->state->publish(std::move(presented), meshMetrics, impl_->metrics,
-                          impl_->geometryBuildCount, exactCurrent);
+    impl_->state->publish(std::move(presented), packetMetrics, impl_->metrics,
+                          impl_->geometryBuildCount, exactCurrent,
+                          {.lowDegreeNurbs =
+                               bool(impl_->lowDegreeNurbsPipeline),
+                           .generalNurbs =
+                               bool(impl_->generalNurbsPipeline)});
   } catch (const std::bad_alloc &) {
     impl_->fail(diagnostic("desktop.sketch.presented-frame-allocation",
                            "sketch presented frame allocation failed"),

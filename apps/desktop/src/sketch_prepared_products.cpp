@@ -1,14 +1,12 @@
 #include "sketch_prepared_products.hpp"
 
 #include "sketch_projection_support.hpp"
-#include "sketch_stroke_mesh_build.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cmath>
+#include <charconv>
 #include <limits>
 #include <new>
-#include <stdexcept>
 #include <utility>
 
 namespace kearne::ui {
@@ -32,7 +30,7 @@ constexpr std::array<render::SketchStyle, 4> overlayPointStyles{{
      1.5F, 9.0F, 23U},
 }};
 
-constexpr std::array<render::SketchStyle, 5> markerStyles{{
+constexpr std::array<render::SketchStyle, 8> markerStyles{{
     {render::SketchStyleRole::Construction, render::SketchLinePattern::Solid,
      1.5F, 12.0F, 30U},
     {render::SketchStyleRole::Preview, render::SketchLinePattern::Solid, 1.5F,
@@ -43,16 +41,22 @@ constexpr std::array<render::SketchStyle, 5> markerStyles{{
      12.0F, 33U},
     {render::SketchStyleRole::Preview, render::SketchLinePattern::Solid, 1.5F,
      12.0F, 34U},
+    {render::SketchStyleRole::Construction, render::SketchLinePattern::Dotted,
+     1.0F, 7.0F, 35U},
+    {render::SketchStyleRole::Construction, render::SketchLinePattern::Solid,
+     1.0F, 7.0F, 36U},
+    {render::SketchStyleRole::Regular, render::SketchLinePattern::Solid, 1.0F,
+     12.0F, 37U},
 }};
 
-struct OverlayPointMeshContext {
+struct OverlayPointContext {
   const PreparedSketchOverlay *overlay = nullptr;
   std::array<std::size_t, 5> offsets{};
 };
 
-[[nodiscard]] SketchStrokeSourcePrimitive
-overlayPointPrimitiveAt(const void *context, std::size_t index) noexcept {
-  const auto &source = *static_cast<const OverlayPointMeshContext *>(context);
+[[nodiscard]] SketchVectorSourcePrimitive
+overlayPointAt(const void *context, std::size_t index) noexcept {
+  const auto &source = *static_cast<const OverlayPointContext *>(context);
   std::size_t role = 0U;
   while (role + 1U < source.offsets.size() &&
          index >= source.offsets[role + 1U])
@@ -61,14 +65,10 @@ overlayPointPrimitiveAt(const void *context, std::size_t index) noexcept {
                           ->pointInstances()[index - source.offsets[role]];
   return {static_cast<std::uint32_t>(index + 1U),
           static_cast<std::uint16_t>(role),
-          SketchStrokeSourceKind::Point,
+          SketchVectorKind::Point,
           true,
           point.positionMetres,
-          point.positionMetres,
-          0.0,
-          0.0,
-          0.0,
-          0U};
+          point.positionMetres};
 }
 
 [[nodiscard]] render::Point2d
@@ -83,20 +83,80 @@ markerPosition(const PreparedSketchMarkers &markers,
     position.y += anchor.positionMetres.y;
   }
   const double count = static_cast<double>(anchors.size());
-  position.x /= count;
-  position.y /= count;
-  return position;
+  return {position.x / count, position.y / count};
 }
 
-[[nodiscard]] SketchStrokeSourcePrimitive
-markerPrimitiveAt(const void *context, std::size_t index) noexcept {
+[[nodiscard]] SketchVectorSourcePrimitive
+markerAt(const void *context, std::size_t index) noexcept {
   const auto &markers = *static_cast<const PreparedSketchMarkers *>(context);
   const SketchMarkerRenderRecord &marker = markers.markers()[index];
+  const auto anchors = markers.markerAnchors(marker.handle);
+  if (marker.kind == render::SketchMarkerKind::SplineControlSegment ||
+      marker.kind == render::SketchMarkerKind::SplineCurvatureSegment)
+    return {marker.handle.value(),
+            static_cast<std::uint16_t>(
+                static_cast<std::uint8_t>(marker.category) - 1U),
+            SketchVectorKind::Line,
+            true,
+            anchors[0].positionMetres,
+            anchors[1].positionMetres};
+  if (marker.kind == render::SketchMarkerKind::SplineControlPole)
+    return {marker.handle.value(),
+            static_cast<std::uint16_t>(
+                static_cast<std::uint8_t>(marker.category) - 1U),
+            SketchVectorKind::Point,
+            true,
+            anchors[0].positionMetres,
+            anchors[0].positionMetres};
+  if (marker.category == render::SketchMarkerCategory::SplineLabel) {
+    SketchVectorSourcePrimitive result;
+    result.sourceKey = marker.handle.value();
+    result.style = static_cast<std::uint16_t>(
+        static_cast<std::uint8_t>(marker.category) - 1U);
+    result.kind = SketchVectorKind::Text;
+    result.visible = true;
+    result.first = anchors[0].positionMetres;
+    result.second = result.first;
+    std::array<char, 32> label{};
+    char *begin = label.data();
+    char *cursor = begin;
+    char *end = label.data() + label.size();
+    if (marker.kind == render::SketchMarkerKind::SplineKnotMultiplicityLabel)
+      *cursor++ = '(';
+    else if (marker.kind == render::SketchMarkerKind::SplinePoleWeightLabel)
+      *cursor++ = '[';
+    const auto formatted =
+        marker.kind == render::SketchMarkerKind::SplinePoleWeightLabel
+            ? std::to_chars(cursor, end - 1, marker.valueSi,
+                            std::chars_format::general, 4)
+            : std::to_chars(cursor, end - 1,
+                            static_cast<unsigned int>(marker.valueSi));
+    if (formatted.ec != std::errc{})
+      return result;
+    cursor = formatted.ptr;
+    if (marker.kind == render::SketchMarkerKind::SplineKnotMultiplicityLabel)
+      *cursor++ = ')';
+    else if (marker.kind == render::SketchMarkerKind::SplinePoleWeightLabel)
+      *cursor++ = ']';
+    result.textLength = static_cast<std::uint8_t>(cursor - begin);
+    std::transform(begin, cursor, result.text.begin(),
+                   [](char value) { return static_cast<std::uint8_t>(value); });
+    result.radius = static_cast<double>(result.textLength) * 7.5;
+    result.secondaryRadius = 12.0;
+    result.screenOffsetYLogicalPixels =
+        marker.kind == render::SketchMarkerKind::SplineKnotMultiplicityLabel
+            ? 12.0
+            : -12.0;
+    result.screenOffsetXLogicalPixels =
+        marker.kind == render::SketchMarkerKind::SplineDegreeLabel ? 14.0
+                                                                   : 0.0;
+    return result;
+  }
   const render::Point2d position = markerPosition(markers, index);
   return {marker.handle.value(),
           static_cast<std::uint16_t>(
               static_cast<std::uint8_t>(marker.category) - 1U),
-          SketchStrokeSourceKind::Glyph,
+          SketchVectorKind::Glyph,
           true,
           position,
           position,
@@ -106,79 +166,91 @@ markerPrimitiveAt(const void *context, std::size_t index) noexcept {
           static_cast<std::uint16_t>(marker.kind)};
 }
 
-template <typename Position>
-[[nodiscard]] SketchStrokeSourceBounds
-decorationBounds(std::size_t count, Position position) noexcept {
-  SketchStrokeSourceBounds bounds;
-  for (std::size_t index = 0U; index < count; ++index) {
-    const render::Point2d point = position(index);
-    if (bounds.empty) {
-      bounds.minimum = point;
-      bounds.maximum = point;
-      bounds.empty = false;
-      continue;
+[[nodiscard]] SketchVectorSourceBounds
+markerBounds(const PreparedSketchMarkers &markers) noexcept {
+  SketchVectorSourceBounds result;
+  for (const SketchMarkerAnchorPoint &anchor : markers.anchors()) {
+    const render::Point2d point = anchor.positionMetres;
+    if (result.empty)
+      result = {point, point, false};
+    else {
+      result.minimum.x = std::min(result.minimum.x, point.x);
+      result.minimum.y = std::min(result.minimum.y, point.y);
+      result.maximum.x = std::max(result.maximum.x, point.x);
+      result.maximum.y = std::max(result.maximum.y, point.y);
     }
-    bounds.minimum.x = std::min(bounds.minimum.x, point.x);
-    bounds.minimum.y = std::min(bounds.minimum.y, point.y);
-    bounds.maximum.x = std::max(bounds.maximum.x, point.x);
-    bounds.maximum.y = std::max(bounds.maximum.y, point.y);
   }
-  return bounds;
+  return result;
 }
 
-[[nodiscard]] Result<std::shared_ptr<const SketchSceneMesh>>
-prepareDecorationMesh(const SketchStrokeMeshSource &source, SketchCurveLod lod,
-                      SketchTessellationOptions tessellation,
-                      SketchUploadOptions upload,
-                      std::shared_ptr<const SketchSceneMesh> reuse,
-                      std::stop_token cancellation) {
+template <typename Position>
+[[nodiscard]] SketchVectorSourceBounds
+decorationBounds(std::size_t count, Position position) noexcept {
+  SketchVectorSourceBounds result;
+  for (std::size_t index = 0U; index < count; ++index) {
+    const render::Point2d point = position(index);
+    if (result.empty)
+      result = {point, point, false};
+    else {
+      result.minimum.x = std::min(result.minimum.x, point.x);
+      result.minimum.y = std::min(result.minimum.y, point.y);
+      result.maximum.x = std::max(result.maximum.x, point.x);
+      result.maximum.y = std::max(result.maximum.y, point.y);
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] Result<std::shared_ptr<const SketchVectorPacket>>
+prepareDecorationPacket(const SketchVectorSource &source,
+                        SketchVectorUploadOptions options,
+                        std::shared_ptr<const SketchVectorPacket> reuse,
+                        std::stop_token cancellation) {
   if (source.primitiveCount == 0U)
-    return std::shared_ptr<const SketchSceneMesh>{};
-  auto built = SketchStrokeMeshBuildAccess::build(
-      source, lod, tessellation, upload, std::move(reuse), cancellation);
+    return std::shared_ptr<const SketchVectorPacket>{};
+  auto built = SketchVectorPacketBuildAccess::build(
+      source, options, std::move(reuse), cancellation);
   if (!built)
     return std::unexpected(std::move(built.error()));
   try {
-    return std::make_shared<const SketchSceneMesh>(std::move(built->mesh));
+    return std::make_shared<const SketchVectorPacket>(std::move(built->packet));
   } catch (const std::bad_alloc &) {
-    return std::unexpected(
-        diagnostic("desktop.sketch.decoration-allocation",
-                   "prepared sketch decoration allocation failed"));
+    return std::unexpected(diagnostic("desktop.sketch.decoration-memory",
+                                      "Sketch decoration ran out of memory"));
   }
 }
 
 [[nodiscard]] Diagnostic cancelled() {
   return diagnostic("desktop.sketch.preparation-cancelled",
-                    "sketch product preparation was cancelled");
+                    "Sketch product preparation was cancelled");
 }
 
-[[nodiscard]] SketchStrokeSourceKind
-sourceKind(render::SketchPrimitiveKind kind) noexcept {
+[[nodiscard]] SketchVectorKind sourceKind(render::SketchPrimitiveKind kind) {
   switch (kind) {
   case render::SketchPrimitiveKind::Point:
-    return SketchStrokeSourceKind::Point;
+    return SketchVectorKind::Point;
   case render::SketchPrimitiveKind::Line:
-    return SketchStrokeSourceKind::Line;
+    return SketchVectorKind::Line;
   case render::SketchPrimitiveKind::Circle:
-    return SketchStrokeSourceKind::Circle;
+    return SketchVectorKind::Circle;
   case render::SketchPrimitiveKind::Arc:
-    return SketchStrokeSourceKind::Arc;
+    return SketchVectorKind::Arc;
   case render::SketchPrimitiveKind::Ellipse:
-    return SketchStrokeSourceKind::Ellipse;
+    return SketchVectorKind::Ellipse;
   case render::SketchPrimitiveKind::EllipticalArc:
-    return SketchStrokeSourceKind::EllipticalArc;
+    return SketchVectorKind::EllipticalArc;
   case render::SketchPrimitiveKind::HyperbolicArc:
-    return SketchStrokeSourceKind::HyperbolicArc;
+    return SketchVectorKind::HyperbolicArc;
   case render::SketchPrimitiveKind::ParabolicArc:
-    return SketchStrokeSourceKind::ParabolicArc;
+    return SketchVectorKind::ParabolicArc;
   case render::SketchPrimitiveKind::BSpline:
-    return SketchStrokeSourceKind::BSpline;
+    return SketchVectorKind::BSpline;
   }
-  return SketchStrokeSourceKind::Point;
+  return SketchVectorKind::Point;
 }
 
-[[nodiscard]] SketchStrokeSourcePrimitive
-provisionalPrimitiveAt(const void *context, std::size_t index) noexcept {
+[[nodiscard]] SketchVectorSourcePrimitive
+provisionalAt(const void *context, std::size_t index) noexcept {
   const auto &primitive =
       static_cast<const render::SketchProvisionalGeometry *>(context)
           ->primitives()[index];
@@ -199,87 +271,99 @@ provisionalPrimitiveAt(const void *context, std::size_t index) noexcept {
           primitive.rotationAngleRadians};
 }
 
-[[nodiscard]] SketchStrokeSourceBounds
+[[nodiscard]] sketch::NurbsView
+provisionalSplineAt(const void *context, std::size_t index) noexcept {
+  const auto &source =
+      *static_cast<const render::SketchProvisionalGeometry *>(context);
+  const render::PackedSketchProvisionalPrimitive primitive =
+      source.primitives()[index];
+  if (primitive.kind != render::SketchPrimitiveKind::BSpline ||
+      primitive.spline >= source.splines().size())
+    return {};
+  const render::PackedSketchSpline spline = source.splines()[primitive.spline];
+  return {source.splineControlPointCoordinates().subspan(
+              static_cast<std::size_t>(spline.firstControlPoint) * 2U,
+              static_cast<std::size_t>(spline.controlPointCount) * 2U),
+          source.splineKnots().subspan(
+              spline.firstKnot,
+              spline.controlPointCount + spline.degree + 1U),
+          source.splineWeights().subspan(spline.firstWeight,
+                                         spline.controlPointCount),
+          spline.degree};
+}
+
+[[nodiscard]] SketchVectorSourceBounds
 provisionalBounds(const render::SketchProvisionalGeometry &source) {
-  SketchStrokeSourceBounds bounds;
+  SketchVectorSourceBounds result;
   for (std::size_t index = 0U; index < source.primitives().size(); ++index) {
-    const SketchStrokeSourcePrimitive primitive =
-        provisionalPrimitiveAt(&source, index);
-    auto current = sketchStrokePrimitiveBounds(primitive);
+    const auto primitive = provisionalAt(&source, index);
+    auto current = sketchVectorPrimitiveBounds(
+        primitive, primitive.kind == SketchVectorKind::BSpline
+                       ? provisionalSplineAt(&source, index)
+                       : sketch::NurbsView{});
     if (!current)
       return {};
-    if (bounds.empty) {
-      bounds = *current;
-      continue;
+    if (result.empty)
+      result = *current;
+    else {
+      result.minimum.x = std::min(result.minimum.x, current->minimum.x);
+      result.minimum.y = std::min(result.minimum.y, current->minimum.y);
+      result.maximum.x = std::max(result.maximum.x, current->maximum.x);
+      result.maximum.y = std::max(result.maximum.y, current->maximum.y);
     }
-    bounds.minimum.x = std::min(bounds.minimum.x, current->minimum.x);
-    bounds.minimum.y = std::min(bounds.minimum.y, current->minimum.y);
-    bounds.maximum.x = std::max(bounds.maximum.x, current->maximum.x);
-    bounds.maximum.y = std::max(bounds.maximum.y, current->maximum.y);
   }
-  return bounds;
+  return result;
 }
 
 [[nodiscard]] Result<std::size_t>
 sumRetained(std::initializer_list<std::size_t> values) {
-  std::size_t total = 0U;
-  for (const std::size_t value : values)
-    if (!detail::checkedSizeAdd(total, value, total))
-      return std::unexpected(
-          diagnostic("desktop.sketch.products-byte-overflow",
-                     "prepared sketch product byte accounting overflowed"));
-  return total;
+  std::size_t result = 0U;
+  for (std::size_t value : values)
+    if (!detail::checkedSizeAdd(result, value, result))
+      return std::unexpected(diagnostic(
+          "desktop.sketch.products-byte-overflow",
+          "Sketch product byte accounting overflowed"));
+  return result;
 }
 
 } // namespace
 
 PreparedSketchProvisional::PreparedSketchProvisional(
     std::shared_ptr<const render::SketchProvisionalGeometry> source,
-    std::shared_ptr<const SketchSceneMesh> mesh,
-    std::vector<SketchStrokePrimitiveSpanRecord> provenance, SketchCurveLod lod,
+    std::shared_ptr<const SketchVectorPacket> packet,
+    std::vector<SketchVectorPrimitiveSpanRecord> provenance,
     PreparedSketchProvisionalMetrics metrics)
-    : source_(std::move(source)), mesh_(std::move(mesh)),
-      provenance_(std::move(provenance)), lod_(lod), metrics_(metrics) {}
+    : source_(std::move(source)), packet_(std::move(packet)),
+      provenance_(std::move(provenance)), metrics_(metrics) {}
 
 Result<std::shared_ptr<const PreparedSketchProvisional>>
 prepareSketchProvisional(
     std::shared_ptr<const render::SketchProvisionalGeometry> source,
-    SketchCurveLod lod, SketchTessellationOptions tessellation,
-    SketchUploadOptions upload,
+    SketchVectorUploadOptions upload,
     std::shared_ptr<const PreparedSketchProvisional> reuse,
     std::stop_token cancellation) {
   if (!source)
-    return std::unexpected(
-        diagnostic("desktop.sketch.null-provisional",
-                   "cannot prepare null provisional sketch geometry"));
+    return std::unexpected(diagnostic("desktop.sketch.null-provisional",
+                                      "Cannot prepare null Sketch preview"));
   if (cancellation.stop_requested())
     return std::unexpected(cancelled());
-  if (reuse && reuse->source() == source && reuse->lod() == lod)
+  if (reuse && reuse->source() == source)
     return reuse;
-
-  const SketchStrokeMeshSource input{
-      provisionalStyles,           source.get(),
-      source->primitives().size(), provisionalPrimitiveAt,
-      provisionalBounds(*source),
-  };
-  auto built = SketchStrokeMeshBuildAccess::build(
-      input, lod, tessellation, upload, reuse ? reuse->mesh() : nullptr,
-      cancellation);
+  const SketchVectorSource input{provisionalStyles,
+                                 source.get(),
+                                 source->primitives().size(),
+                                 provisionalAt,
+                                 provisionalBounds(*source),
+                                 provisionalSplineAt};
+  auto built = SketchVectorPacketBuildAccess::build(
+      input, upload, reuse ? reuse->packet() : nullptr, cancellation);
   if (!built)
     return std::unexpected(std::move(built.error()));
-  if (cancellation.stop_requested())
-    return std::unexpected(cancelled());
-
-  std::size_t provenanceBytes = 0U;
-  if (!detail::checkedSizeMultiply(built->provenance.capacity(),
-                                   sizeof(SketchStrokePrimitiveSpanRecord),
-                                   provenanceBytes))
-    return std::unexpected(
-        diagnostic("desktop.sketch.products-byte-overflow",
-                   "prepared sketch product byte accounting overflowed"));
-  auto retained =
-      sumRetained({sizeof(PreparedSketchProvisional),
-                   built->mesh.metrics().retainedMeshBytes, provenanceBytes});
+  const std::size_t provenanceBytes =
+      built->provenance.capacity() * sizeof(SketchVectorPrimitiveSpanRecord);
+  auto retained = sumRetained({sizeof(PreparedSketchProvisional),
+                               built->packet.metrics().retainedBytes,
+                               provenanceBytes});
   if (!retained)
     return std::unexpected(std::move(retained.error()));
   PreparedSketchProvisionalMetrics metrics{
@@ -289,16 +373,12 @@ prepareSketchProvisional(
     return std::shared_ptr<const PreparedSketchProvisional>(
         new PreparedSketchProvisional{
             std::move(source),
-            std::make_shared<const SketchSceneMesh>(std::move(built->mesh)),
-            std::move(built->provenance), lod, metrics});
+            std::make_shared<const SketchVectorPacket>(
+                std::move(built->packet)),
+            std::move(built->provenance), metrics});
   } catch (const std::bad_alloc &) {
-    return std::unexpected(
-        diagnostic("desktop.sketch.provisional-allocation",
-                   "prepared provisional sketch allocation failed"));
-  } catch (const std::length_error &) {
-    return std::unexpected(
-        diagnostic("desktop.sketch.provisional-budget",
-                   "prepared provisional sketch exceeded container capacity"));
+    return std::unexpected(diagnostic("desktop.sketch.provisional-memory",
+                                      "Sketch preview ran out of memory"));
   }
 }
 
@@ -308,14 +388,14 @@ PreparedSketchProducts::PreparedSketchProducts(
     std::shared_ptr<const PreparedSketchOverlay> overlay,
     std::shared_ptr<const PreparedSketchProvisional> provisional,
     std::shared_ptr<const PreparedSketchMarkers> markers,
-    std::shared_ptr<const SketchSceneMesh> overlayPointMesh,
-    std::shared_ptr<const SketchSceneMesh> markerMesh,
+    std::shared_ptr<const SketchVectorPacket> overlayPointPacket,
+    std::shared_ptr<const SketchVectorPacket> markerPacket,
     PreparedSketchProductsMetrics metrics)
     : source_(std::move(source)), base_(std::move(base)),
       overlay_(std::move(overlay)), provisional_(std::move(provisional)),
       markers_(std::move(markers)),
-      overlayPointMesh_(std::move(overlayPointMesh)),
-      markerMesh_(std::move(markerMesh)), metrics_(metrics) {}
+      overlayPointPacket_(std::move(overlayPointPacket)),
+      markerPacket_(std::move(markerPacket)), metrics_(metrics) {}
 
 Result<std::shared_ptr<const PreparedSketchProducts>>
 PreparedSketchProducts::create(
@@ -335,69 +415,50 @@ PreparedSketchProducts::createPrepared(
     std::shared_ptr<const PreparedSketchOverlay> overlay,
     std::shared_ptr<const PreparedSketchProvisional> provisional,
     std::shared_ptr<const PreparedSketchMarkers> markers,
-    std::shared_ptr<const SketchSceneMesh> overlayPointMesh,
-    std::shared_ptr<const SketchSceneMesh> markerMesh) {
+    std::shared_ptr<const SketchVectorPacket> overlayPointPacket,
+    std::shared_ptr<const SketchVectorPacket> markerPacket) {
   if (!source || !base)
     return std::unexpected(diagnostic(
         "desktop.sketch.products-null-component",
-        "prepared sketch products require source and base components"));
+        "Sketch products require source and base components"));
   if (auto valid = validateSketchSceneProducts(*source); !valid)
     return std::unexpected(std::move(valid.error()));
-  if (base->scene() != source->scene)
-    return std::unexpected(diagnostic(
-        "desktop.sketch.products-prepared-base",
-        "prepared sketch base does not retain the exact source scene"));
-  if (static_cast<bool>(overlay) != static_cast<bool>(source->overlay) ||
-      (overlay &&
-       (overlay->source() != source->overlay || overlay->base() != base)))
-    return std::unexpected(diagnostic(
-        "desktop.sketch.products-prepared-overlay",
-        "prepared sketch overlay does not match its product source"));
-  if (static_cast<bool>(provisional) !=
+  if (base->scene() != source->scene ||
+      static_cast<bool>(overlay) != static_cast<bool>(source->overlay) ||
+      static_cast<bool>(provisional) !=
           static_cast<bool>(source->provisional) ||
-      (provisional && (provisional->source() != source->provisional ||
-                       provisional->lod() != base->lod())))
-    return std::unexpected(diagnostic(
-        "desktop.sketch.products-prepared-provisional",
-        "prepared provisional geometry does not match its product source"));
-  if (static_cast<bool>(markers) != static_cast<bool>(source->markers) ||
+      static_cast<bool>(markers) != static_cast<bool>(source->markers) ||
+      (overlay &&
+       (overlay->source() != source->overlay || overlay->base() != base)) ||
+      (provisional && provisional->source() != source->provisional) ||
       (markers &&
        (markers->source() != source->markers || markers->base() != base)))
-    return std::unexpected(diagnostic(
-        "desktop.sketch.products-prepared-markers",
-        "prepared sketch markers do not match their product source"));
-  const bool requiresOverlayPointMesh =
+    return std::unexpected(diagnostic("desktop.sketch.products-mismatch",
+                                      "Prepared Sketch products do not match"));
+  const bool needsOverlayPoints =
       overlay && overlay->metrics().pointInstanceCount != 0U;
-  if (static_cast<bool>(overlayPointMesh) != requiresOverlayPointMesh ||
-      (overlayPointMesh && overlayPointMesh->lod() != base->lod()))
-    return std::unexpected(
-        diagnostic("desktop.sketch.products-prepared-overlay-point-mesh",
-                   "prepared sketch overlay point mesh does not match its "
-                   "product source"));
-  const bool requiresMarkerMesh =
-      markers && markers->metrics().markerCount != 0U;
-  if (static_cast<bool>(markerMesh) != requiresMarkerMesh ||
-      (markerMesh && markerMesh->lod() != base->lod()))
+  const bool needsMarkers = markers && markers->metrics().markerCount != 0U;
+  if (static_cast<bool>(overlayPointPacket) != needsOverlayPoints ||
+      static_cast<bool>(markerPacket) != needsMarkers)
     return std::unexpected(diagnostic(
-        "desktop.sketch.products-prepared-marker-mesh",
-        "prepared sketch marker mesh does not match its product source"));
-
+        "desktop.sketch.decoration-packet-mismatch",
+        "Sketch decoration packets do not match their sources"));
   PreparedSketchProductsMetrics metrics;
   metrics.baseRetainedBytes = base->metrics().totalRetainedBytes;
   metrics.overlayRetainedBytes =
       overlay ? overlay->metrics().retainedBytes : 0U;
+  metrics.overlayPointPacketRetainedBytes =
+      overlayPointPacket ? overlayPointPacket->metrics().retainedBytes : 0U;
   metrics.provisionalRetainedBytes =
       provisional ? provisional->metrics().retainedBytes : 0U;
   metrics.markerRetainedBytes = markers ? markers->metrics().retainedBytes : 0U;
-  metrics.overlayPointMeshRetainedBytes =
-      overlayPointMesh ? overlayPointMesh->metrics().retainedMeshBytes : 0U;
-  metrics.markerMeshRetainedBytes =
-      markerMesh ? markerMesh->metrics().retainedMeshBytes : 0U;
+  metrics.markerPacketRetainedBytes =
+      markerPacket ? markerPacket->metrics().retainedBytes : 0U;
   auto retained = sumRetained(
       {sizeof(PreparedSketchProducts), metrics.baseRetainedBytes,
-       metrics.overlayRetainedBytes, metrics.overlayPointMeshRetainedBytes,
+       metrics.overlayRetainedBytes, metrics.overlayPointPacketRetainedBytes,
        metrics.provisionalRetainedBytes, metrics.markerRetainedBytes,
-       metrics.markerMeshRetainedBytes});
+       metrics.markerPacketRetainedBytes});
   if (!retained)
     return std::unexpected(std::move(retained.error()));
   metrics.totalRetainedBytes = *retained;
@@ -406,35 +467,33 @@ PreparedSketchProducts::createPrepared(
         new PreparedSketchProducts{
             std::move(source), std::move(base), std::move(overlay),
             std::move(provisional), std::move(markers),
-            std::move(overlayPointMesh), std::move(markerMesh), metrics});
+            std::move(overlayPointPacket), std::move(markerPacket), metrics});
   } catch (const std::bad_alloc &) {
-    return std::unexpected(
-        diagnostic("desktop.sketch.products-allocation",
-                   "prepared sketch product packet allocation failed"));
+    return std::unexpected(diagnostic("desktop.sketch.products-memory",
+                                      "Sketch products ran out of memory"));
   }
 }
 
-Result<std::shared_ptr<const PreparedSketchProducts>>
-prepareSketchProducts(std::shared_ptr<const SketchSceneProducts> source,
-                      SketchCurveLod lod,
-                      SketchProductPreparationOptions options,
-                      std::shared_ptr<const PreparedSketchProducts> reuse,
-                      std::stop_token cancellation) {
+Result<std::shared_ptr<const PreparedSketchProducts>> prepareSketchProducts(
+    std::shared_ptr<const SketchSceneProducts> source,
+    SketchProductPreparationOptions options,
+    std::shared_ptr<const PreparedSketchProducts> reuse,
+    std::stop_token cancellation) {
   if (!source)
     return std::unexpected(diagnostic("desktop.sketch.null-products",
-                                      "cannot prepare null sketch products"));
+                                      "Cannot prepare null Sketch products"));
   if (auto valid = validateSketchSceneProducts(*source); !valid)
     return std::unexpected(std::move(valid.error()));
   if (cancellation.stop_requested())
     return std::unexpected(cancelled());
 
   std::shared_ptr<const PreparedSketchScene> base;
-  if (reuse && reuse->source()->scene == source->scene && reuse->lod() == lod) {
+  if (reuse && reuse->source()->scene == source->scene)
     base = reuse->base();
-  } else {
+  else {
     auto prepared = prepareSketchScene(
-        source->scene, lod, options.tessellation, options.picking,
-        options.upload, reuse ? reuse->base() : nullptr, cancellation);
+        source->scene, options.picking, options.upload,
+        reuse ? reuse->base() : nullptr, cancellation);
     if (!prepared)
       return std::unexpected(std::move(prepared.error()));
     base = std::move(*prepared);
@@ -443,9 +502,9 @@ prepareSketchProducts(std::shared_ptr<const SketchSceneProducts> source,
   std::shared_ptr<const PreparedSketchOverlay> overlay;
   if (source->overlay) {
     if (reuse && reuse->source()->overlay == source->overlay &&
-        reuse->overlay() && reuse->overlay()->base() == base) {
+        reuse->overlay() && reuse->overlay()->base() == base)
       overlay = reuse->overlay();
-    } else {
+    else {
       auto prepared = prepareSketchOverlay(
           source->overlay, base, options.overlay,
           reuse ? reuse->overlay() : nullptr, cancellation);
@@ -455,51 +514,39 @@ prepareSketchProducts(std::shared_ptr<const SketchSceneProducts> source,
     }
   }
 
-  std::shared_ptr<const SketchSceneMesh> overlayPointMesh;
+  std::shared_ptr<const SketchVectorPacket> overlayPoints;
   if (overlay && overlay->metrics().pointInstanceCount != 0U) {
-    const bool exactReuse = reuse && reuse->overlay() == overlay &&
-                            reuse->lod() == lod && reuse->overlayPointMesh();
-    if (exactReuse) {
-      overlayPointMesh = reuse->overlayPointMesh();
-    } else {
-      OverlayPointMeshContext context;
+    if (reuse && reuse->overlay() == overlay && reuse->overlayPointPacket())
+      overlayPoints = reuse->overlayPointPacket();
+    else {
+      OverlayPointContext context;
       context.overlay = overlay.get();
-      for (std::size_t role = 0U; role < overlay->roleSets().size(); ++role) {
-        const std::size_t count =
+      for (std::size_t role = 0U; role < overlay->roleSets().size(); ++role)
+        context.offsets[role + 1U] =
+            context.offsets[role] +
             overlay->roleSets()[role]->pointInstances().size();
-        if (!detail::checkedSizeAdd(context.offsets[role], count,
-                                    context.offsets[role + 1U]) ||
-            context.offsets[role + 1U] >
-                std::numeric_limits<std::uint32_t>::max())
-          return std::unexpected(
-              diagnostic("desktop.sketch.overlay-point-mesh-count-overflow",
-                         "prepared sketch overlay point count exceeds packed "
-                         "identity capacity"));
-      }
-      const SketchStrokeMeshSource pointSource{
+      const SketchVectorSource pointSource{
           overlayPointStyles,
           &context,
           context.offsets.back(),
-          overlayPointPrimitiveAt,
-          decorationBounds(
-              context.offsets.back(),
-              [&](std::size_t index) {
-                return overlayPointPrimitiveAt(&context, index).first;
-              }),
-      };
-      auto prepared = prepareDecorationMesh(
-          pointSource, lod, options.tessellation, options.upload,
-          reuse ? reuse->overlayPointMesh() : nullptr, cancellation);
+          overlayPointAt,
+          decorationBounds(context.offsets.back(), [&](std::size_t index) {
+            return overlayPointAt(&context, index).first;
+          }),
+          nullptr};
+      auto prepared = prepareDecorationPacket(
+          pointSource, options.upload,
+          reuse ? reuse->overlayPointPacket() : nullptr, cancellation);
       if (!prepared)
         return std::unexpected(std::move(prepared.error()));
-      overlayPointMesh = std::move(*prepared);
+      overlayPoints = std::move(*prepared);
     }
   }
 
   std::shared_ptr<const PreparedSketchProvisional> provisional;
   if (source->provisional) {
     auto prepared = prepareSketchProvisional(
-        source->provisional, lod, options.tessellation, options.upload,
+        source->provisional, options.upload,
         reuse ? reuse->provisional() : nullptr, cancellation);
     if (!prepared)
       return std::unexpected(std::move(prepared.error()));
@@ -509,9 +556,9 @@ prepareSketchProducts(std::shared_ptr<const SketchSceneProducts> source,
   std::shared_ptr<const PreparedSketchMarkers> markers;
   if (source->markers) {
     if (reuse && reuse->source()->markers == source->markers &&
-        reuse->markers() && reuse->markers()->base() == base) {
+        reuse->markers() && reuse->markers()->base() == base)
       markers = reuse->markers();
-    } else {
+    else {
       auto prepared = prepareSketchMarkers(
           source->markers, base, options.markers,
           reuse ? reuse->markers() : nullptr, cancellation);
@@ -521,38 +568,32 @@ prepareSketchProducts(std::shared_ptr<const SketchSceneProducts> source,
     }
   }
 
-  std::shared_ptr<const SketchSceneMesh> markerMesh;
+  std::shared_ptr<const SketchVectorPacket> markerPacket;
   if (markers && markers->metrics().markerCount != 0U) {
-    const bool exactReuse = reuse && reuse->markers() == markers &&
-                            reuse->lod() == lod && reuse->markerMesh();
-    if (exactReuse) {
-      markerMesh = reuse->markerMesh();
-    } else {
-      const SketchStrokeMeshSource markerSource{
+    if (reuse && reuse->markers() == markers && reuse->markerPacket())
+      markerPacket = reuse->markerPacket();
+    else {
+      const SketchVectorSource markerSource{
           markerStyles,
           markers.get(),
           markers->markers().size(),
-          markerPrimitiveAt,
-          decorationBounds(markers->markers().size(),
-                           [&](std::size_t index) {
-                             return markerPosition(*markers, index);
-                           }),
-      };
-      auto prepared = prepareDecorationMesh(
-          markerSource, lod, options.tessellation, options.upload,
-          reuse ? reuse->markerMesh() : nullptr, cancellation);
+          markerAt,
+          markerBounds(*markers),
+          nullptr};
+      auto prepared = prepareDecorationPacket(
+          markerSource, options.upload,
+          reuse ? reuse->markerPacket() : nullptr, cancellation);
       if (!prepared)
         return std::unexpected(std::move(prepared.error()));
-      markerMesh = std::move(*prepared);
+      markerPacket = std::move(*prepared);
     }
   }
   if (cancellation.stop_requested())
     return std::unexpected(cancelled());
-
   return PreparedSketchProducts::createPrepared(
       std::move(source), std::move(base), std::move(overlay),
-      std::move(provisional), std::move(markers), std::move(overlayPointMesh),
-      std::move(markerMesh));
+      std::move(provisional), std::move(markers), std::move(overlayPoints),
+      std::move(markerPacket));
 }
 
 } // namespace kearne::ui

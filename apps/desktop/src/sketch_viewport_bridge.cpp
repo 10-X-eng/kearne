@@ -3,14 +3,21 @@
 #include "sketch_provisional_projection.hpp"
 #include "ui_session.hpp"
 
+#include <kearne/sketch/nurbs.hpp>
+
 #include <QByteArrayView>
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QEventLoop>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QThread>
+#include <QtEndian>
 
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cmath>
 #include <limits>
 #include <new>
 #include <span>
@@ -64,6 +71,16 @@ constexpr std::array overlayRoles{
     render::SketchOverlayRole::Diagnostic,
 };
 
+constexpr std::uint8_t controlPolygonAnnotation = 1U << 0U;
+constexpr std::uint8_t curvatureCombAnnotation = 1U << 1U;
+constexpr std::uint8_t degreeLabelAnnotation = 1U << 2U;
+constexpr std::uint8_t knotLabelAnnotation = 1U << 3U;
+constexpr std::uint8_t weightLabelAnnotation = 1U << 4U;
+
+bool hasAnnotation(std::uint8_t annotations, std::uint8_t annotation) {
+  return (annotations & annotation) != 0U;
+}
+
 render::SketchPickTargets pickTargets(SketchSelectionKind selection) {
   switch (selection) {
   case SketchSelectionKind::Point:
@@ -80,7 +97,8 @@ Result<SketchProductDigest> productDigest(
     const render::SketchSceneSnapshot &scene,
     const std::shared_ptr<const render::SketchPresentationOverlay> &overlay,
     const std::shared_ptr<const render::SketchProvisionalGeometry>
-        &provisional) {
+        &provisional,
+    const std::shared_ptr<const render::SketchMarkerPacket> &markers) {
   QCryptographicHash hash{QCryptographicHash::Sha256};
   const auto append = [&hash](bool present,
                               std::span<const std::uint8_t> bytes) {
@@ -97,6 +115,9 @@ Result<SketchProductDigest> productDigest(
   append(static_cast<bool>(provisional),
          provisional ? provisional->stamp().payload.bytes()
                      : std::span<const std::uint8_t>{});
+  append(static_cast<bool>(markers),
+         markers ? markers->stamp().payload.bytes()
+                 : std::span<const std::uint8_t>{});
   const QByteArray hashed = hash.result();
   SketchProductDigest::Bytes bytes{};
   if (hashed.size() != static_cast<qsizetype>(bytes.size()))
@@ -107,6 +128,287 @@ Result<SketchProductDigest> productDigest(
   std::transform(hashed.cbegin(), hashed.cend(), bytes.begin(),
                  [](char value) { return static_cast<std::uint8_t>(value); });
   return SketchProductDigest::fromBytes("sha256", bytes);
+}
+
+template <typename Value>
+void appendDigestValue(QCryptographicHash &hash, Value value) {
+  const Value encoded = qToBigEndian(value);
+  hash.addData(QByteArrayView{reinterpret_cast<const char *>(&encoded),
+                              static_cast<qsizetype>(sizeof(encoded))});
+}
+
+Result<render::SketchMarkerDigest> splineAnnotationDigest(
+    const render::SketchSceneSnapshot &scene,
+    std::span<const render::SketchMarkerAnchor> anchors,
+    std::span<const render::PackedSketchMarker> markers) {
+  QCryptographicHash hash{QCryptographicHash::Sha256};
+  hash.addData(QByteArrayView{
+      reinterpret_cast<const char *>(scene.stamp().digest.bytes().data()),
+      static_cast<qsizetype>(scene.stamp().digest.bytes().size())});
+  for (const render::PackedSketchMarker &marker : markers) {
+    appendDigestValue(hash, marker.handle.value());
+    appendDigestValue(hash, static_cast<std::uint8_t>(marker.kind));
+    appendDigestValue(hash, marker.firstAnchor);
+    appendDigestValue(hash, marker.anchorCount);
+    appendDigestValue(hash, std::bit_cast<std::uint64_t>(marker.valueSi));
+  }
+  for (const render::SketchMarkerAnchor &anchor : anchors) {
+    const auto *canonical =
+        std::get_if<render::SketchCanonicalMarkerAnchor>(&anchor);
+    if (!canonical)
+      return std::unexpected(diagnostic(
+          "desktop.sketch.annotation-anchor",
+          "spline annotations require canonical anchors"));
+    appendDigestValue(hash, std::bit_cast<std::uint64_t>(canonical->point.x));
+    appendDigestValue(hash, std::bit_cast<std::uint64_t>(canonical->point.y));
+  }
+  const QByteArray hashed = hash.result();
+  render::SketchMarkerDigest::Bytes bytes{};
+  if (hashed.size() != static_cast<qsizetype>(bytes.size()))
+    return std::unexpected(diagnostic(
+        "desktop.sketch.annotation-digest",
+        "spline annotation digest has an unexpected size",
+        Severity::Fatal));
+  std::transform(hashed.cbegin(), hashed.cend(), bytes.begin(),
+                 [](char value) { return static_cast<std::uint8_t>(value); });
+  return render::SketchMarkerDigest::fromBytes("sha256", bytes);
+}
+
+Result<std::shared_ptr<const render::SketchMarkerPacket>>
+splineAnnotationMarkers(
+    const std::shared_ptr<const render::SketchSceneSnapshot> &scene,
+    QStringView selectedEntity, std::uint8_t annotations,
+    render::SketchMarkerGeneration generation) {
+  const bool controlPolygon =
+      hasAnnotation(annotations, controlPolygonAnnotation);
+  const bool curvatureComb =
+      hasAnnotation(annotations, curvatureCombAnnotation);
+  const bool degreeLabel = hasAnnotation(annotations, degreeLabelAnnotation);
+  const bool knotLabels = hasAnnotation(annotations, knotLabelAnnotation);
+  const bool weightLabels = hasAnnotation(annotations, weightLabelAnnotation);
+  const auto entity =
+      SketchEntityId::parse(selectedEntity.toString().toStdString());
+  const render::PackedSketchPrimitive *primitive =
+      entity ? scene->findPrimitive(*entity) : nullptr;
+  if (!primitive || primitive->kind != render::SketchPrimitiveKind::BSpline ||
+      primitive->spline >= scene->splines().size())
+    return std::unexpected(diagnostic(
+        "desktop.sketch.annotation-target",
+        "spline annotations require one evaluated B-spline"));
+  const render::PackedSketchSpline spline =
+      scene->splines()[primitive->spline];
+  const std::size_t count = spline.controlPointCount;
+  const std::size_t first = spline.firstControlPoint;
+  const auto coordinates = scene->splineControlPointCoordinates();
+  if (count < 2U || first > coordinates.size() / 2U ||
+      count > coordinates.size() / 2U - first)
+    return std::unexpected(diagnostic(
+        "desktop.sketch.annotation-control-range",
+        "spline annotations have an invalid control-point range"));
+  const std::size_t knotCount = count + spline.degree + 1U;
+  const auto knots = scene->splineKnots();
+  const auto weights = scene->splineWeights();
+  if (spline.firstKnot > knots.size() ||
+      knotCount > knots.size() - spline.firstKnot ||
+      spline.firstWeight > weights.size() ||
+      count > weights.size() - spline.firstWeight)
+    return std::unexpected(diagnostic(
+        "desktop.sketch.annotation-spline-range",
+        "spline annotations have invalid knot or weight ranges"));
+  const sketch::NurbsView curve{
+      coordinates.subspan(first * 2U, count * 2U),
+      knots.subspan(spline.firstKnot, knotCount),
+      weights.subspan(spline.firstWeight, count), spline.degree};
+
+  std::vector<render::SketchMarkerAnchor> anchors;
+  std::vector<render::PackedSketchMarker> markers;
+  constexpr std::size_t maximumCombSamples = 65U;
+  anchors.reserve((controlPolygon ? count * 3U - 2U : 0U) +
+                  (curvatureComb ? maximumCombSamples * 4U - 2U : 0U) +
+                  (degreeLabel ? 1U : 0U) +
+                  (knotLabels ? knotCount : 0U) +
+                  (weightLabels ? count : 0U));
+  markers.reserve((controlPolygon ? count * 2U - 1U : 0U) +
+                  (curvatureComb ? maximumCombSamples * 2U - 1U : 0U) +
+                  (degreeLabel ? 1U : 0U) +
+                  (knotLabels ? knotCount : 0U) +
+                  (weightLabels ? count : 0U));
+  const auto point = [&](std::size_t index) {
+    const std::size_t coordinate = (first + index) * 2U;
+    return render::Point2d{coordinates[coordinate],
+                           coordinates[coordinate + 1U]};
+  };
+  const auto appendMarker = [&](render::SketchMarkerKind kind,
+                                std::span<const render::Point2d> points,
+                                double markerValue = 0.0)
+      -> Result<void> {
+    if (markers.size() >= std::numeric_limits<std::uint32_t>::max() ||
+        anchors.size() > std::numeric_limits<std::uint32_t>::max() -
+                             points.size())
+      return std::unexpected(diagnostic(
+          "desktop.sketch.annotation-count",
+          "spline annotations exceed packed marker limits"));
+    auto handle = render::SketchMarkerHandle::create(
+        static_cast<std::uint32_t>(markers.size() + 1U));
+    if (!handle)
+      return std::unexpected(std::move(handle.error()));
+    const std::uint32_t firstAnchor =
+        static_cast<std::uint32_t>(anchors.size());
+    for (const render::Point2d value : points)
+      anchors.emplace_back(render::SketchCanonicalMarkerAnchor{value});
+    markers.push_back({*handle, std::nullopt, firstAnchor,
+                       static_cast<std::uint8_t>(points.size()), kind,
+                       markerValue});
+    return {};
+  };
+  if (controlPolygon) {
+    for (std::size_t index = 1U; index < count; ++index) {
+      const std::array segment{point(index - 1U), point(index)};
+      if (auto appended = appendMarker(
+              render::SketchMarkerKind::SplineControlSegment, segment);
+          !appended)
+        return std::unexpected(std::move(appended.error()));
+    }
+    for (std::size_t index = 0U; index < count; ++index) {
+      const std::array pole{point(index)};
+      if (auto appended =
+              appendMarker(render::SketchMarkerKind::SplineControlPole, pole);
+          !appended)
+        return std::unexpected(std::move(appended.error()));
+    }
+  }
+
+  if (curvatureComb) {
+    const auto [firstParameter, lastParameter] = sketch::nurbsDomain(curve);
+    const std::size_t sampleCount =
+        std::clamp(count * 8U, std::size_t{17U}, maximumCombSamples);
+    struct CurvatureSample {
+      render::Point2d point;
+      render::Point2d normal;
+      double curvature = 0.0;
+    };
+    std::vector<CurvatureSample> samples;
+    samples.reserve(sampleCount);
+    double maximumCurvature = 0.0;
+    double minimumX = std::numeric_limits<double>::infinity();
+    double minimumY = std::numeric_limits<double>::infinity();
+    double maximumX = -std::numeric_limits<double>::infinity();
+    double maximumY = -std::numeric_limits<double>::infinity();
+    for (std::size_t index = 0U; index < count; ++index) {
+      const render::Point2d value = point(index);
+      minimumX = std::min(minimumX, value.x);
+      minimumY = std::min(minimumY, value.y);
+      maximumX = std::max(maximumX, value.x);
+      maximumY = std::max(maximumY, value.y);
+    }
+    for (std::size_t index = 0U; index < sampleCount; ++index) {
+      const double parameter = std::lerp(
+          firstParameter, lastParameter,
+          static_cast<double>(index) / static_cast<double>(sampleCount - 1U));
+      const sketch::NurbsPoint value = sketch::evaluateNurbs(curve, parameter);
+      const sketch::NurbsPoint firstDerivative =
+          sketch::differentiateNurbs(curve, parameter);
+      const sketch::NurbsPoint secondDerivative =
+          sketch::differentiateNurbsSecond(curve, parameter);
+      const double speed = std::hypot(firstDerivative.x, firstDerivative.y);
+      if (!std::isfinite(value.x) || !std::isfinite(value.y) ||
+          !std::isfinite(speed) || speed <= 0.0)
+        continue;
+      const double curvature =
+          (firstDerivative.x * secondDerivative.y -
+           firstDerivative.y * secondDerivative.x) /
+          (speed * speed * speed);
+      if (!std::isfinite(curvature))
+        continue;
+      samples.push_back({{value.x, value.y},
+                         {-firstDerivative.y / speed,
+                          firstDerivative.x / speed},
+                         curvature});
+      maximumCurvature = std::max(maximumCurvature, std::abs(curvature));
+    }
+    const double span = std::max(maximumX - minimumX, maximumY - minimumY);
+    if (maximumCurvature > 0.0 && std::isfinite(span) && span > 0.0) {
+      const double scale = span * 0.22 / maximumCurvature;
+      std::vector<render::Point2d> tips;
+      tips.reserve(samples.size());
+      for (const CurvatureSample &sample : samples) {
+        const render::Point2d tip{
+            sample.point.x + sample.normal.x * sample.curvature * scale,
+            sample.point.y + sample.normal.y * sample.curvature * scale};
+        tips.push_back(tip);
+        if (std::abs(sample.curvature) <= maximumCurvature * 1.0e-12)
+          continue;
+        const std::array segment{sample.point, tip};
+        if (auto appended = appendMarker(
+                render::SketchMarkerKind::SplineCurvatureSegment, segment);
+            !appended)
+          return std::unexpected(std::move(appended.error()));
+      }
+      for (std::size_t index = 1U; index < tips.size(); ++index) {
+        if (tips[index] == tips[index - 1U])
+          continue;
+        const std::array segment{tips[index - 1U], tips[index]};
+        if (auto appended = appendMarker(
+                render::SketchMarkerKind::SplineCurvatureSegment, segment);
+            !appended)
+          return std::unexpected(std::move(appended.error()));
+      }
+    }
+  }
+  if (degreeLabel) {
+    render::Point2d centroid;
+    for (std::size_t index = 0U; index < count; ++index) {
+      centroid.x += point(index).x;
+      centroid.y += point(index).y;
+    }
+    centroid.x /= static_cast<double>(count);
+    centroid.y /= static_cast<double>(count);
+    const std::array position{centroid};
+    if (auto appended =
+            appendMarker(render::SketchMarkerKind::SplineDegreeLabel,
+                         position, static_cast<double>(spline.degree));
+        !appended)
+      return std::unexpected(std::move(appended.error()));
+  }
+  if (knotLabels) {
+    const auto [firstParameter, lastParameter] = sketch::nurbsDomain(curve);
+    std::size_t index = 0U;
+    while (index < curve.knots.size()) {
+      std::size_t finish = index + 1U;
+      while (finish < curve.knots.size() &&
+             curve.knots[finish] == curve.knots[index])
+        ++finish;
+      const double parameter = curve.knots[index];
+      if (parameter >= firstParameter && parameter <= lastParameter) {
+        const sketch::NurbsPoint evaluated =
+            sketch::evaluateNurbs(curve, parameter);
+        const std::array position{render::Point2d{evaluated.x, evaluated.y}};
+        if (auto appended = appendMarker(
+                render::SketchMarkerKind::SplineKnotMultiplicityLabel,
+                position, static_cast<double>(finish - index));
+            !appended)
+          return std::unexpected(std::move(appended.error()));
+      }
+      index = finish;
+    }
+  }
+  if (weightLabels) {
+    for (std::size_t index = 0U; index < count; ++index) {
+      const std::array position{point(index)};
+      if (auto appended = appendMarker(
+              render::SketchMarkerKind::SplinePoleWeightLabel, position,
+              curve.weights[index]);
+          !appended)
+        return std::unexpected(std::move(appended.error()));
+    }
+  }
+  auto digest = splineAnnotationDigest(*scene, anchors, markers);
+  if (!digest)
+    return std::unexpected(std::move(digest.error()));
+  return render::SketchMarkerPacket::create(
+      {{scene->stamp(), std::nullopt, std::nullopt, std::nullopt}, generation,
+       *digest},
+      scene, nullptr, anchors, markers);
 }
 
 } // namespace
@@ -156,13 +458,19 @@ Result<void> SketchViewportBridge::initialize() {
                    [this] { synchronizeGeometry(); });
   QObject::connect(&host_, &QQuickItem::heightChanged, this,
                    [this] { synchronizeGeometry(); });
+  QObject::connect(&host_, &QQuickItem::windowChanged, this,
+                   [this](QQuickWindow *window) { subscribeToWindow(window); });
+  subscribeToWindow(host_.window());
   QObject::connect(&session_, &UiSession::projectionChanged, this,
+                   [this] { record(publishProjection()); });
+  QObject::connect(&session_, &UiSession::sketchGesturePreviewChanged, this,
                    [this] { record(publishProjection()); });
   QObject::connect(&camera_, &SketchCameraController::cameraChanged, this,
                    [this] { record(publishCamera()); });
   session_.setSketchPickHandler([this](QPointF point, double tolerance,
                                        SketchSelectionKind selection)
                                     -> std::optional<SketchPickSelection> {
+    lastPickItemPoint_ = point;
     auto evidence =
         publication_->pick(point, tolerance, pickTargets(selection));
     if (!evidence || !evidence->item.hit)
@@ -176,6 +484,12 @@ Result<void> SketchViewportBridge::initialize() {
   });
   session_.setSketchHoverHandler(
       [this](std::optional<SketchPickSelection> selection) {
+        if (selection)
+          lastHoverItemPoint_ = lastPickItemPoint_;
+        else {
+          lastHoverItemPoint_.reset();
+          hoverRepickPending_ = false;
+        }
         const std::optional<std::pair<QString, QString>> identity =
             selection ? std::optional{std::pair{selection->entityId,
                                                 selection->pointKey}}
@@ -215,18 +529,26 @@ Result<void> SketchViewportBridge::publishCamera() {
 }
 
 Result<void> SketchViewportBridge::publishProjection() {
+  item_->setPipelineWarmup(
+      {.lowDegreeNurbs =
+           session_.activeCommandId() == QStringLiteral("sketch.join") ||
+           session_.activeCommandId() ==
+               QStringLiteral("sketch.bspline.convert-to-nurbs"),
+       .generalNurbs = false});
   const auto nextScene = session_.sketchScene();
   const bool sceneChanged = nextScene != publishedScene_;
   const bool sameSemanticTarget =
       nextScene && publishedScene_ &&
       nextScene->stamp().target == publishedScene_->stamp().target;
+  if (sceneChanged && !sameSemanticTarget)
+    hoverRepickPending_ = hovered_.has_value() && lastHoverItemPoint_.has_value();
   const auto retainedHover =
       !sceneChanged || sameSemanticTarget ? hovered_ : std::nullopt;
   if (auto scene = publishScene(); !scene)
     return scene;
   if (auto provisional = publishProvisional(); !provisional)
     return provisional;
-  return publishOverlay(retainedHover, session_.selectedSketchEntityIds());
+  return publishOverlay(retainedHover, session_.selectedSketchScopes());
 }
 
 Result<void> SketchViewportBridge::publishScene() {
@@ -237,12 +559,16 @@ Result<void> SketchViewportBridge::publishScene() {
     publishedScene_.reset();
     overlay_.reset();
     provisional_.reset();
+    markers_.reset();
     overlayRoleSets_ = {};
     hovered_.reset();
     selected_.clear();
     publishedDraft_.clear();
     provisionalCommand_.clear();
+    requestedProducts_.reset();
+    hoverRepickPending_ = false;
     presentationPublished_ = false;
+    splineAnnotationsPublished_ = 0U;
     item_->clearPresentation();
     return {};
   }
@@ -255,11 +581,13 @@ Result<void> SketchViewportBridge::publishScene() {
   publishedScene_ = scene;
   overlay_.reset();
   provisional_.reset();
+  markers_.reset();
   overlayRoleSets_ = {};
   hovered_.reset();
   selected_.clear();
   publishedDraft_.clear();
   presentationPublished_ = false;
+  splineAnnotationsPublished_ = 0U;
   return {};
 }
 
@@ -272,6 +600,8 @@ Result<void> SketchViewportBridge::publishProvisional() {
     if (primitive.draft)
       draft.push_back(primitive);
   }
+  const auto gesture = session_.sketchGesturePreviewPrimitives();
+  draft.insert(draft.end(), gesture.begin(), gesture.end());
   const QString command = session_.activeCommandId();
   if (command != provisionalCommand_) {
     if (toolInstanceGeneration_ == std::numeric_limits<std::uint64_t>::max())
@@ -325,17 +655,42 @@ Result<void> SketchViewportBridge::publishProvisional() {
 
 Result<void> SketchViewportBridge::publishOverlay(
     std::optional<std::pair<QString, QString>> hover,
-    std::span<const QString> selected) {
-  const std::vector<QString> selectedIdentities{selected.begin(),
-                                                selected.end()};
-  if (hover == hovered_ && selectedIdentities == selected_ &&
-      presentationPublished_)
-    return {};
+    std::span<const SketchSelectionScope> selected) {
+  const std::vector<SketchSelectionScope> selectedSelections{selected.begin(),
+                                                              selected.end()};
   if (!publishedScene_)
+    return {};
+  const bool selectedBSpline = selectedSelections.size() == 1U &&
+                               selectedSelections.front().pointKey.isEmpty() &&
+                               [&] {
+        const auto entity = SketchEntityId::parse(
+            selectedSelections.front().entityId.toStdString());
+        const render::PackedSketchPrimitive *primitive =
+            entity ? publishedScene_->findPrimitive(*entity) : nullptr;
+        return primitive &&
+               primitive->kind == render::SketchPrimitiveKind::BSpline;
+      }();
+  std::uint8_t requestedAnnotations = 0U;
+  if (selectedBSpline) {
+    if (session_.sketchControlPolygonVisible())
+      requestedAnnotations |= controlPolygonAnnotation;
+    if (session_.sketchCurvatureCombVisible())
+      requestedAnnotations |= curvatureCombAnnotation;
+    if (session_.sketchDegreeLabelsVisible())
+      requestedAnnotations |= degreeLabelAnnotation;
+    if (session_.sketchKnotLabelsVisible())
+      requestedAnnotations |= knotLabelAnnotation;
+    if (session_.sketchWeightLabelsVisible())
+      requestedAnnotations |= weightLabelAnnotation;
+  }
+  if (hover == hovered_ && selectedSelections == selected_ &&
+      requestedAnnotations == splineAnnotationsPublished_ &&
+      (requestedAnnotations == 0U || markers_) &&
+      presentationPublished_)
     return {};
   const bool wantsOverlay = hover.has_value() || !selected.empty();
   const bool overlayChanged =
-      hover != hovered_ || selectedIdentities != selected_ ||
+      hover != hovered_ || selectedSelections != selected_ ||
       (wantsOverlay && !overlay_) || (!wantsOverlay && overlay_);
   if (productGeneration_ == std::numeric_limits<std::uint64_t>::max() ||
       (wantsOverlay && overlayChanged &&
@@ -345,6 +700,7 @@ Result<void> SketchViewportBridge::publishOverlay(
         "native Sketch presentation generation is exhausted", Severity::Fatal));
 
   std::shared_ptr<const render::SketchPresentationOverlay> overlay;
+  std::shared_ptr<const render::SketchMarkerPacket> markers;
   std::optional<render::SketchOverlayScope> hoveredScope;
   if (hover) {
     auto entity = SketchEntityId::parse(hover->first.toStdString());
@@ -362,22 +718,30 @@ Result<void> SketchViewportBridge::publishOverlay(
     }
     hoveredScope = render::SketchOverlayScope{*entity, point};
   }
-  std::vector<render::SketchOverlayScope> selectedScopes;
-  selectedScopes.reserve(selected.size());
-  for (const QString &identity : selected) {
-    auto entity = SketchEntityId::parse(identity.toStdString());
+  std::vector<render::SketchOverlayScope> selectedOverlayScopes;
+  selectedOverlayScopes.reserve(selected.size());
+  for (const SketchSelectionScope &selection : selected) {
+    auto entity = SketchEntityId::parse(selection.entityId.toStdString());
     if (!entity || !publishedScene_->findPrimitive(*entity))
       return std::unexpected(
           diagnostic("desktop.sketch.selection-entity",
                      "native Sketch selection references missing geometry"));
-    selectedScopes.push_back({*entity, std::nullopt});
+    std::optional<sketch::PointKey> point;
+    if (!selection.pointKey.isEmpty()) {
+      point = pointKey(selection.pointKey);
+      if (!point)
+        return std::unexpected(diagnostic(
+            "desktop.sketch.selection-point",
+            "native Sketch selection references an invalid point"));
+    }
+    selectedOverlayScopes.push_back({*entity, point});
   }
   if (wantsOverlay && !overlayChanged) {
     overlay = overlay_;
-  } else if (hoveredScope || !selectedScopes.empty()) {
+  } else if (hoveredScope || !selectedOverlayScopes.empty()) {
     for (std::size_t index = 0U; index < overlayRoles.size(); ++index) {
       const bool unchanged = (index == 0U && hover == hovered_) ||
-                             (index == 1U && selectedIdentities == selected_) ||
+                             (index == 1U && selectedSelections == selected_) ||
                              index > 1U;
       if (unchanged && overlayRoleSets_[index] &&
           overlayRoleSets_[index]->base() == publishedScene_)
@@ -386,7 +750,7 @@ Result<void> SketchViewportBridge::publishOverlay(
       if (index == 0U && hoveredScope)
         scopes = {&*hoveredScope, 1U};
       else if (index == 1U)
-        scopes = selectedScopes;
+        scopes = selectedOverlayScopes;
       auto created = render::SketchOverlayRoleSet::create(
           publishedScene_, overlayRoles[index], scopes);
       if (!created)
@@ -404,25 +768,68 @@ Result<void> SketchViewportBridge::publishOverlay(
     overlay = std::move(*created);
   }
 
+  if (requestedAnnotations != 0U &&
+      requestedAnnotations == splineAnnotationsPublished_ &&
+      selectedSelections == selected_ && markers_) {
+    markers = markers_;
+  } else if (requestedAnnotations != 0U) {
+    if (markerGeneration_ == std::numeric_limits<std::uint64_t>::max())
+      return std::unexpected(diagnostic(
+          "desktop.sketch.marker-generation-exhausted",
+          "native Sketch marker generation is exhausted", Severity::Fatal));
+    auto generation =
+        render::SketchMarkerGeneration::create(++markerGeneration_);
+    if (!generation)
+      return std::unexpected(std::move(generation.error()));
+    auto created = splineAnnotationMarkers(
+        publishedScene_, selectedSelections.front().entityId,
+        requestedAnnotations,
+        *generation);
+    if (!created)
+      return std::unexpected(std::move(created.error()));
+    markers = std::move(*created);
+  }
+
   auto generation = SketchProductGeneration::create(++productGeneration_);
   if (!generation)
     return std::unexpected(std::move(generation.error()));
-  auto digest = productDigest(*publishedScene_, overlay, provisional_);
+  auto digest =
+      productDigest(*publishedScene_, overlay, provisional_, markers);
   if (!digest)
     return std::unexpected(std::move(digest.error()));
+  const SketchProductStamp stamp{publishedScene_->stamp().target, *generation,
+                                 *digest};
   auto offered = publication_->publishProducts(
-      {{publishedScene_->stamp().target, *generation, *digest},
-       publishedScene_,
-       overlay,
-       provisional_,
-       {}});
+      {stamp, publishedScene_, overlay, provisional_, markers});
   if (!offered)
     return std::unexpected(std::move(offered.error()));
+  requestedProducts_ = stamp;
   hovered_ = std::move(hover);
-  selected_ = std::move(selectedIdentities);
+  selected_ = std::move(selectedSelections);
   overlay_ = std::move(overlay);
+  markers_ = std::move(markers);
+  splineAnnotationsPublished_ = requestedAnnotations;
   presentationPublished_ = true;
   return {};
+}
+
+void SketchViewportBridge::subscribeToWindow(QQuickWindow *window) {
+  QObject::disconnect(frameSwappedConnection_);
+  frameSwappedConnection_ = {};
+  if (!window)
+    return;
+  frameSwappedConnection_ =
+      QObject::connect(window, &QQuickWindow::frameSwapped, this,
+                       [this] { repickHoverAfterPresentedFrame(); });
+}
+
+void SketchViewportBridge::repickHoverAfterPresentedFrame() {
+  if (!hoverRepickPending_ || !lastHoverItemPoint_ || stopped_ ||
+      !presentationCurrent())
+    return;
+  const QPointF point = *lastHoverItemPoint_;
+  hoverRepickPending_ = false;
+  static_cast<void>(session_.updateSketchPointerHover(point.x(), point.y()));
 }
 
 void SketchViewportBridge::record(Result<void> result) {
@@ -438,6 +845,9 @@ Result<void> SketchViewportBridge::shutdown(std::chrono::milliseconds timeout) {
         diagnostic("desktop.sketch.viewport-shutdown-thread",
                    "native Sketch viewport must stop on the UI thread"));
 
+  QObject::disconnect(frameSwappedConnection_);
+  frameSwappedConnection_ = {};
+  hoverRepickPending_ = false;
   session_.clearSketchPickHandler();
   session_.clearSketchHoverHandler();
 
@@ -474,8 +884,10 @@ bool SketchViewportBridge::presentationCurrent() const {
   if (!expected)
     return true;
   const auto frame = item_->presentedFrame();
-  return frame && frame->synchronized() &&
-         frame->synchronized()->scene() == expected;
+  return frame && frame->synchronized() && requestedProducts_ &&
+         frame->synchronized()->scene() == expected &&
+         frame->synchronized()->products()->stamp() == *requestedProducts_ &&
+         item_->requestedPipelinesReady();
 }
 
 } // namespace kearne::ui

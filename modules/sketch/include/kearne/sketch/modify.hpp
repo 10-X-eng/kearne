@@ -62,4 +62,47 @@ struct ExtendEdit {
 extendCurve(const Definition &current, const ExtendEdit &edit,
             const NumericalProfile &profile = {});
 
+struct TrimEdit {
+  CurvePick curve;
+  std::vector<Entity> retained;
+  std::vector<PointOnObject> boundaries;
+  ExternalConstraintPolicy constraints = ExternalConstraintPolicy::Refuse;
+};
+
+[[nodiscard]] Result<AppliedEdits>
+trimCurve(const Definition &current, const TrimEdit &edit,
+          const NumericalProfile &profile = {});
+
+struct SplitEdit {
+  CurvePick curve;
+  std::vector<Entity> segments;
+  Coincident seam;
+  ExternalConstraintPolicy constraints = ExternalConstraintPolicy::Refuse;
+};
+
+[[nodiscard]] Result<AppliedEdits>
+splitCurve(const Definition &current, const SplitEdit &edit,
+           const NumericalProfile &profile = {});
+
+struct JoinEdit {
+  PointRef first;
+  PointRef second;
+  BSplineEntity joined;
+  SketchObjectId object;
+  ExternalConstraintPolicy constraints = ExternalConstraintPolicy::Refuse;
+};
+
+[[nodiscard]] Result<AppliedEdits>
+joinCurves(const Definition &current, const JoinEdit &edit,
+           const NumericalProfile &profile = {});
+
+struct ConvertToNurbsEdit {
+  BSplineEntity curve;
+  ExternalConstraintPolicy constraints = ExternalConstraintPolicy::Refuse;
+};
+
+[[nodiscard]] Result<AppliedEdits>
+convertToNurbs(const Definition &current, const ConvertToNurbsEdit &edit,
+               const NumericalProfile &profile = {});
+
 } // namespace kearne::sketch

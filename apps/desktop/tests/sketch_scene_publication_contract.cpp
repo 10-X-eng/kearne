@@ -188,9 +188,14 @@ void verifyCompletePreparedPacket() {
   auto markerGeneration = SketchMarkerGeneration::create(1U);
   auto markerView = SketchMarkerViewGeneration::create(1U);
   auto markerHandle = SketchMarkerHandle::create(1U);
+  auto controlSegmentHandle = SketchMarkerHandle::create(2U);
+  auto controlPoleHandle = SketchMarkerHandle::create(3U);
+  auto curvatureHandle = SketchMarkerHandle::create(4U);
+  auto labelHandle = SketchMarkerHandle::create(5U);
   auto draftHandle = SketchProvisionalPrimitiveHandle::create(1U);
   require(edit && tool && markerGeneration && markerView && markerHandle &&
-              draftHandle,
+              controlSegmentHandle && controlPoleHandle && curvatureHandle &&
+              labelHandle && draftHandle,
           "complete packet marker identity was invalid");
   const SketchMarkerStamp markerStamp{
       {baseStamp, SketchMarkerInteraction{*edit, *tool},
@@ -199,11 +204,28 @@ void verifyCompletePreparedPacket() {
        *markerView},
       *markerGeneration,
       digest<SketchMarkerDigest>(1U)};
-  const std::array<SketchMarkerAnchor, 1> anchors{SketchProvisionalMarkerAnchor{
-      *draftHandle, SketchMarkerPointLocation{sketch::PointKey::Point}}};
-  const std::array<PackedSketchMarker, 1> markerValues{
+  const std::array<SketchMarkerAnchor, 7> anchors{
+      SketchProvisionalMarkerAnchor{
+          *draftHandle, SketchMarkerPointLocation{sketch::PointKey::Point}},
+      SketchCanonicalMarkerAnchor{{0.01, 0.02}},
+      SketchCanonicalMarkerAnchor{{0.03, 0.04}},
+      SketchCanonicalMarkerAnchor{{0.03, 0.04}},
+      SketchCanonicalMarkerAnchor{{0.01, 0.02}},
+      SketchCanonicalMarkerAnchor{{0.01, 0.05}},
+      SketchCanonicalMarkerAnchor{{0.02, 0.03}},
+  };
+  const std::array<PackedSketchMarker, 5> markerValues{{
       {*markerHandle, std::nullopt, 0U, 1U, SketchMarkerKind::EndpointSnap,
-       0.0}};
+       0.0},
+      {*controlSegmentHandle, std::nullopt, 1U, 2U,
+       SketchMarkerKind::SplineControlSegment, 0.0},
+      {*controlPoleHandle, std::nullopt, 3U, 1U,
+       SketchMarkerKind::SplineControlPole, 0.0},
+      {*curvatureHandle, std::nullopt, 4U, 2U,
+       SketchMarkerKind::SplineCurvatureSegment, 0.0},
+      {*labelHandle, std::nullopt, 6U, 1U,
+       SketchMarkerKind::SplineDegreeLabel, 3.0},
+  }};
   auto markers = SketchMarkerPacket::create(markerStamp, base, draft, anchors,
                                             markerValues);
   require(markers.has_value(), "complete packet markers were invalid");
@@ -218,46 +240,61 @@ void verifyCompletePreparedPacket() {
           (*prepared)->overlay()->source() == *overlay &&
           (*prepared)->provisional()->source() == draft &&
           (*prepared)->markers()->source() == *markers &&
-          (*prepared)->overlayPointMesh() && (*prepared)->markerMesh() &&
+          (*prepared)->overlayPointPacket() && (*prepared)->markerPacket() &&
           !(*prepared)->provisional()->provenance().empty() &&
-          (*prepared)->metrics().overlayPointMeshRetainedBytes ==
-              (*prepared)->overlayPointMesh()->metrics().retainedMeshBytes &&
-          (*prepared)->metrics().markerMeshRetainedBytes ==
-              (*prepared)->markerMesh()->metrics().retainedMeshBytes &&
+          (*prepared)->metrics().overlayPointPacketRetainedBytes ==
+              (*prepared)->overlayPointPacket()->metrics().retainedBytes &&
+          (*prepared)->metrics().markerPacketRetainedBytes ==
+              (*prepared)->markerPacket()->metrics().retainedBytes &&
           (*prepared)->metrics().totalRetainedBytes ==
               sizeof(PreparedSketchProducts) +
                   (*prepared)->metrics().baseRetainedBytes +
                   (*prepared)->metrics().overlayRetainedBytes +
-                  (*prepared)->metrics().overlayPointMeshRetainedBytes +
+                  (*prepared)->metrics().overlayPointPacketRetainedBytes +
                   (*prepared)->metrics().provisionalRetainedBytes +
                   (*prepared)->metrics().markerRetainedBytes +
-                  (*prepared)->metrics().markerMeshRetainedBytes,
+                  (*prepared)->metrics().markerPacketRetainedBytes,
       "complete product packet lost an exact prepared component");
+  std::array<bool, 4> markerVectorKinds{};
+  for (const auto &chunk : (*prepared)->markerPacket()->chunks())
+    for (const SketchVectorRecord &record : chunk->records()) {
+      if (record.meta[0] == static_cast<std::uint32_t>(SketchVectorKind::Glyph))
+        markerVectorKinds[0] = true;
+      if (record.meta[0] == static_cast<std::uint32_t>(SketchVectorKind::Line))
+        markerVectorKinds[1] = true;
+      if (record.meta[0] == static_cast<std::uint32_t>(SketchVectorKind::Point))
+        markerVectorKinds[2] = true;
+      if (record.meta[0] == static_cast<std::uint32_t>(SketchVectorKind::Text))
+        markerVectorKinds[3] = true;
+    }
+  require(std::ranges::all_of(markerVectorKinds,
+                              [](bool present) { return present; }),
+          "marker packet did not retain glyph, guide, pole, and text vectors");
 
   auto nextSource = std::make_shared<const SketchSceneProducts>(
       SketchSceneProducts{productStamp(baseStamp.target, 2U, 241U), base,
                           *overlay, draft, *markers});
-  auto reused = prepareSketchProducts(nextSource, {}, {}, *prepared);
+  auto reused = prepareSketchProducts(nextSource, {}, *prepared);
   require(reused && (*reused)->source() == nextSource &&
               (*reused)->base() == (*prepared)->base() &&
               (*reused)->overlay() == (*prepared)->overlay() &&
               (*reused)->provisional() == (*prepared)->provisional() &&
               (*reused)->markers() == (*prepared)->markers() &&
-              (*reused)->overlayPointMesh() ==
-                  (*prepared)->overlayPointMesh() &&
-              (*reused)->markerMesh() == (*prepared)->markerMesh(),
+              (*reused)->overlayPointPacket() ==
+                  (*prepared)->overlayPointPacket() &&
+              (*reused)->markerPacket() == (*prepared)->markerPacket(),
           "same-component product update rebuilt immutable preparation");
 
   auto incomplete = PreparedSketchProducts::create(
       nextSource, (*prepared)->base(), (*prepared)->overlay(),
       (*prepared)->provisional());
-  require(!incomplete && incomplete.error().code ==
-                             "desktop.sketch.products-prepared-markers",
+  require(!incomplete &&
+              incomplete.error().code == "desktop.sketch.products-mismatch",
           "prepared packet accepted a missing declared component");
   std::stop_source cancellation;
   cancellation.request_stop();
-  auto cancelled = prepareSketchProducts(nextSource, {}, {}, *prepared,
-                                         cancellation.get_token());
+  auto cancelled = prepareSketchProducts(nextSource, {}, *prepared,
+                                          cancellation.get_token());
   require(!cancelled &&
               cancelled.error().code == "desktop.sketch.preparation-cancelled",
           "pre-cancelled complete packet preparation performed work");
@@ -517,7 +554,7 @@ void verifyInternalFaultContainment() {
   const auto exact = [](const SketchPreparationRequest &request,
                         std::shared_ptr<const PreparedSketchProducts> reuse,
                         std::stop_token stop) {
-    return prepareSketchProducts(request.products, request.lod, {},
+    return prepareSketchProducts(request.products, request.options,
                                  std::move(reuse), stop);
   };
   SketchPreparationExecutor executor{{1, 1, 1}, exact, fault};
@@ -577,7 +614,7 @@ void verifyPreparedResultValidation() {
     case 2: {
       auto twin = scene(1, 922, request.products->scene->stamp());
       auto source = ownedProducts(request.products->stamp, std::move(twin));
-      return prepareSketchProducts(std::move(source), request.lod, {}, {},
+      return prepareSketchProducts(std::move(source), request.options, {},
                                    stop);
     }
     case 3: {
@@ -587,7 +624,7 @@ void verifyPreparedResultValidation() {
           productStamp(wrongTarget, request.products->stamp.generation.value(),
                        923U),
           std::move(wrong));
-      return prepareSketchProducts(std::move(source), request.lod, {}, {},
+      return prepareSketchProducts(std::move(source), request.options, {},
                                    stop);
     }
     case 4: {
@@ -599,20 +636,20 @@ void verifyPreparedResultValidation() {
                          digest<SceneDigest>(924)};
       auto wrong = scene(1, 924, std::move(changed));
       auto source = ownedProducts(request.products->stamp, std::move(wrong));
-      return prepareSketchProducts(std::move(source), request.lod, {}, {},
+      return prepareSketchProducts(std::move(source), request.options, {},
                                    stop);
     }
     case 5: {
-      SketchCurveLod wrong = request.lod;
-      ++wrong.scaleExponent;
-      return prepareSketchProducts(request.products, wrong, {}, {}, stop);
+      SketchProductPreparationOptions wrong = request.options;
+      ++wrong.picking.maximumLeafTargets;
+      return prepareSketchProducts(request.products, wrong, {}, stop);
     }
     case 7:
       return std::unexpected(
           diagnostic("desktop.sketch.preparation-cancelled",
                      "generated cancellation without a stop request"));
     default:
-      return prepareSketchProducts(request.products, request.lod, {}, {}, stop);
+      return prepareSketchProducts(request.products, request.options, {}, stop);
     }
   };
   SketchPreparationExecutor executor{{1, 1, 1}, adversarial};
@@ -626,7 +663,7 @@ void verifyPreparedResultValidation() {
       "desktop.sketch.preparation-result-instance",
       "desktop.sketch.preparation-result-stamp",
       "desktop.sketch.preparation-result-instance",
-      "desktop.sketch.preparation-result-lod",
+      "desktop.sketch.preparation-result-options",
       nullptr,
       "desktop.sketch.preparation-cancelled"};
   for (std::uint64_t generation = 1; generation <= expected.size();
@@ -677,7 +714,7 @@ void verifyPrepareLifecycleRejection() {
             !executorAddress->waitUntilDrained(std::chrono::milliseconds{0}),
             std::memory_order_release);
         executorAddress->join();
-        return prepareSketchProducts(request.products, request.lod, {},
+        return prepareSketchProducts(request.products, request.options,
                                      std::move(reuse), stop);
       };
   SketchPreparationExecutor executor{{1, 1, 1}, reentrant};
@@ -1093,7 +1130,7 @@ void verifyNonblockingUnsubscribeAndAba() {
     if (stop.stop_requested())
       return std::unexpected(diagnostic("desktop.sketch.preparation-cancelled",
                                         "test cancellation"));
-    return prepareSketchProducts(request.products, request.lod, {},
+    return prepareSketchProducts(request.products, request.options,
                                  std::move(reuse), stop);
   };
 
@@ -1272,7 +1309,7 @@ public:
     if (stop.stop_requested())
       return std::unexpected(diagnostic("desktop.sketch.preparation-cancelled",
                                         "test cancellation"));
-    return prepareSketchProducts(request.products, request.lod, {},
+    return prepareSketchProducts(request.products, request.options,
                                  std::move(reuse), stop);
   }
 
@@ -1795,14 +1832,14 @@ void verifyMultiViewIsolation() {
   const SceneStamp baseStamp = stamp(209, 1, 209, 209, 209, 1);
   auto base = scene(2, 209, baseStamp);
   for (std::size_t index = 0; index < subscriptions.size(); ++index) {
-    SketchCurveLod lod{};
-    lod.scaleExponent += static_cast<int>(index);
+    SketchProductPreparationOptions options{};
+    options.picking.maximumLeafTargets += static_cast<std::uint32_t>(index);
     require(executor
                 .submit(subscriptions[index],
                         ownedProducts(productStamp(baseStamp.target, index + 1U,
                                                    index + 1U),
                                       base),
-                        lod)
+                        options)
                 .has_value(),
             "view submission was rejected");
   }

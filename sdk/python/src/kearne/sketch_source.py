@@ -44,6 +44,7 @@ from kearne.source import (
 from kearne.units import Angle, Length, deg, inch, m, mm, rad
 
 SketchValue: TypeAlias = SketchObject | Entity | Constraint
+_SOURCE_LINE_WIDTH = 100
 _POINT_HELPER_BY_KEY = {
     HELPERS[name].point_key: name for name in POINT_REFERENCE_HELPERS
 }
@@ -123,6 +124,8 @@ def _arguments(
                 yield argument, value.label
             elif argument.kind == "entity_refs":
                 yield argument, tuple(entities)
+            elif argument.kind == "object_members":
+                yield argument, tuple(zip(value.roles, value.entities, strict=True))
             else:
                 yield argument, next(entities)
         return
@@ -138,11 +141,30 @@ def _point_reference(value: PointRef) -> str:
     return f"{_POINT_HELPER_BY_KEY[value.key]}({value.entity!r})"
 
 
+def _indent_lines(value: str, prefix: str) -> str:
+    return value.replace("\n", "\n" + prefix)
+
+
+def _tuple_argument(values: tuple[str, ...]) -> str:
+    trailing = "," if len(values) == 1 else ""
+    compact = f"({', '.join(values)}{trailing})"
+    if "\n" not in compact and len(compact) <= _SOURCE_LINE_WIDTH:
+        return compact
+    rows = "\n".join(f"    {_indent_lines(value, '    ')}," for value in values)
+    return f"(\n{rows}\n)"
+
+
 def _argument(value: object, kind: str) -> str:
     if kind in {"stable_id", "label", "entity_ref"}:
         return repr(cast(str, value))
     if kind == "entity_refs":
-        return repr(cast(tuple[str, ...], value))
+        return _tuple_argument(
+            tuple(repr(item) for item in cast(tuple[str, ...], value))
+        )
+    if kind == "object_members":
+        return _tuple_argument(
+            tuple(repr(item) for item in cast(tuple[tuple[str, str], ...], value))
+        )
     if kind == "point_ref":
         return _point_reference(cast(PointRef, value))
     if kind == "point":
@@ -150,11 +172,12 @@ def _argument(value: object, kind: str) -> str:
         return f"(m({_number(point[0].metres)}), m({_number(point[1].metres)}))"
     if kind == "points":
         points = cast(tuple[tuple[Length, Length], ...], value)
-        content = ", ".join(
-            f"(m({_number(point[0].metres)}), m({_number(point[1].metres)}))"
-            for point in points
+        return _tuple_argument(
+            tuple(
+                f"(m({_number(point[0].metres)}), m({_number(point[1].metres)}))"
+                for point in points
+            )
         )
-        return f"({content}{',' if len(points) == 1 else ''})"
     if kind == "length":
         return f"m({_number(cast(Length, value).metres)})"
     if kind == "angle":
@@ -163,7 +186,7 @@ def _argument(value: object, kind: str) -> str:
         return _number(cast(float, value))
     if kind == "scalars":
         values = cast(tuple[float, ...], value)
-        return repr(values)
+        return _tuple_argument(tuple(_number(item) for item in values))
     if kind == "integer":
         return repr(cast(int, value))
     raise SketchDefinitionError("source emitter argument kind is unsupported")
@@ -229,6 +252,16 @@ def _parse_argument(node: ast.expr, kind: str) -> object:
         if not values or not all(type(value) is str for value in values):
             raise _source_error()
         return cast(tuple[str, ...], values)
+    if kind == "object_members":
+        values = cast(tuple[object, ...], _literal(node, tuple))
+        if not values or not all(
+            isinstance(value, tuple)
+            and len(value) == 2
+            and all(type(part) is str for part in value)
+            for value in values
+        ):
+            raise _source_error()
+        return cast(tuple[tuple[str, str], ...], values)
     if kind == "length" or kind == "angle":
         return _quantity(node, kind)
     if kind == "scalar":
@@ -301,6 +334,9 @@ def parse_call(code: str) -> SketchValue:
         values[cast(str, keyword.arg)] = _literal(keyword.value, expected)
     try:
         if spec.name in OBJECT_HELPERS:
+            members = cast(
+                tuple[tuple[str, str], ...], values.get("members", ())
+            )
             entities = tuple(
                 cast(str, values[argument.name])
                 for argument in spec.positional
@@ -310,12 +346,13 @@ def parse_call(code: str) -> SketchValue:
                 for argument in spec.positional
                 if argument.kind == "entity_refs"
                 for entity in cast(tuple[str, ...], values[argument.name])
-            )
+            ) + tuple(entity for _, entity in members)
             return SketchObject(
                 cast(str, values["id"]),
                 cast(str, values["label"]),
                 cast(ObjectKind, spec.object_kind),
                 entities,
+                tuple(role for role, _ in members),
             )
         construction = cast(bool, values.get("construction", False))
         if spec.name == "point":
@@ -510,7 +547,12 @@ def emit_call(value: SketchValue) -> str:
         current = getattr(value, keyword.name)
         if current != keyword.default:
             keywords.append(f"{keyword.name}={current!r}")
-    return f"{spec.name}({', '.join((*arguments, *keywords))})"
+    values = (*arguments, *keywords)
+    compact = f"{spec.name}({', '.join(values)})"
+    if "\n" not in compact and len(compact) <= _SOURCE_LINE_WIDTH:
+        return compact
+    rows = "\n".join(f"    {_indent_lines(item, '    ')}," for item in values)
+    return f"{spec.name}(\n{rows}\n)"
 
 
 def append_value(

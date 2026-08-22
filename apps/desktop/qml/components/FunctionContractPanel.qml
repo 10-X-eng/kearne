@@ -13,7 +13,7 @@ KPanel {
     semanticId: "function.contract"
     semanticName: descriptor.name + " function contract"
     title: descriptor.name
-    detail: descriptor.sourcePath + " · " + descriptor.revision
+    detail: descriptor.sourcePath + " · " + descriptor.language
     iconName: "code"
 
     Text {
@@ -29,8 +29,10 @@ KPanel {
         Layout.fillWidth: true
 
         StateBadge {
-            label: root.descriptor.recognition
-            status: root.descriptor.recognition
+            label: root.descriptor.recognition === "canonical"
+                   ? "Recognized" : root.descriptor.recognition
+            status: root.descriptor.recognition === "canonical"
+                    ? "current" : root.descriptor.recognition
         }
 
         Text {

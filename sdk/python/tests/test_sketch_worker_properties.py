@@ -35,7 +35,7 @@ from kearne.sketch import (
 from kearne.sketch import (
     rectangle as rectangle_object,
 )
-from kearne.sketch_source import emit_call
+from kearne.sketch_source import parse_call
 from kearne.sketch_wire import definition_to_wire, definition_values_from_wire
 from kearne.source import recognize, source_digest
 from kearne.units import Length, m
@@ -212,7 +212,10 @@ class SketchWorkerProperties(unittest.TestCase):
             )
         }
         self.assertEqual(set(calls), {value.id for value in values})
-        self.assertEqual(calls, {value.id: emit_call(value) for value in values})
+        self.assertEqual(
+            {stable: parse_call(code) for stable, code in calls.items()},
+            {value.id: value for value in values},
+        )
 
     @settings(max_examples=35, deadline=None)
     @given(

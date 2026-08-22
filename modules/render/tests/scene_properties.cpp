@@ -1880,6 +1880,18 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
                   SketchMarkerCategory::Dimension &&
               markerCategory(SketchMarkerKind::EndpointSnap) ==
                   SketchMarkerCategory::SnapCursor &&
+              markerCategory(SketchMarkerKind::SplineControlSegment) ==
+                  SketchMarkerCategory::SplineGuide &&
+              markerCategory(SketchMarkerKind::SplineControlPole) ==
+                  SketchMarkerCategory::SplineGuide &&
+              markerCategory(SketchMarkerKind::SplineCurvatureSegment) ==
+                  SketchMarkerCategory::SplineAnalysis &&
+              markerCategory(SketchMarkerKind::SplineDegreeLabel) ==
+                  SketchMarkerCategory::SplineLabel &&
+              markerCategory(SketchMarkerKind::SplineKnotMultiplicityLabel) ==
+                  SketchMarkerCategory::SplineLabel &&
+              markerCategory(SketchMarkerKind::SplinePoleWeightLabel) ==
+                  SketchMarkerCategory::SplineLabel &&
               !markerCategory(static_cast<SketchMarkerKind>(255)),
           "sketch marker categories are incomplete or accept invalid kinds");
 
@@ -1915,6 +1927,12 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
       SketchMarkerKind::IntersectionSnap,
       SketchMarkerKind::QuadrantSnap,
       SketchMarkerKind::GridSnap,
+      SketchMarkerKind::SplineControlSegment,
+      SketchMarkerKind::SplineControlPole,
+      SketchMarkerKind::SplineCurvatureSegment,
+      SketchMarkerKind::SplineDegreeLabel,
+      SketchMarkerKind::SplineKnotMultiplicityLabel,
+      SketchMarkerKind::SplinePoleWeightLabel,
   };
 
   const SceneStamp baseStamp = stamp(48, 1, 2, 3, 4, 5);
@@ -1942,13 +1960,28 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
             *category == SketchMarkerCategory::Inference ||
             *category == SketchMarkerCategory::SnapCursor;
         MarkerInput one;
-        one.add(1U, kind,
-                *category == SketchMarkerCategory::Dimension
-                    ? random.between(-1.0e3, 1.0e3)
-                    : 0.0,
-                {SketchCanonicalMarkerAnchor{{0.01, -0.02}}},
-                semantic ? std::optional{id<SketchConstraintId>(index + 1U)}
-                         : std::nullopt);
+        if (kind == SketchMarkerKind::SplineControlSegment ||
+            kind == SketchMarkerKind::SplineCurvatureSegment)
+          one.add(1U, kind, 0.0,
+                  {SketchCanonicalMarkerAnchor{{0.01, -0.02}},
+                   SketchCanonicalMarkerAnchor{{0.03, 0.04}}});
+        else {
+          const double value =
+              kind == SketchMarkerKind::SplineDegreeLabel
+                  ? 3.0
+              : kind == SketchMarkerKind::SplineKnotMultiplicityLabel
+                  ? 4.0
+              : kind == SketchMarkerKind::SplinePoleWeightLabel
+                  ? 1.5
+              : *category == SketchMarkerCategory::Dimension
+                  ? random.between(-1.0e3, 1.0e3)
+                  : 0.0;
+          one.add(1U, kind,
+                  value,
+                  {SketchCanonicalMarkerAnchor{{0.01, -0.02}}},
+                  semantic ? std::optional{id<SketchConstraintId>(index + 1U)}
+                           : std::nullopt);
+        }
         auto packet = SketchMarkerPacket::create(
             markerStamp(screenDerived ? markerTarget(baseStamp, 6U, 7U)
                                       : persistentMarkerTarget(baseStamp),
@@ -2023,7 +2056,7 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
       [&](testkit::Random &, std::uint64_t index) {
         MarkerInput invalid;
         const char *expected = "";
-        switch (index % 18U) {
+        switch (index % 24U) {
         case 0U:
           invalid.add(1U, static_cast<SketchMarkerKind>(255), 0.0,
                       {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
@@ -2141,6 +2174,37 @@ void verifySketchMarkerPacket(const testkit::PropertyProfile &profile) {
                                                      curveLocation(1.001)}},
                       id<SketchConstraintId>(index + 1U));
           expected = "render.sketch.marker-invalid-provisional-curve-location";
+          break;
+        case 18U:
+          invalid.add(1U, SketchMarkerKind::SplineControlSegment, 0.0,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
+          expected = "render.sketch.marker-anchor-arity";
+          break;
+        case 19U:
+          invalid.add(1U, SketchMarkerKind::SplineControlPole, 0.0,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}},
+                       SketchCanonicalMarkerAnchor{{1.0, 0.0}}});
+          expected = "render.sketch.marker-anchor-arity";
+          break;
+        case 20U:
+          invalid.add(1U, SketchMarkerKind::SplineCurvatureSegment, 0.0,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
+          expected = "render.sketch.marker-anchor-arity";
+          break;
+        case 21U:
+          invalid.add(1U, SketchMarkerKind::SplineDegreeLabel, 2.5,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
+          expected = "render.sketch.marker-invalid-value";
+          break;
+        case 22U:
+          invalid.add(1U, SketchMarkerKind::SplineKnotMultiplicityLabel, 27.0,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
+          expected = "render.sketch.marker-invalid-value";
+          break;
+        case 23U:
+          invalid.add(1U, SketchMarkerKind::SplinePoleWeightLabel, 0.0,
+                      {SketchCanonicalMarkerAnchor{{0.0, 0.0}}});
+          expected = "render.sketch.marker-invalid-value";
           break;
         }
         auto actual = SketchMarkerPacket::create(

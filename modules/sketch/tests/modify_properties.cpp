@@ -1,6 +1,7 @@
 #include <kearne/sketch/modify.hpp>
 #include <kearne/testkit/property.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -48,6 +49,12 @@ sketch::AngleValue angle(double value) {
   return *result;
 }
 
+sketch::DimensionlessValue scalar(double value) {
+  auto result = sketch::DimensionlessValue::fromSi(value);
+  require(result.has_value(), "generated modify scalar was invalid");
+  return *result;
+}
+
 sketch::Point2 point(double x, double y) { return {length(x), length(y)}; }
 
 sketch::CornerEditIds cornerIds(std::uint64_t seed) {
@@ -91,9 +98,15 @@ void verifyCornerEdits(const testkit::PropertyProfile &profile) {
         const double direction = random.between(0.35, 2.75);
         const double extent = random.between(0.05, 20.0);
         const double size = random.between(0.001, extent * 0.1);
+        const double referenceFraction = random.between(1.0e-6, 1.0);
         const auto current = cornerDefinition(seed, extent, direction);
         const auto &first = std::get<sketch::LineEntity>(current.entities[0]);
         const auto &second = std::get<sketch::LineEntity>(current.entities[1]);
+        const sketch::Point2 firstReference =
+            point(extent * referenceFraction, 0.0);
+        const sketch::Point2 secondReference =
+            point(extent * referenceFraction * std::cos(direction),
+                  extent * referenceFraction * std::sin(direction));
         const std::array kinds{sketch::CornerEditKind::Fillet,
                                sketch::CornerEditKind::Chamfer};
         for (std::size_t kindIndex = 0U; kindIndex < kinds.size();
@@ -101,8 +114,8 @@ void verifyCornerEdits(const testkit::PropertyProfile &profile) {
           const auto ids = cornerIds(seed + 20U + kindIndex * 10U);
           auto edited = sketch::editLineCorner(
               current, {kinds[kindIndex],
-                        {first.id, first.start},
-                        {second.id, second.end},
+                        {first.id, firstReference},
+                        {second.id, secondReference},
                         length(size),
                         ids,
                         sketch::ExternalConstraintPolicy::Detach});
@@ -164,6 +177,67 @@ void verifyConstraintPolicy() {
   auto detached = sketch::editLineCorner(current, edit);
   require(detached && detached->target.constraints.size() == 5U,
           "corner edit did not explicitly replace affected constraints");
+}
+
+void verifyCompoundCornerIntent(const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "partial corner edits preserve human source ancestry", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const std::uint64_t seed = 1'000'000U + index * 80U;
+        const double width = random.between(0.05, 20.0);
+        const double height = random.between(0.05, 20.0);
+        const double size = random.between(
+            0.001, std::min(width, height) * 0.2);
+        const std::array entities{
+            id<SketchEntityId>(seed + 1U), id<SketchEntityId>(seed + 2U),
+            id<SketchEntityId>(seed + 3U), id<SketchEntityId>(seed + 4U)};
+        const SketchObjectId rectangle = id<SketchObjectId>(seed + 5U);
+        const sketch::Definition current{
+            digest(seed),
+            {{rectangle,
+              "Rectangle 1",
+              sketch::SketchObjectKind::Rectangle,
+              {{"bottom", entities[0]},
+               {"right", entities[1]},
+               {"top", entities[2]},
+               {"left", entities[3]}}}},
+            {sketch::LineEntity{entities[0], point(0.0, 0.0),
+                                point(width, 0.0)},
+             sketch::LineEntity{entities[1], point(width, 0.0),
+                                point(width, height)},
+             sketch::LineEntity{entities[2], point(width, height),
+                                point(0.0, height)},
+             sketch::LineEntity{entities[3], point(0.0, height),
+                                point(0.0, 0.0)}},
+            {}};
+        const std::array kinds{sketch::CornerEditKind::Fillet,
+                               sketch::CornerEditKind::Chamfer};
+        for (std::size_t kind = 0U; kind < kinds.size(); ++kind) {
+          auto edited = sketch::editLineCorner(
+              current,
+              {kinds[kind],
+               {entities[0], point(0.0, 0.0)},
+               {entities[1], point(width, height)},
+               length(size),
+               cornerIds(seed + 20U + kind * 10U),
+               sketch::ExternalConstraintPolicy::Detach});
+          require(edited && edited->target.objects.size() == 2U,
+                  "corner edit lost its source objects");
+          const auto &group = edited->target.objects.front();
+          require(group.id == rectangle &&
+                      group.kind == sketch::SketchObjectKind::CurveGroup &&
+                      group.label == "Rectangle 1 (modified)" &&
+                      group.members == current.objects.front().members &&
+                      sketch::validate(edited->target, {}).has_value(),
+                  "corner edit exposed anonymous compound members");
+          require(std::ranges::any_of(
+                      edited->sourceEdits, [](const auto &intent) {
+                        return intent.action == sketch::SourceEditAction::Replace &&
+                               intent.section == sketch::SourceSection::Objects;
+                      }),
+                  "corner edit did not reclassify source intent explicitly");
+        }
+      });
 }
 
 void verifyOffsets(const testkit::PropertyProfile &profile) {
@@ -321,6 +395,56 @@ void verifyExtends(const testkit::PropertyProfile &profile) {
           "Extend did not detach affected constraints explicitly");
 }
 
+void verifyNurbsConversion(const testkit::PropertyProfile &profile) {
+  testkit::checkProperty(
+      "NURBS conversion preserves compatible intent", profile,
+      [](testkit::Random &random, std::uint64_t index) {
+        const std::uint64_t seed = 9'000'000U + index * 8U;
+        const SketchEntityId curve = id<SketchEntityId>(seed + 1U);
+        const SketchObjectId object = id<SketchObjectId>(seed + 2U);
+        const SketchConstraintId lock = id<SketchConstraintId>(seed + 3U);
+        const SketchConstraintId horizontal =
+            id<SketchConstraintId>(seed + 4U);
+        const sketch::Point2 start =
+            point(random.between(-100.0, 100.0),
+                  random.between(-100.0, 100.0));
+        const sketch::Point2 end =
+            point(start.x.si() + random.between(0.01, 100.0), start.y.si());
+        sketch::Definition definition{
+            digest(seed),
+            {{object, "Line 1", sketch::SketchObjectKind::Line,
+              {{"curve", curve}}}},
+            {sketch::LineEntity{curve, start, end}},
+            {sketch::Lock{lock, {curve, sketch::PointKey::Start}, start},
+             sketch::Horizontal{horizontal, curve}}};
+        sketch::ConvertToNurbsEdit edit{
+            {curve,
+             {start, end},
+             {scalar(0.0), scalar(0.0), scalar(1.0), scalar(1.0)},
+             {scalar(1.0), scalar(1.0)},
+             1U},
+            sketch::ExternalConstraintPolicy::Refuse};
+        require(!sketch::convertToNurbs(definition, edit),
+                "NURBS conversion silently removed an incompatible constraint");
+        edit.constraints = sketch::ExternalConstraintPolicy::Detach;
+        auto converted = sketch::convertToNurbs(definition, edit);
+        require(converted && converted->target.entities.size() == 1U &&
+                    converted->target.objects.size() == 1U &&
+                    converted->target.objects.front().id == object &&
+                    converted->target.objects.front().label == "B-spline 1" &&
+                    converted->target.objects.front().kind ==
+                        sketch::SketchObjectKind::BSpline &&
+                    std::holds_alternative<sketch::BSplineEntity>(
+                        converted->target.entities.front()) &&
+                    sketch::entityId(converted->target.entities.front()) == curve &&
+                    converted->target.constraints.size() == 1U &&
+                    sketch::constraintId(converted->target.constraints.front()) ==
+                        lock &&
+                    sketch::validate(converted->target, {}).has_value(),
+                "NURBS conversion lost identity or compatible constraints");
+      });
+}
+
 } // namespace
 
 int main() {
@@ -328,8 +452,10 @@ int main() {
     const auto profile = kearne::testkit::propertyProfile();
     verifyCornerEdits(profile);
     verifyConstraintPolicy();
+    verifyCompoundCornerIntent(profile);
     verifyOffsets(profile);
     verifyExtends(profile);
+    verifyNurbsConversion(profile);
     return 0;
   } catch (const std::exception &error) {
     std::fprintf(stderr, "%s\n", error.what());

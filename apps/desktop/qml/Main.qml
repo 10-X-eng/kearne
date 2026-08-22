@@ -69,26 +69,28 @@ ApplicationWindow {
             onOpenCommandPalette: palette.open()
         }
 
-        Loader {
+        StackLayout {
+            id: surfaces
+
             Layout.fillWidth: true
             Layout.fillHeight: true
-            sourceComponent: {
+            currentIndex: {
                 switch (App.ui.activeSurfaceId) {
-                case "projects": return projectsPage
-                case "settings": return settingsPage
-                case "recovery": return recoveryPage
-                case "operations": return operationsPage
-                default: return editorPage
+                case "projects": return 1
+                case "settings": return 2
+                case "recovery": return 3
+                case "operations": return 4
+                default: return 0
                 }
             }
+
+            EditorPage { }
+            ProjectHubPage { }
+            SettingsPage { }
+            RecoveryPage { }
+            OperationInspectorPage { }
         }
     }
-
-    Component { id: editorPage; EditorPage { } }
-    Component { id: projectsPage; ProjectHubPage { } }
-    Component { id: settingsPage; SettingsPage { } }
-    Component { id: recoveryPage; RecoveryPage { } }
-    Component { id: operationsPage; OperationInspectorPage { } }
 
     CommandPalette { id: palette }
 }

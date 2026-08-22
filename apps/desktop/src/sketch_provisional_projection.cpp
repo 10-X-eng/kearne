@@ -26,11 +26,12 @@ void appendDouble(QCryptographicHash &hash, double value) {
   appendUnsigned(hash, std::bit_cast<std::uint64_t>(value));
 }
 
-Result<render::SketchProvisionalDigest> payloadDigest(
-    std::span<const render::PackedSketchProvisionalPrimitive> primitives) {
+Result<render::SketchProvisionalDigest>
+payloadDigest(const render::SketchProvisionalBatch &batch) {
   QCryptographicHash hash{QCryptographicHash::Sha256};
-  appendUnsigned(hash, primitives.size());
-  for (const render::PackedSketchProvisionalPrimitive &primitive : primitives) {
+  appendUnsigned(hash, batch.primitives.size());
+  for (const render::PackedSketchProvisionalPrimitive &primitive :
+       batch.primitives) {
     appendUnsigned(hash, primitive.handle.value());
     appendUnsigned(hash, static_cast<std::uint8_t>(primitive.kind));
     appendUnsigned(hash, static_cast<std::uint8_t>(primitive.classification));
@@ -44,6 +45,25 @@ Result<render::SketchProvisionalDigest> payloadDigest(
     appendDouble(hash, primitive.sweepAngleRadians);
     appendDouble(hash, primitive.secondaryRadius);
     appendDouble(hash, primitive.rotationAngleRadians);
+    appendUnsigned(hash, primitive.spline);
+  }
+  appendUnsigned(hash, batch.splineControlPointCoordinates.size());
+  for (double value : batch.splineControlPointCoordinates)
+    appendDouble(hash, value);
+  appendUnsigned(hash, batch.splineKnots.size());
+  for (double value : batch.splineKnots)
+    appendDouble(hash, value);
+  appendUnsigned(hash, batch.splineWeights.size());
+  for (double value : batch.splineWeights)
+    appendDouble(hash, value);
+  appendUnsigned(hash, batch.splines.size());
+  for (const render::PackedSketchSpline &spline : batch.splines) {
+    appendUnsigned(hash, spline.firstControlPoint);
+    appendUnsigned(hash, spline.controlPointCount);
+    appendUnsigned(hash, spline.firstKnot);
+    appendUnsigned(hash, spline.firstWeight);
+    appendUnsigned(hash, spline.degree);
+    appendUnsigned(hash, spline.periodic);
   }
   const QByteArray bytes = hash.result();
   render::SketchProvisionalDigest::Bytes payload{};
@@ -57,7 +77,8 @@ Result<render::SketchProvisionalDigest> payloadDigest(
 
 Result<render::PackedSketchProvisionalPrimitive>
 projectPrimitive(const SketchPrimitiveProjection &source,
-                 std::uint32_t handleValue) {
+                 std::uint32_t handleValue,
+                 render::SketchProvisionalBatch &batch) {
   auto handle = render::SketchProvisionalPrimitiveHandle::create(handleValue);
   if (!handle)
     return std::unexpected(std::move(handle.error()));
@@ -68,10 +89,17 @@ projectPrimitive(const SketchPrimitiveProjection &source,
   double sweepAngle = 0.0;
   double secondaryRadius = 0.0;
   double rotationAngle = 0.0;
+  std::uint32_t spline = std::numeric_limits<std::uint32_t>::max();
   const auto classification =
       source.construction
           ? render::SketchProvisionalClassification::Construction
           : render::SketchProvisionalClassification::Regular;
+  if (source.kind != SketchPrimitiveKind::BSpline &&
+      (!source.splineKnots.empty() || !source.splineWeights.empty() ||
+       source.splineDegree != 0U || source.splinePeriodic))
+    return std::unexpected(diagnostic(
+        "desktop.sketch.provisional-unused-bspline",
+        "Non-B-spline preview contains B-spline data"));
   switch (source.kind) {
   case SketchPrimitiveKind::Point:
     if (source.points.size() != 1U)
@@ -135,18 +163,52 @@ projectPrimitive(const SketchPrimitiveProjection &source,
     }
     break;
   case SketchPrimitiveKind::BSpline:
-    return std::unexpected(diagnostic(
-        "desktop.sketch.provisional-bspline-shape",
-        "B-spline previews must be projected as bounded line segments"));
+    if (source.points.size() < 2U || source.splineDegree == 0U ||
+        source.splineDegree >= source.points.size() ||
+        source.splineWeights.size() != source.points.size() ||
+        source.splineKnots.size() !=
+            source.points.size() + source.splineDegree + 1U ||
+        source.points.size() > std::numeric_limits<std::uint32_t>::max() ||
+        batch.splineControlPointCoordinates.size() / 2U >
+            std::numeric_limits<std::uint32_t>::max() ||
+        batch.splineKnots.size() >
+            std::numeric_limits<std::uint32_t>::max() ||
+        batch.splineWeights.size() >
+            std::numeric_limits<std::uint32_t>::max() ||
+        batch.splines.size() >
+            static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max()))
+      return std::unexpected(diagnostic(
+          "desktop.sketch.provisional-bspline-shape",
+          "B-spline preview requires exact control points, knots, weights, and degree"));
+    kind = render::SketchPrimitiveKind::BSpline;
+    spline = static_cast<std::uint32_t>(batch.splines.size());
+    batch.splines.push_back(
+        {static_cast<std::uint32_t>(
+             batch.splineControlPointCoordinates.size() / 2U),
+         static_cast<std::uint32_t>(source.points.size()),
+         static_cast<std::uint32_t>(batch.splineKnots.size()),
+         static_cast<std::uint32_t>(batch.splineWeights.size()),
+         source.splineDegree, source.splinePeriodic});
+    for (const PlanePoint point : source.points) {
+      batch.splineControlPointCoordinates.push_back(point.xMetres);
+      batch.splineControlPointCoordinates.push_back(point.yMetres);
+    }
+    batch.splineKnots.insert(batch.splineKnots.end(),
+                             source.splineKnots.begin(),
+                             source.splineKnots.end());
+    batch.splineWeights.insert(batch.splineWeights.end(),
+                               source.splineWeights.begin(),
+                               source.splineWeights.end());
+    break;
   }
   std::array<render::Point2d, 2> points{};
-  for (std::size_t index = 0U; index < source.points.size(); ++index)
+  for (std::size_t index = 0U; index < pointCount; ++index)
     points[index] = {source.points[index].xMetres,
                      source.points[index].yMetres};
   return render::PackedSketchProvisionalPrimitive{
       *handle,         points,       pointCount, kind,
       classification,  radius,       startAngle, sweepAngle,
-      secondaryRadius, rotationAngle};
+      secondaryRadius, rotationAngle, spline};
 }
 
 } // namespace
@@ -164,16 +226,18 @@ projectSketchProvisional(SketchProvisionalProjectionIdentity identity,
         diagnostic("desktop.sketch.provisional-handle-range",
                    "Sketch preview exceeds process-local handle capacity"));
 
-  std::vector<render::PackedSketchProvisionalPrimitive> projected;
-  projected.reserve(draftCount);
+  render::SketchProvisionalBatch projected;
+  projected.primitives.reserve(draftCount);
   for (const SketchPrimitiveProjection &primitive : primitives) {
     if (!primitive.draft)
       continue;
     auto value = projectPrimitive(
-        primitive, static_cast<std::uint32_t>(projected.size() + 1U));
+        primitive,
+        static_cast<std::uint32_t>(projected.primitives.size() + 1U),
+        projected);
     if (!value)
       return std::unexpected(std::move(value.error()));
-    projected.push_back(std::move(*value));
+    projected.primitives.push_back(std::move(*value));
   }
   auto digest = payloadDigest(projected);
   if (!digest)
@@ -183,7 +247,7 @@ projectSketchProvisional(SketchProvisionalProjectionIdentity identity,
         std::move(identity.toolInstance)},
        std::move(identity.generation),
        std::move(*digest)},
-      projected, limits);
+      std::move(projected), limits);
 }
 
 } // namespace kearne::ui

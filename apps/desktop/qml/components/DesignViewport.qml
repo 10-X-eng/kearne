@@ -219,9 +219,10 @@ Rectangle {
                     const first = sketchScene.planePoint(pressedX, pressedY)
                     const opposite = sketchScene.planePoint(mouse.x, mouse.y)
                     if (App.ui.activeCommandId.length > 0) {
-                        dragged = dragged || App.ui.previewSketchDrag(
-                                      first[0], first[1],
-                                      opposite[0], opposite[1])
+                        const previewed = App.ui.previewSketchDrag(
+                                              first[0], first[1],
+                                              opposite[0], opposite[1])
+                        dragged = dragged || previewed
                     } else if (curveDragActive) {
                         App.ui.previewSketchCurveDrag(opposite[0], opposite[1])
                         dragged = true

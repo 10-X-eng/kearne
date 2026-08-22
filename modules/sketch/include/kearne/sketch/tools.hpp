@@ -177,6 +177,8 @@ using ToolInput =
                                                 std::string_view prefix);
 [[nodiscard]] std::string_view
 sketchObjectLabelPrefix(SketchObjectKind kind) noexcept;
+[[nodiscard]] SketchObject
+curveGroupAfterPartialEdit(const SketchObject &object);
 
 [[nodiscard]] Result<AppliedEdits>
 applyTool(const Definition &current, const ToolInput &input,

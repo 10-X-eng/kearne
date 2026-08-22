@@ -21,24 +21,53 @@ find_program(KEARNE_QT6_QSB_EXECUTABLE NAMES qsb
 set(KEARNE_SKETCH_SHADER_OUTPUT_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/sketch_scene_shaders")
 set(KEARNE_SKETCH_SHADER_OUTPUTS)
-foreach(shader IN ITEMS sketch_scene.vert sketch_scene.frag)
-    set(source "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}")
-    set(output "${KEARNE_SKETCH_SHADER_OUTPUT_DIR}/${shader}.qsb")
+set(KEARNE_SKETCH_VERTEX_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sketch_scene.vert")
+set(KEARNE_SKETCH_VERTEX_OUTPUT
+    "${KEARNE_SKETCH_SHADER_OUTPUT_DIR}/sketch_scene.vert.qsb")
+add_custom_command(
+    OUTPUT "${KEARNE_SKETCH_VERTEX_OUTPUT}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${KEARNE_SKETCH_SHADER_OUTPUT_DIR}"
+    COMMAND "${KEARNE_QT6_QSB_EXECUTABLE}"
+            --glsl "310 es,430" --hlsl 50 --msl 12 -O
+            -o "${KEARNE_SKETCH_VERTEX_OUTPUT}"
+            "${KEARNE_SKETCH_VERTEX_SOURCE}"
+    DEPENDS "${KEARNE_SKETCH_VERTEX_SOURCE}"
+    VERBATIM
+)
+set_source_files_properties("${KEARNE_SKETCH_VERTEX_OUTPUT}" PROPERTIES
+    GENERATED TRUE QT_RESOURCE_ALIAS "sketch_scene.vert.qsb")
+list(APPEND KEARNE_SKETCH_SHADER_OUTPUTS "${KEARNE_SKETCH_VERTEX_OUTPUT}")
+
+set(KEARNE_SKETCH_FRAGMENT_SOURCE
+    "${CMAKE_CURRENT_SOURCE_DIR}/shaders/sketch_scene.frag")
+function(kearne_add_sketch_fragment family)
+    set(output
+        "${KEARNE_SKETCH_SHADER_OUTPUT_DIR}/sketch_scene_${family}.frag.qsb")
     add_custom_command(
         OUTPUT "${output}"
         COMMAND ${CMAKE_COMMAND} -E make_directory
                 "${KEARNE_SKETCH_SHADER_OUTPUT_DIR}"
-        COMMAND "${KEARNE_QT6_QSB_EXECUTABLE}" --qt6 -O -o "${output}"
-                "${source}"
-        DEPENDS "${source}"
+        COMMAND "${KEARNE_QT6_QSB_EXECUTABLE}"
+                --glsl "310 es,430" --hlsl 50 --msl 12 -O
+                ${ARGN}
+                -o "${output}" "${KEARNE_SKETCH_FRAGMENT_SOURCE}"
+        DEPENDS "${KEARNE_SKETCH_FRAGMENT_SOURCE}"
         VERBATIM
     )
     set_source_files_properties("${output}" PROPERTIES
         GENERATED TRUE
-        QT_RESOURCE_ALIAS "${shader}.qsb"
+        QT_RESOURCE_ALIAS "sketch_scene_${family}.frag.qsb"
     )
     list(APPEND KEARNE_SKETCH_SHADER_OUTPUTS "${output}")
-endforeach()
+    set(KEARNE_SKETCH_SHADER_OUTPUTS "${KEARNE_SKETCH_SHADER_OUTPUTS}"
+        PARENT_SCOPE)
+endfunction()
+kearne_add_sketch_fragment(basic -D KEARNE_BASIC_ONLY=1)
+kearne_add_sketch_fragment(nurbs_low_degree
+    -D KEARNE_NURBS_ONLY=1 -D KEARNE_NURBS_MAX_DEGREE=3)
+kearne_add_sketch_fragment(nurbs_general -D KEARNE_NURBS_ONLY=1)
 
 add_library(kearne_sketch_scene_quick STATIC
     src/sketch_frame_renderer.cpp
@@ -58,10 +87,9 @@ add_library(kearne_sketch_scene_quick STATIC
     src/sketch_scene_products.hpp
     src/sketch_scene_publication.cpp
     src/sketch_scene_publication.hpp
-    src/sketch_stroke_mesh.cpp
-    src/sketch_stroke_mesh.hpp
-    src/sketch_stroke_mesh_build.hpp
-    src/sketch_stroke_pattern.hpp
+    src/sketch_dash_pattern.hpp
+    src/sketch_vector_packet.cpp
+    src/sketch_vector_packet.hpp
 )
 add_library(Kearne::SketchSceneQuick ALIAS kearne_sketch_scene_quick)
 target_include_directories(kearne_sketch_scene_quick PUBLIC src)
@@ -531,7 +559,7 @@ if(BUILD_TESTING)
         LABELS "navigation;property;generated"
         TIMEOUT 60)
 
-    add_executable(kearne_sketch_scene_item_benchmark EXCLUDE_FROM_ALL
+    add_executable(kearne_sketch_scene_item_benchmark
         tests/sketch_scene_item_benchmark.cpp
         tests/sketch_scene_fixture.hpp
     )
@@ -540,6 +568,11 @@ if(BUILD_TESTING)
         Kearne::Testkit
         Kearne::BuildOptions
     )
+    add_test(NAME sketch-scene-vector-performance
+             COMMAND kearne_sketch_scene_item_benchmark)
+    set_tests_properties(sketch-scene-vector-performance PROPERTIES
+        LABELS "performance;render;sketch"
+        TIMEOUT 120)
 
     qt_add_executable(kearne_ui_contract_tests
         tests/theme_preferences_contract.cpp

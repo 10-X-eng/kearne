@@ -1,4 +1,5 @@
 #include <kearne/sketch/transform.hpp>
+#include <kearne/sketch/tools.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -465,8 +466,10 @@ transformSelection(const Definition &current,
         object.members, [&](const SketchObjectMember &member) {
           return selected.contains(member.entity);
         });
-    if (selectedMembers != 0U && selectedMembers != object.members.size())
-      edits.emplace_back(DeleteObject{object.id});
+    if (object.kind != SketchObjectKind::CurveGroup && selectedMembers != 0U &&
+        selectedMembers != object.members.size())
+      edits.emplace_back(
+          ReplaceObject{curveGroupAfterPartialEdit(object)});
   }
 
   const bool axesPreserved = preservesCoordinateAxes(transform, profile);

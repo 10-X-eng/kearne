@@ -150,21 +150,41 @@ prepareSketchMarkers(std::shared_ptr<const render::SketchMarkerPacket> source,
       const bool singleAnchor =
           category &&
           (*category == render::SketchMarkerCategory::DegreeOfFreedom ||
-           *category == render::SketchMarkerCategory::SnapCursor);
+           *category == render::SketchMarkerCategory::SnapCursor ||
+           *category == render::SketchMarkerCategory::SplineLabel ||
+           marker.kind == render::SketchMarkerKind::SplineControlPole);
+      const bool guideSegment =
+          marker.kind == render::SketchMarkerKind::SplineControlSegment ||
+          marker.kind == render::SketchMarkerKind::SplineCurvatureSegment;
       const bool semantic =
           category && (*category == render::SketchMarkerCategory::Constraint ||
                        *category == render::SketchMarkerCategory::Dimension);
       const bool dimension =
           category && *category == render::SketchMarkerCategory::Dimension;
+      const bool label =
+          category && *category == render::SketchMarkerCategory::SplineLabel;
+      const bool validLabel =
+          !label ||
+          (marker.kind == render::SketchMarkerKind::SplineDegreeLabel
+               ? marker.valueSi >= 1.0 && marker.valueSi <= 25.0 &&
+                     marker.valueSi == std::floor(marker.valueSi)
+           : marker.kind ==
+                     render::SketchMarkerKind::SplineKnotMultiplicityLabel
+               ? marker.valueSi >= 1.0 && marker.valueSi <= 26.0 &&
+                     marker.valueSi == std::floor(marker.valueSi)
+               : marker.kind == render::SketchMarkerKind::SplinePoleWeightLabel
+                   ? marker.valueSi > 0.0
+                   : false);
       if (!category || marker.handle.value() <= previousHandle ||
           marker.firstAnchor != nextAnchor ||
           static_cast<std::size_t>(marker.firstAnchor) > sourceAnchors.size() ||
           marker.anchorCount > sourceAnchors.size() - marker.firstAnchor ||
           marker.anchorCount == 0U || marker.anchorCount > 3U ||
           (singleAnchor && marker.anchorCount != 1U) ||
+          (guideSegment && marker.anchorCount != 2U) ||
           semantic != marker.constraint.has_value() ||
           !std::isfinite(marker.valueSi) ||
-          (!dimension && marker.valueSi != 0.0))
+          (!dimension && !label && marker.valueSi != 0.0) || !validLabel)
         return std::unexpected(diagnostic(
             "desktop.sketch.marker-projection-malformed-source",
             "sketch marker source has invalid order, ranges, or values"));

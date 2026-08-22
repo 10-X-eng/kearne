@@ -27,7 +27,7 @@ from kearne._wire import (
 from kearne._wire import (
     set_scalar as _set_scalar,
 )
-from kearne.sketch_source import emit_call, values_from_source
+from kearne.sketch_source import emit_call, parse_call, values_from_source
 from kearne.sketch_values import Constraint, Entity, SketchObject
 from kearne.sketch_wire import (
     SketchWireError,
@@ -137,9 +137,12 @@ from kearne.units import m, rad
 def {name}(plane: SketchPlane) -> Sketch:
     return SketchDefinition(
         plane=plane,
-        objects=(),
-        entities=(),
-        constraints=(),
+        objects=(
+        ),
+        entities=(
+        ),
+        constraints=(
+        ),
     ).build()
 """
     if len(result.encode()) > MAXIMUM_SOURCE_BYTES:
@@ -286,10 +289,16 @@ def _edit(
                 raise SourceError(
                     "source.edit.target-mismatch", "deleted source identity remains"
                 )
-        elif final.get(stable) != (target[stable][0], code):
-            raise SourceError(
-                "source.edit.target-mismatch", "edited source call changed"
-            )
+        else:
+            actual = final.get(stable)
+            if (
+                actual is None
+                or actual[0] != target[stable][0]
+                or parse_call(actual[1]) != target[stable][1]
+            ):
+                raise SourceError(
+                    "source.edit.target-mismatch", "edited source call changed"
+                )
     if len(updated.source.encode()) > MAXIMUM_SOURCE_BYTES:
         raise SourceError("source.sketch.byte-limit", "Sketch source is too large")
     return updated.source, updated.source_digest, objects, entities, constraints

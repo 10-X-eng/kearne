@@ -300,6 +300,11 @@ inline sketch::Definition completeDefinition(std::uint64_t seed = 1) {
                             {"end_cap", oblongCurves[1]},
                             {"top_side", oblongCurves[2]},
                             {"bottom_side", oblongCurves[3]}}},
+      sketch::SketchObject{id<SketchObjectId>(seed + 1'016),
+                           "Imported guides (modified)",
+                           sketch::SketchObjectKind::CurveGroup,
+                           {{"guide", secondLine},
+                            {"clearance", secondCircle}}},
   };
   const sketch::PointRef point{pointId, sketch::PointKey::Point};
   const sketch::PointRef start{firstLine, sketch::PointKey::Start};

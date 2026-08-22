@@ -804,6 +804,82 @@ Canvas {
             dot(context, 16, 6, 1)
             dot(context, 21, 17, 1)
             break
+        case "bspline-control-polygon":
+            useSoft(context)
+            paintPath(context, [3, 18, 8, 5, 16, 6, 21, 17], false)
+            useAccent(context)
+            dot(context, 3, 18, 1.4)
+            dot(context, 8, 5, 1.4)
+            dot(context, 16, 6, 1.4)
+            dot(context, 21, 17, 1.4)
+            break
+        case "bspline-curvature-comb": {
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(3, 18)
+            context.bezierCurveTo(6, 8, 14, 2, 21, 17)
+            context.stroke()
+            useSoft(context)
+            line(context, 5, 14, 3.5, 9)
+            line(context, 8, 9, 6.5, 3.5)
+            line(context, 12, 6, 12, 1.5)
+            line(context, 16, 8, 18, 3.5)
+            line(context, 19, 13, 22, 10)
+            break
+        }
+        case "bspline-degree-label":
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(3, 18)
+            context.bezierCurveTo(6, 8, 14, 2, 21, 17)
+            context.stroke()
+            useBase(context)
+            line(context, 17, 4, 22, 4)
+            line(context, 22, 4, 22, 10)
+            line(context, 18, 7, 22, 7)
+            line(context, 17, 10, 22, 10)
+            break
+        case "bspline-knot-label":
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(3, 18)
+            context.bezierCurveTo(6, 8, 14, 2, 21, 17)
+            context.stroke()
+            useBase(context)
+            circle(context, 8, 9, 1.4)
+            circle(context, 17, 9, 1.4)
+            paintPath(context, [5, 4, 3.5, 7, 5, 11], false)
+            paintPath(context, [20, 4, 21.5, 7, 20, 11], false)
+            break
+        case "bspline-weight-label":
+            useSoft(context)
+            paintPath(context, [3, 18, 8, 5, 16, 6, 21, 17], false)
+            useAccent(context)
+            circle(context, 8, 5, 2)
+            useBase(context)
+            line(context, 14, 2.5, 12, 2.5)
+            line(context, 12, 2.5, 12, 9.5)
+            line(context, 12, 9.5, 14, 9.5)
+            line(context, 19, 2.5, 21, 2.5)
+            line(context, 21, 2.5, 21, 9.5)
+            line(context, 21, 9.5, 19, 9.5)
+            break
+        case "convert-to-nurbs":
+            useSoft(context)
+            circle(context, 6.5, 8, 3.5)
+            useBase(context)
+            line(context, 10.5, 12, 15.5, 12)
+            fillPath(context, [15.5, 12, 12.5, 9.8, 12.5, 14.2])
+            paintPath(context, [14, 19, 17, 6, 22, 17], false)
+            useAccent(context)
+            context.beginPath()
+            context.moveTo(14, 19)
+            context.bezierCurveTo(15, 9, 19, 4, 22, 17)
+            context.stroke()
+            dot(context, 14, 19, 1.1)
+            dot(context, 17, 6, 1.1)
+            dot(context, 22, 17, 1.1)
+            break
         case "trim":
             useSoft(context)
             dot(context, 7, 17, 3)
@@ -815,6 +891,29 @@ Canvas {
             line(context, 15, 15, 7, 5)
             useAccent(context)
             line(context, 10.5, 11.5, 13.5, 8.5)
+            break
+        case "split":
+            useBase(context)
+            line(context, 3, 12, 9, 12)
+            line(context, 15, 12, 21, 12)
+            useSoft(context)
+            circle(context, 12, 12, 3)
+            useAccent(context)
+            dot(context, 12, 12, 1.6)
+            line(context, 12, 4, 12, 8)
+            line(context, 12, 16, 12, 20)
+            break
+        case "join-curves":
+            useBase(context)
+            context.beginPath()
+            context.moveTo(3, 17)
+            context.bezierCurveTo(7, 17, 8, 12, 12, 12)
+            context.bezierCurveTo(16, 12, 17, 7, 21, 7)
+            context.stroke()
+            useSoft(context)
+            circle(context, 12, 12, 3)
+            useAccent(context)
+            dot(context, 12, 12, 1.6)
             break
         case "extend":
             useBase(context)

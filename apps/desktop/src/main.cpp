@@ -20,6 +20,7 @@
 #include <QQmlApplicationEngine>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QSurfaceFormat>
 
 #include <cstdlib>
 #include <iostream>
@@ -72,6 +73,10 @@ int main(int argc, char *argv[]) {
   QGuiApplication::setApplicationVersion(QStringLiteral(KEARNE_VERSION));
   if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE"))
     qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+  QSurfaceFormat graphicsFormat;
+  graphicsFormat.setVersion(4, 3);
+  graphicsFormat.setProfile(QSurfaceFormat::CoreProfile);
+  QSurfaceFormat::setDefaultFormat(graphicsFormat);
   QGuiApplication application(argc, argv);
 
   QCommandLineParser parser;

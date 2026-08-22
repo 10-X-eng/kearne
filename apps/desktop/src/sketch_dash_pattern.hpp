@@ -7,18 +7,18 @@
 
 namespace kearne::ui {
 
-struct SketchStrokePattern {
+struct SketchDashPattern {
   float onLogicalPixels = 0.0F;
   float periodLogicalPixels = 0.0F;
-  bool operator==(const SketchStrokePattern &) const = default;
+  bool operator==(const SketchDashPattern &) const = default;
 };
 
-[[nodiscard]] inline SketchStrokePattern
-strokePattern(const render::SketchStyle &style) noexcept {
+[[nodiscard]] inline SketchDashPattern
+dashPattern(const render::SketchStyle &style) noexcept {
   const float width = style.strokeWidthPixels;
   const auto bounded = [](float on, float gap) {
     constexpr float maximum = std::numeric_limits<float>::max();
-    return SketchStrokePattern{on, on > maximum - gap ? maximum : on + gap};
+    return SketchDashPattern{on, on > maximum - gap ? maximum : on + gap};
   };
   const auto scaled = [](float value, float factor) {
     constexpr float maximum = std::numeric_limits<float>::max();

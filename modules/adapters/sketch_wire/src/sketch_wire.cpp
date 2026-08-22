@@ -288,6 +288,8 @@ Result<sketch::SketchObjectKind> readObjectKind(wire::SketchObjectKind value) {
     return sketch::SketchObjectKind::Offset;
   case wire::SKETCH_OBJECT_KIND_JOINED_CURVE:
     return sketch::SketchObjectKind::JoinedCurve;
+  case wire::SKETCH_OBJECT_KIND_CURVE_GROUP:
+    return sketch::SketchObjectKind::CurveGroup;
   default:
     break;
   }
@@ -335,6 +337,8 @@ wire::SketchObjectKind writeObjectKind(sketch::SketchObjectKind value) {
     return wire::SKETCH_OBJECT_KIND_OFFSET;
   case sketch::SketchObjectKind::JoinedCurve:
     return wire::SKETCH_OBJECT_KIND_JOINED_CURVE;
+  case sketch::SketchObjectKind::CurveGroup:
+    return wire::SKETCH_OBJECT_KIND_CURVE_GROUP;
   }
   std::terminate();
 }

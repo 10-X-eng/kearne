@@ -131,23 +131,23 @@ const PackedSketchPrimitive &firstKind(const SketchSceneSnapshot &base,
   return *found;
 }
 
-using TriangleReference = std::pair<std::uint32_t, std::uint32_t>;
+using RecordReference = std::pair<std::uint32_t, std::uint32_t>;
 
-std::vector<TriangleReference>
+std::vector<RecordReference>
 expanded(std::span<const SketchPrimitiveChunkSpan> spans) {
-  std::vector<TriangleReference> triangles;
+  std::vector<RecordReference> records;
   for (const SketchPrimitiveChunkSpan span : spans)
-    for (std::uint32_t offset = 0U; offset < span.indexCount; offset += 3U)
-      triangles.emplace_back(span.chunk, span.firstIndex + offset);
-  std::ranges::sort(triangles);
-  return triangles;
+    for (std::uint32_t offset = 0U; offset < span.recordCount; ++offset)
+      records.emplace_back(span.chunk, span.firstRecord + offset);
+  std::ranges::sort(records);
+  return records;
 }
 
-std::vector<TriangleReference>
-expectedEntityTriangles(const PreparedSketchScene &base,
-                        std::span<const SketchOverlayScope> scopes) {
-  std::vector<TriangleReference> triangles;
-  const auto &index = *base.primitiveTessellationIndex();
+std::vector<RecordReference>
+expectedEntityRecords(const PreparedSketchScene &base,
+                      std::span<const SketchOverlayScope> scopes) {
+  std::vector<RecordReference> records;
+  const auto &index = *base.primitiveVectorIndex();
   for (const SketchOverlayScope &scope : scopes) {
     if (scope.point)
       continue;
@@ -156,20 +156,20 @@ expectedEntityTriangles(const PreparedSketchScene &base,
     require(primitive != nullptr, "expected overlay entity was absent");
     if (!hasFlag(primitive->flags, SketchPrimitiveFlags::Visible))
       continue;
-    const SketchPrimitiveTessellationEntry *entry =
+    const SketchPrimitiveVectorEntry *entry =
         index.find(primitive->handle);
-    require(entry != nullptr, "expected overlay entity was not tessellated");
-    const auto chunks = base.mesh()->chunks();
+    require(entry != nullptr, "expected overlay entity has no vector record");
+    const auto chunks = base.packet()->chunks();
     for (const SketchPrimitiveChunkSpan span : index.spans(primitive->handle)) {
       require(span.chunk < chunks.size() &&
                   chunks[span.chunk]->style() == primitive->style,
               "indexed overlay geometry has foreign style ownership");
-      for (std::uint32_t offset = 0U; offset < span.indexCount; offset += 3U)
-        triangles.emplace_back(span.chunk, span.firstIndex + offset);
+      for (std::uint32_t offset = 0U; offset < span.recordCount; ++offset)
+        records.emplace_back(span.chunk, span.firstRecord + offset);
     }
   }
-  std::ranges::sort(triangles);
-  return triangles;
+  std::ranges::sort(records);
+  return records;
 }
 
 std::vector<SketchOverlayPointInstance>
@@ -198,22 +198,23 @@ void requireValidPreparedRole(const PreparedSketchScene &base,
   require(prepared.source() != nullptr &&
               prepared.source()->base() == base.scene(),
           "prepared role lost its exact semantic source");
-  const auto chunks = base.mesh()->chunks();
+  const auto chunks = base.packet()->chunks();
   std::optional<SketchPrimitiveChunkSpan> previous;
   for (const SketchPrimitiveChunkSpan span : prepared.drawSpans()) {
-    require(span.chunk < chunks.size() && span.indexCount != 0U &&
-                span.firstIndex % 3U == 0U && span.indexCount % 3U == 0U &&
-                static_cast<std::size_t>(span.firstIndex) <=
-                    chunks[span.chunk]->indices().size() &&
-                span.indexCount <=
-                    chunks[span.chunk]->indices().size() - span.firstIndex,
+    require(span.chunk < chunks.size() && span.recordCount != 0U &&
+                static_cast<std::size_t>(span.firstRecord) <=
+                    chunks[span.chunk]->records().size() &&
+                span.recordCount <=
+                    chunks[span.chunk]->records().size() - span.firstRecord,
             "prepared overlay draw span is out of bounds");
     if (previous) {
       const std::size_t previousEnd =
-          static_cast<std::size_t>(previous->firstIndex) + previous->indexCount;
+          static_cast<std::size_t>(previous->firstRecord) +
+          previous->recordCount;
       require(
           previous->chunk < span.chunk ||
-              (previous->chunk == span.chunk && previousEnd < span.firstIndex),
+              (previous->chunk == span.chunk &&
+               previousEnd < span.firstRecord),
           "prepared overlay spans are unsorted, overlapping, or uncoalesced");
     }
     previous = span;
@@ -238,8 +239,8 @@ void requireValidPreparedRole(const PreparedSketchScene &base,
       continue;
     const PackedSketchPrimitive *primitive =
         base.scene()->findPrimitive(scope.entity);
-    const SketchPrimitiveTessellationEntry *entry =
-        base.primitiveTessellationIndex()->find(primitive->handle);
+    const SketchPrimitiveVectorEntry *entry =
+        base.primitiveVectorIndex()->find(primitive->handle);
     rawSpanCount += entry ? entry->spanCount : 0U;
   }
   const auto &metrics = prepared.metrics();
@@ -328,7 +329,7 @@ void verifyRoleOrderSpansAndPoints() {
             "prepared overlay role order is not fixed");
     requireValidPreparedRole(*base, *role);
     require(expanded(role->drawSpans()) ==
-                expectedEntityTriangles(*base, role->source()->scopes()),
+                expectedEntityRecords(*base, role->source()->scopes()),
             "prepared overlay spans changed entity geometry ownership");
   }
   require(sets[0]->scopes().size() == 3U &&
@@ -337,7 +338,7 @@ void verifyRoleOrderSpansAndPoints() {
               (*prepared)->roleSets()[2]->pointInstances().size() == 1U,
           "duplicate or overlapping entity/point scopes were conflated");
   require(expanded((*prepared)->roleSets()[0]->drawSpans()) ==
-                  expectedEntityTriangles(*base, sets[0]->scopes()) &&
+                  expectedEntityRecords(*base, sets[0]->scopes()) &&
               expanded((*prepared)->roleSets()[1]->drawSpans()) !=
                   expanded((*prepared)->roleSets()[0]->drawSpans()),
           "cross-role overlap lost independent prepared geometry");
@@ -658,7 +659,7 @@ void verifyGeneratedOverlayProjection(const testkit::PropertyProfile &profile) {
           const auto &projected = (*prepared)->roleSets()[role];
           require(projected->role() == overlayRoles[role] &&
                       expanded(projected->drawSpans()) ==
-                          expectedEntityTriangles(*base, sets[role]->scopes()),
+                          expectedEntityRecords(*base, sets[role]->scopes()),
                   "generated overlay projection changed exact ownership");
           requireValidPreparedRole(*base, *projected);
         }

@@ -292,8 +292,27 @@ void verifySelectionTransforms(const testkit::PropertyProfile &profile) {
         auto detached = sketch::transformSelection(
             rectangle->target, partial, moved,
             sketch::ExternalConstraintPolicy::Detach);
-        require(detached && detached->target.objects.empty(),
-                "partial transform retained false compound-object intent");
+        require(detached && detached->target.objects.size() == 1U &&
+                    detached->target.objects.front().id == objectId &&
+                    detached->target.objects.front().kind ==
+                        sketch::SketchObjectKind::CurveGroup &&
+                    detached->target.objects.front().label ==
+                        "Rectangle 1 (modified)" &&
+                    detached->target.objects.front().members ==
+                        rectangle->target.objects.front().members,
+                "partial transform lost explicit source-object ancestry");
+        const std::array anotherPartial{entityIds[1]};
+        auto regrouped = sketch::transformSelection(
+            detached->target, anotherPartial, moved,
+            sketch::ExternalConstraintPolicy::Detach);
+        require(
+            regrouped &&
+                regrouped->target.objects == detached->target.objects &&
+                std::ranges::none_of(
+                    regrouped->sourceEdits, [](const auto &intent) {
+                      return intent.section == sketch::SourceSection::Objects;
+                    }),
+            "repeated partial transform rewrote stable source ancestry");
 
         const double rotation = random.between(0.1, 1.4);
         auto rotated = sketch::transformSelection(

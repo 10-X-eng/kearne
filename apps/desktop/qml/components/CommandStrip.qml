@@ -148,12 +148,14 @@ Rectangle {
                                 width: overflowColumn.width
                                 semanticId: "command." + modelData.id
                                 semanticName: modelData.label
-                                semanticValue: modelData.shortcut
+                                semanticValue: checked ? "selected" : modelData.shortcut
                                 iconName: modelData.icon
                                 shortcut: modelData.shortcut
                                 quiet: true
                                 checkable: true
-                                checked: App.ui.activeCommandId === modelData.id
+                                checked: modelData.checked
+                                         || App.ui.activeCommandId
+                                            === modelData.id
                                 text: modelData.label
                                 onClicked: {
                                     overflowMenu.close()

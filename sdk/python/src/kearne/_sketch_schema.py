@@ -39,6 +39,7 @@ ObjectKind: TypeAlias = Literal[
     "chamfer",
     "offset",
     "joined_curve",
+    "curve_group",
 ]
 Section: TypeAlias = Literal["objects", "entities", "constraints", "references"]
 ValueKind: TypeAlias = Literal[
@@ -53,6 +54,7 @@ ValueKind: TypeAlias = Literal[
     "integer",
     "entity_ref",
     "entity_refs",
+    "object_members",
     "point_ref",
 ]
 ValueLimit: TypeAlias = Literal["positive", "nonnegative"]
@@ -296,6 +298,16 @@ HELPER_SPECS = (
             ArgumentSpec("curve", "entity_ref", frozenset({"bspline"})),
         ),
         object_kind="joined_curve",
+    ),
+    HelperSpec(
+        "curve_group",
+        "objects",
+        (
+            ID,
+            ArgumentSpec("label", "label"),
+            ArgumentSpec("members", "object_members", ALL_ENTITIES - POINTS),
+        ),
+        object_kind="curve_group",
     ),
     HelperSpec(
         "slot",

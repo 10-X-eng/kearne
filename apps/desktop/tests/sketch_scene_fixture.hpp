@@ -209,8 +209,8 @@ scene(std::size_t count, std::uint64_t seed, render::SceneStamp sceneStamp) {
 
 inline std::shared_ptr<const PreparedSketchScene>
 preparedScene(std::shared_ptr<const render::SketchSceneSnapshot> generated,
-              SketchCurveLod lod) {
-  auto prepared = prepareSketchScene(std::move(generated), lod);
+              render::SketchPickIndexOptions picking = {}) {
+  auto prepared = prepareSketchScene(std::move(generated), picking);
   if (!prepared)
     throw std::runtime_error(prepared.error().code);
   return std::move(*prepared);

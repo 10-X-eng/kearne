@@ -116,7 +116,7 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
         diagnostic("desktop.sketch.overlay-projection-count-limit",
                    "sketch overlay projection exceeded its scope limit"));
   const auto &scene = *base.scene();
-  const auto &primitiveIndex = *base.primitiveTessellationIndex();
+  const auto &primitiveIndex = *base.primitiveVectorIndex();
   std::size_t entityScopeCount = 0U;
   std::size_t pointScopeCount = 0U;
   std::size_t rawSpanCount = 0U;
@@ -137,7 +137,7 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
       continue;
     }
     ++entityScopeCount;
-    const SketchPrimitiveTessellationEntry *entry =
+    const SketchPrimitiveVectorEntry *entry =
         primitiveIndex.find(primitive->handle);
     const bool visible = render::hasFlag(primitive->flags,
                                          render::SketchPrimitiveFlags::Visible);
@@ -145,19 +145,19 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
       if (entry)
         return std::unexpected(diagnostic(
             "desktop.sketch.overlay-projection-hidden-primitive",
-            "hidden overlay geometry owns prepared tessellation ranges"));
+            "hidden overlay geometry owns prepared vector ranges"));
       continue;
     }
     if (!entry) {
       return std::unexpected(diagnostic(
           "desktop.sketch.overlay-projection-missing-primitive",
-          "visible overlay geometry has no prepared tessellation ranges"));
+          "visible overlay geometry has no prepared vector ranges"));
     }
     const auto spans = primitiveIndex.spans(primitive->handle);
     if (spans.empty() || spans.size() != entry->spanCount)
       return std::unexpected(diagnostic(
           "desktop.sketch.overlay-projection-invalid-span",
-          "visible overlay geometry has an invalid tessellation range"));
+          "visible overlay geometry has an invalid vector range"));
     if (spans.size() > std::numeric_limits<std::size_t>::max() - rawSpanCount)
       return std::unexpected(
           diagnostic("desktop.sketch.overlay-projection-memory-overflow",
@@ -206,7 +206,7 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
                                         visiblePointCount, limits);
       !bounded)
     return std::unexpected(std::move(bounded.error()));
-  const auto chunks = base.mesh()->chunks();
+  const auto chunks = base.packet()->chunks();
   for (const render::SketchOverlayScope &scope : scopes) {
     cancellation.checkpoint();
     const render::PackedSketchPrimitive *primitive =
@@ -225,44 +225,43 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
           {primitive->handle, *scope.point, *position, primitive->style});
       continue;
     }
-    const SketchPrimitiveTessellationEntry *entry =
+    const SketchPrimitiveVectorEntry *entry =
         primitiveIndex.find(primitive->handle);
     const auto spans = primitiveIndex.spans(primitive->handle);
     if (!entry || spans.empty() || spans.size() != entry->spanCount)
       return std::unexpected(diagnostic(
           "desktop.sketch.overlay-projection-invalid-span",
-          "visible overlay geometry has an invalid tessellation range"));
-    std::size_t indexCount = 0U;
+          "visible overlay geometry has an invalid vector range"));
+    std::size_t recordCount = 0U;
     for (const SketchPrimitiveChunkSpan span : spans) {
       cancellation.checkpoint();
-      if (span.chunk >= chunks.size() || span.indexCount == 0U ||
-          span.firstIndex % 3U != 0U || span.indexCount % 3U != 0U ||
-          static_cast<std::size_t>(span.firstIndex) >
-              chunks[span.chunk]->indices().size() ||
-          span.indexCount >
-              chunks[span.chunk]->indices().size() - span.firstIndex ||
+      if (span.chunk >= chunks.size() || span.recordCount == 0U ||
+          static_cast<std::size_t>(span.firstRecord) >
+              chunks[span.chunk]->records().size() ||
+          span.recordCount >
+              chunks[span.chunk]->records().size() - span.firstRecord ||
           chunks[span.chunk]->style() != primitive->style ||
           chunks[span.chunk]->layer() != scene.styles()[primitive->style].layer)
         return std::unexpected(diagnostic(
             "desktop.sketch.overlay-projection-invalid-span",
             "sketch overlay preparation found an invalid primitive range"));
-      if (!detail::checkedSizeAdd(indexCount, span.indexCount, indexCount))
+      if (!detail::checkedSizeAdd(recordCount, span.recordCount, recordCount))
         return std::unexpected(
             diagnostic("desktop.sketch.overlay-projection-span-overflow",
-                       "sketch overlay primitive index count overflowed"));
+                       "sketch overlay primitive record count overflowed"));
       rawSpans.push_back(span);
     }
-    if (indexCount != entry->indexCount)
+    if (recordCount != entry->recordCount)
       return std::unexpected(
           diagnostic("desktop.sketch.overlay-projection-invalid-span",
-                     "sketch overlay primitive index total is inconsistent"));
+                     "sketch overlay primitive record total is inconsistent"));
   }
   cancellation.checkpointNow();
   std::ranges::sort(rawSpans, [&](const SketchPrimitiveChunkSpan &first,
                                   const SketchPrimitiveChunkSpan &second) {
     cancellation.checkpoint();
     return first.chunk != second.chunk ? first.chunk < second.chunk
-                                       : first.firstIndex < second.firstIndex;
+                                       : first.firstRecord < second.firstRecord;
   });
 
   std::size_t canonicalSpanCount = 0U;
@@ -270,25 +269,25 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
   for (const SketchPrimitiveChunkSpan span : rawSpans) {
     cancellation.checkpoint();
     const std::size_t previousEnd =
-        previous ? static_cast<std::size_t>(previous->firstIndex) +
-                       previous->indexCount
+        previous ? static_cast<std::size_t>(previous->firstRecord) +
+                       previous->recordCount
                  : 0U;
     if (previous && previous->chunk == span.chunk &&
-        span.firstIndex < previousEnd)
+        span.firstRecord < previousEnd)
       return std::unexpected(
           diagnostic("desktop.sketch.overlay-projection-overlapping-span",
                      "sketch overlay primitive ranges overlap"));
     if (!previous || previous->chunk != span.chunk ||
-        previousEnd != span.firstIndex) {
+        previousEnd != span.firstRecord) {
       ++canonicalSpanCount;
       previous = span;
     } else {
-      if (span.indexCount >
-          std::numeric_limits<std::uint32_t>::max() - previous->indexCount)
+      if (span.recordCount >
+          std::numeric_limits<std::uint32_t>::max() - previous->recordCount)
         return std::unexpected(diagnostic(
             "desktop.sketch.overlay-projection-span-overflow",
-            "coalesced sketch overlay range exceeds packed index capacity"));
-      previous->indexCount += span.indexCount;
+            "coalesced sketch overlay range exceeds packed record capacity"));
+      previous->recordCount += span.recordCount;
     }
   }
   auto canonicalMetrics =
@@ -320,18 +319,18 @@ buildRole(const render::SketchOverlayRoleSetPtr &source,
     const std::size_t previousEnd =
         drawSpans.empty()
             ? 0U
-            : static_cast<std::size_t>(drawSpans.back().firstIndex) +
-                  drawSpans.back().indexCount;
+            : static_cast<std::size_t>(drawSpans.back().firstRecord) +
+                  drawSpans.back().recordCount;
     if (drawSpans.empty() || drawSpans.back().chunk != span.chunk ||
-        previousEnd != span.firstIndex) {
+        previousEnd != span.firstRecord) {
       drawSpans.push_back(span);
     } else {
-      if (span.indexCount > std::numeric_limits<std::uint32_t>::max() -
-                                drawSpans.back().indexCount)
+      if (span.recordCount > std::numeric_limits<std::uint32_t>::max() -
+                                 drawSpans.back().recordCount)
         return std::unexpected(diagnostic(
             "desktop.sketch.overlay-projection-span-overflow",
-            "coalesced sketch overlay range exceeds packed index capacity"));
-      drawSpans.back().indexCount += span.indexCount;
+            "coalesced sketch overlay range exceeds packed record capacity"));
+      drawSpans.back().recordCount += span.recordCount;
     }
   }
   auto metrics =
@@ -384,8 +383,8 @@ Result<std::shared_ptr<const PreparedSketchOverlay>> prepareSketchOverlay(
       return std::unexpected(
           diagnostic("desktop.sketch.overlay-projection-null-overlay",
                      "sketch overlay preparation requires an overlay"));
-    if (!base || !base->scene() || !base->mesh() ||
-        !base->primitiveTessellationIndex())
+    if (!base || !base->scene() || !base->packet() ||
+        !base->primitiveVectorIndex())
       return std::unexpected(diagnostic(
           "desktop.sketch.overlay-projection-null-base",
           "sketch overlay preparation requires a prepared base scene"));

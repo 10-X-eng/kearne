@@ -15,6 +15,7 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -167,6 +168,106 @@ awaitTransform(ui::LocalSketchSession &session,
   QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
   loop.exec();
   require(completion.has_value(), "Sketch transform did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalSketchProjection> awaitTrim(ui::LocalSketchSession &session,
+                                            ui::LocalTrimEdit edit) {
+  std::optional<Result<ui::LocalSketchProjection>> completion;
+  QEventLoop loop;
+  require(session.trim(std::move(edit),
+                       [&](Result<ui::LocalSketchProjection> result) {
+                         completion = std::move(result);
+                         loop.quit();
+                       }),
+          "Sketch Trim was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "Sketch Trim did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalTrimPreview>
+awaitTrimPreview(ui::LocalSketchSession &session, ui::LocalCurvePick curve) {
+  std::optional<Result<ui::LocalTrimPreview>> completion;
+  QEventLoop loop;
+  require(session.previewTrim(
+              std::move(curve),
+              [&](Result<ui::LocalTrimPreview> result) {
+                completion = std::move(result);
+                loop.quit();
+              }),
+          "Sketch Trim preview was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "Sketch Trim preview did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalSketchProjection> awaitSplit(ui::LocalSketchSession &session,
+                                             ui::LocalSplitEdit edit) {
+  std::optional<Result<ui::LocalSketchProjection>> completion;
+  QEventLoop loop;
+  require(session.split(std::move(edit),
+                        [&](Result<ui::LocalSketchProjection> result) {
+                          completion = std::move(result);
+                          loop.quit();
+                        }),
+          "Sketch Split was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "Sketch Split did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalSplitPreview>
+awaitSplitPreview(ui::LocalSketchSession &session, ui::LocalCurvePick curve) {
+  std::optional<Result<ui::LocalSplitPreview>> completion;
+  QEventLoop loop;
+  require(session.previewSplit(
+              std::move(curve),
+              [&](Result<ui::LocalSplitPreview> result) {
+                completion = std::move(result);
+                loop.quit();
+              }),
+          "Sketch Split preview was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "Sketch Split preview did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalSketchProjection> awaitJoin(ui::LocalSketchSession &session,
+                                            ui::LocalJoinEdit edit) {
+  std::optional<Result<ui::LocalSketchProjection>> completion;
+  QEventLoop loop;
+  require(session.join(std::move(edit),
+                       [&](Result<ui::LocalSketchProjection> result) {
+                         completion = std::move(result);
+                         loop.quit();
+                       }),
+          "Sketch Join was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "Sketch Join did not complete");
+  return std::move(*completion);
+}
+
+Result<ui::LocalSketchProjection>
+awaitConvertToNurbs(ui::LocalSketchSession &session,
+                    ui::LocalConvertToNurbsEdit edit) {
+  std::optional<Result<ui::LocalSketchProjection>> completion;
+  QEventLoop loop;
+  require(session.convertToNurbs(
+              std::move(edit),
+              [&](Result<ui::LocalSketchProjection> result) {
+                completion = std::move(result);
+                loop.quit();
+              }),
+          "Convert to NURBS was not queued");
+  QTimer::singleShot(std::chrono::seconds{15}, &loop, &QEventLoop::quit);
+  loop.exec();
+  require(completion.has_value(), "Convert to NURBS did not complete");
   return std::move(*completion);
 }
 
@@ -892,7 +993,7 @@ void verifyInteractiveEdits() {
           "curve drag preview was not bounded and latest-wins");
   requireSceneBounds(***latestPreview, -0.04, -0.045, 0.04, 0.025,
                      "curve drag preview did not publish the latest geometry");
-  session.cancelCurveDragPreview();
+  session.cancelPreview();
 
   auto resized = awaitCurveDrag(session, {entityId, 0.0, -0.025, 0.0, -0.04});
   require(resized && resized->scene && resized->source != regular->source &&
@@ -992,6 +1093,221 @@ void verifyPreparationFailureIsAsynchronous() {
   require(completion && !completion->has_value() &&
               completion->error().code == "worker.process.start",
           "worker preparation failure was not delivered asynchronously");
+}
+
+void verifyTrimOperations() {
+  ui::LocalSketchSession lineSession{config()};
+  require(awaitCreate(lineSession).has_value(),
+          "line Trim Sketch creation failed");
+  auto target = awaitTool(lineSession,
+                          {ui::LocalSketchToolKind::Line,
+                           {{-0.05, 0.0}, {0.05, 0.0}},
+                           false});
+  auto firstBoundary = awaitTool(lineSession,
+                                 {ui::LocalSketchToolKind::Line,
+                                  {{-0.02, -0.02}, {-0.02, 0.02}},
+                                  false});
+  auto secondBoundary = awaitTool(lineSession,
+                                  {ui::LocalSketchToolKind::Line,
+                                   {{0.02, -0.02}, {0.02, 0.02}},
+                                   false});
+  require(target && target->scene && firstBoundary && secondBoundary &&
+              secondBoundary->scene &&
+              secondBoundary->scene->primitives().size() == 3U,
+          "line Trim fixture creation failed");
+  const QString targetId = QString::fromStdString(
+      target->scene->primitives().front().entity.toString());
+  const QString sourceBeforeTrim = secondBoundary->source;
+  auto preview = awaitTrimPreview(lineSession, {targetId, 0.0, 0.0});
+  require(preview && !preview->deletesCurve &&
+              preview->boundaries.size() == 2U &&
+              std::abs(preview->boundaries[0].xMetres + 0.02) <= 1.0e-9 &&
+              std::abs(preview->boundaries[1].xMetres - 0.02) <= 1.0e-9,
+          "source-backed Trim preview lost its exact boundaries");
+  auto trimmed = awaitTrim(
+      lineSession,
+      {{targetId, 0.0, 0.0}, ui::LocalExternalConstraintPolicy::Refuse});
+  require(trimmed && trimmed->scene &&
+              trimmed->scene->primitives().size() == 4U &&
+              trimmed->source.contains(QStringLiteral("curve_group(")) &&
+              trimmed->source.count(QStringLiteral("point_on_object(")) ==
+                  2 &&
+              trimmed->constraints.size() == 2U &&
+              std::ranges::any_of(
+                  trimmed->objects, [](const sketch::SketchObject &object) {
+                    return object.label == "Line 1 (modified)" &&
+                           object.kind == sketch::SketchObjectKind::CurveGroup &&
+                           object.members.size() == 2U;
+                  }),
+          "line Trim did not survive source transformation and evaluation");
+  auto undone = awaitHistory(lineSession, false);
+  require(undone && undone->source == sourceBeforeTrim && undone->scene &&
+              undone->scene->primitives().size() == 3U,
+          "line Trim undo did not restore exact source and geometry");
+
+  ui::LocalSketchSession circleSession{config()};
+  require(awaitCreate(circleSession).has_value(),
+          "circle Trim Sketch creation failed");
+  auto circle = awaitTool(circleSession,
+                          {ui::LocalSketchToolKind::Circle,
+                           {{0.0, 0.0}, {0.03, 0.0}},
+                           false});
+  auto boundary = awaitTool(circleSession,
+                            {ui::LocalSketchToolKind::Line,
+                             {{0.0, -0.04}, {0.0, 0.04}},
+                             false});
+  require(circle && circle->scene && boundary && boundary->scene,
+          "circle Trim fixture creation failed");
+  const SketchEntityId circleId = circle->scene->primitives().front().entity;
+  auto arc = awaitTrim(
+      circleSession,
+      {{QString::fromStdString(circleId.toString()), 0.03, 0.0},
+       ui::LocalExternalConstraintPolicy::Refuse});
+  const auto *arcPrimitive =
+      arc && arc->scene ? arc->scene->findPrimitive(circleId) : nullptr;
+  require(arcPrimitive &&
+              arcPrimitive->kind == render::SketchPrimitiveKind::Arc &&
+              arc->source.contains(QStringLiteral("arc(")) &&
+              arc->source.contains(QStringLiteral("curve_group(")) &&
+              arc->source.count(QStringLiteral("point_on_object(")) == 2 &&
+              arc->constraints.size() == 2U &&
+              std::ranges::any_of(
+                  arc->objects, [](const sketch::SketchObject &object) {
+                    return object.label == "Circle 1 (modified)" &&
+                           object.kind == sketch::SketchObjectKind::CurveGroup;
+                  }),
+          "circle Trim retype did not survive canonical source evaluation");
+}
+
+void verifySplitOperations() {
+  ui::LocalSketchSession session{config()};
+  require(awaitCreate(session).has_value(),
+          "Split Sketch creation failed");
+  auto line = awaitTool(session,
+                        {ui::LocalSketchToolKind::Line,
+                         {{-0.05, 0.0}, {0.05, 0.0}},
+                         false});
+  require(line && line->scene && line->scene->primitives().size() == 1U,
+          "Split fixture creation failed");
+  const QString entityId = QString::fromStdString(
+      line->scene->primitives().front().entity.toString());
+  const QString sourceBeforeSplit = line->source;
+  auto preview = awaitSplitPreview(session, {entityId, 0.01, 0.004});
+  require(preview && std::abs(preview->point.xMetres - 0.01) <= 1.0e-9 &&
+              std::abs(preview->point.yMetres) <= 1.0e-9,
+          "source-backed Split preview lost its exact curve location");
+  auto split = awaitSplit(
+      session,
+      {{entityId, 0.01, 0.004}, ui::LocalExternalConstraintPolicy::Refuse});
+  require(split && split->scene && split->scene->primitives().size() == 2U &&
+              split->source.contains(QStringLiteral("curve_group(")) &&
+              split->source.count(QStringLiteral("coincident(")) == 1 &&
+              split->constraints.size() == 1U &&
+              std::ranges::any_of(
+                  split->objects, [](const sketch::SketchObject &object) {
+                    return object.label == "Line 1 (modified)" &&
+                           object.kind == sketch::SketchObjectKind::CurveGroup &&
+                           object.members.size() == 2U;
+                  }),
+          "Split did not survive source transformation and evaluation");
+  auto undone = awaitHistory(session, false);
+  require(undone && undone->source == sourceBeforeSplit && undone->scene &&
+              undone->scene->primitives().size() == 1U,
+          "Split undo did not restore exact source and geometry");
+}
+
+void verifyJoinOperations() {
+  ui::LocalSketchSession session{config()};
+  require(awaitCreate(session).has_value(), "Join Sketch creation failed");
+  auto first = awaitTool(session,
+                         {ui::LocalSketchToolKind::Line,
+                          {{-0.05, 0.0}, {0.0, 0.0}},
+                          false});
+  auto second = awaitTool(session,
+                          {ui::LocalSketchToolKind::Line,
+                           {{0.0, 0.0}, {0.03, 0.04}},
+                           false});
+  require(first && first->scene && second && second->scene &&
+              second->scene->primitives().size() == 2U,
+          "Join fixture creation failed");
+  const QString firstId = QString::fromStdString(
+      first->scene->primitives().front().entity.toString());
+  const auto secondPrimitive = std::ranges::find_if(
+      second->scene->primitives(), [&](const auto &primitive) {
+        return primitive.entity.toString() != firstId.toStdString();
+      });
+  require(secondPrimitive != second->scene->primitives().end(),
+          "Join fixture lost its second curve identity");
+  const QString secondId =
+      QString::fromStdString(secondPrimitive->entity.toString());
+  auto coincident = awaitConstraint(
+      session,
+      {ui::LocalSketchConstraintKind::Coincident,
+       {{firstId, QStringLiteral("end")},
+        {secondId, QStringLiteral("start")}},
+       std::nullopt});
+  require(coincident && coincident->constraints.size() == 1U,
+          "Join seam constraint creation failed");
+  const QString sourceBeforeJoin = coincident->source;
+  auto joined = awaitJoin(
+      session,
+      {{firstId, QStringLiteral("end")},
+       {secondId, QStringLiteral("start")},
+       ui::LocalExternalConstraintPolicy::Refuse});
+  require(joined && joined->scene && joined->scene->primitives().size() == 1U &&
+              joined->scene->primitives().front().kind ==
+                  render::SketchPrimitiveKind::BSpline &&
+              joined->source.contains(QStringLiteral("joined_curve_object(")) &&
+              joined->constraints.empty() && joined->objects.size() == 1U &&
+              joined->objects.front().label == "Joined curve 1" &&
+              joined->objects.front().kind ==
+                  sketch::SketchObjectKind::JoinedCurve,
+          "Join did not survive source transformation and evaluation");
+  auto undone = awaitHistory(session, false);
+  require(undone && undone->source == sourceBeforeJoin && undone->scene &&
+              undone->scene->primitives().size() == 2U &&
+              undone->constraints.size() == 1U,
+          "Join undo did not restore exact source and geometry");
+}
+
+void verifyNurbsConversionOperations() {
+  ui::LocalSketchSession session{config()};
+  require(awaitCreate(session).has_value(),
+          "Convert to NURBS Sketch creation failed");
+  auto line = awaitTool(session,
+                        {ui::LocalSketchToolKind::Line,
+                         {{-0.04, -0.01}, {0.05, 0.03}},
+                         true});
+  require(line && line->scene && line->scene->primitives().size() == 1U,
+          "Convert to NURBS fixture creation failed");
+  const QString entity = QString::fromStdString(
+      line->scene->primitives().front().entity.toString());
+  const QString sourceBeforeConversion = line->source;
+  auto converted = awaitConvertToNurbs(
+      session, {entity, ui::LocalExternalConstraintPolicy::Refuse});
+  require(converted && converted->scene &&
+              converted->scene->primitives().size() == 1U &&
+              converted->scene->primitives().front().entity.toString() ==
+                  entity.toStdString() &&
+              converted->scene->primitives().front().kind ==
+                  render::SketchPrimitiveKind::BSpline &&
+              converted->scene->primitives().front().style == 1U &&
+              converted->scene->styles().size() > 1U &&
+              converted->scene->styles()[1].role ==
+                  render::SketchStyleRole::Construction &&
+              converted->source.contains(QStringLiteral("bspline_object(")) &&
+              converted->source.contains(QStringLiteral("bspline(")) &&
+              converted->objects.size() == 1U &&
+              converted->objects.front().label == "B-spline 1" &&
+              converted->objects.front().kind ==
+                  sketch::SketchObjectKind::BSpline,
+          "Convert to NURBS lost source, identity, or construction state");
+  auto undone = awaitHistory(session, false);
+  require(undone && undone->source == sourceBeforeConversion && undone->scene &&
+              undone->scene->primitives().size() == 1U &&
+              undone->scene->primitives().front().kind ==
+                  render::SketchPrimitiveKind::Line,
+          "Convert to NURBS undo did not restore exact source and geometry");
 }
 
 void verifyProductionFrontendProjection() {
@@ -1154,7 +1470,7 @@ void verifyProductionFrontendProjection() {
   port->selectEntity(rectangleItem->id);
   require(
       port->snapshot()->selectionSummary == QStringLiteral("Rectangle 1") &&
-          port->snapshot()->selectedSketchEntityIds.size() == 4U &&
+          port->snapshot()->selectedSketchScopes.size() == 4U &&
           std::ranges::any_of(port->snapshot()->fields,
                               [](const auto &field) {
                                 return field.label == QStringLiteral("Width");
@@ -1169,8 +1485,8 @@ void verifyProductionFrontendProjection() {
   port->selectEntity(bottomEdgeId);
   require(port->snapshot()->selectionSummary ==
                   QStringLiteral("Rectangle 1 · Bottom edge") &&
-              port->snapshot()->selectedSketchEntityIds ==
-                  std::vector<QString>{bottomEdgeId} &&
+              port->snapshot()->selectedSketchScopes ==
+                  std::vector<ui::SketchSelectionScope>{{bottomEdgeId, {}}} &&
               std::ranges::any_of(port->snapshot()->fields,
                                   [](const auto &field) {
                                     return field.label ==
@@ -1186,6 +1502,39 @@ void verifyProductionFrontendProjection() {
                                                 QStringLiteral("Revision");
                                    }),
           "Sketch selection did not expose concise human properties");
+
+  port->selectSketchEntity({bottomEdgeId, QStringLiteral("start")});
+  require(
+      port->snapshot()->selectionSummary ==
+              QStringLiteral("Rectangle 1 · Bottom edge · Start point") &&
+          port->snapshot()->selectedSketchScopes ==
+              std::vector<ui::SketchSelectionScope>{
+                  {bottomEdgeId, QStringLiteral("start")}} &&
+          std::ranges::any_of(
+              port->snapshot()->sketchProjection.primitives,
+              [&bottomEdgeId](const auto &primitive) {
+                return primitive.id == bottomEdgeId &&
+                       primitive.selectedPointKeys ==
+                           std::vector<QString>{QStringLiteral("start")} &&
+                       !primitive.selected;
+              }) &&
+          std::ranges::any_of(port->snapshot()->fields,
+                              [](const auto &field) {
+                                return field.label == QStringLiteral("Type") &&
+                                       std::get<QString>(field.value) ==
+                                           QStringLiteral("Point");
+                              }) &&
+          std::ranges::any_of(port->snapshot()->fields,
+                              [](const auto &field) {
+                                return field.label == QStringLiteral("X");
+                              }) &&
+          std::ranges::any_of(port->snapshot()->fields,
+                              [](const auto &field) {
+                                return field.label == QStringLiteral("Y");
+                              }),
+      "Sketch point selection lost its stable key or human properties");
+
+  port->selectEntity(bottomEdgeId);
 
   const auto committedRectangleScene = rectangle->sketchScene;
   require(port->previewSketchCurve(bottomEdgeId, {0.0, -0.025},
@@ -1989,6 +2338,48 @@ void verifyProductionFrontendProjection() {
                                   return field.label == QStringLiteral("Form");
                                 }),
         "B-spline selection did not expose human curve properties");
+    const QString presentationRevision = port->snapshot()->projectRevision;
+    struct SplinePresentationCase {
+      QString command;
+      bool ui::FrontendSnapshot::*visible;
+    };
+    const std::array presentations{
+        SplinePresentationCase{
+            QStringLiteral("sketch.bspline.control-polygon"),
+            &ui::FrontendSnapshot::sketchControlPolygonVisible},
+        SplinePresentationCase{
+            QStringLiteral("sketch.bspline.curvature-comb"),
+            &ui::FrontendSnapshot::sketchCurvatureCombVisible},
+        SplinePresentationCase{
+            QStringLiteral("sketch.bspline.degree-labels"),
+            &ui::FrontendSnapshot::sketchDegreeLabelsVisible},
+        SplinePresentationCase{QStringLiteral("sketch.bspline.knot-labels"),
+                               &ui::FrontendSnapshot::sketchKnotLabelsVisible},
+        SplinePresentationCase{
+            QStringLiteral("sketch.bspline.weight-labels"),
+            &ui::FrontendSnapshot::sketchWeightLabelsVisible},
+    };
+    for (const SplinePresentationCase &presentation : presentations) {
+      const auto command = [&presentation](const ui::FrontendSnapshot &value) {
+        return std::ranges::find(value.commands, presentation.command,
+                                 &ui::CommandDescriptor::id);
+      };
+      require(command(*port->snapshot()) != port->snapshot()->commands.end() &&
+                  command(*port->snapshot())->available &&
+                  !command(*port->snapshot())->checked &&
+                  !((*port->snapshot()).*presentation.visible),
+              "selected B-spline did not enable a presentation tool");
+      port->requestCommand(presentation.command);
+      require(((*port->snapshot()).*presentation.visible) &&
+                  command(*port->snapshot())->checked &&
+                  port->snapshot()->projectRevision == presentationRevision,
+              "B-spline presentation tool changed source history");
+      port->requestCommand(presentation.command);
+      require(!((*port->snapshot()).*presentation.visible) &&
+                  !command(*port->snapshot())->checked &&
+                  port->snapshot()->projectRevision == presentationRevision,
+              "B-spline presentation tool did not hide cleanly");
+    }
   }
 
   struct SplineEditCase {
@@ -2233,6 +2624,21 @@ void verifyProductionFrontendProjection() {
             modified->inspectorStatus.endsWith(
                 QStringLiteral("complete · Select active")),
         "Sketch curve modification lost source or human completion state");
+    if (command == QStringLiteral("sketch.fillet") ||
+        command == QStringLiteral("sketch.chamfer")) {
+      require(
+          modified->modelSource.contains(QStringLiteral("curve_group(")) &&
+              std::ranges::any_of(
+                  modified->structure, [](const ui::StructureItem &item) {
+                    return item.label ==
+                           QStringLiteral("Rectangle 1 (modified)");
+                  }) &&
+              std::ranges::none_of(
+                  modified->structure, [](const ui::StructureItem &item) {
+                    return item.label.startsWith(QStringLiteral("Edge "));
+                  }),
+          "partial corner edit exposed anonymous geometry in Structure");
+    }
     const QString modifiedRevision = modified->projectRevision;
     require(port->undo(), "Sketch curve modification undo was not accepted");
     const auto restored = awaitSnapshot(
@@ -2267,6 +2673,275 @@ void verifyProductionFrontendProjection() {
       QStringLiteral("sketch.offset"), {bottomPick},
       {{QStringLiteral(".distance"), QStringLiteral("5 mm")}},
       QStringLiteral("Offset 1"), QStringLiteral("offset_object("));
+
+  const std::size_t trimBasePrimitiveCount =
+      port->snapshot()->sketchScene->primitives().size();
+  const auto addLine = [&](double x) {
+    std::set<QString> existing;
+    for (const auto &primitive : port->snapshot()->sketchScene->primitives())
+      existing.insert(
+          QString::fromStdString(primitive.entity.toString()));
+    port->requestCommand(QStringLiteral("sketch.line"));
+    const QString baseRevision = port->snapshot()->projectRevision;
+    const auto input = [&](double y) {
+      return ui::SketchInputRequest{
+          QStringLiteral("sketch.line"), baseRevision,
+          ui::SketchInputKind::PlanePoint, {x, y}, {}, {}};
+    };
+    require(port->submitSketchInput(input(-0.05)) &&
+                port->submitSketchInput(input(0.05)),
+            "Trim boundary line gesture was rejected");
+    const auto result = awaitSnapshot(
+        *port,
+        [&baseRevision](const ui::FrontendSnapshot &value) {
+          return value.projectRevision != baseRevision &&
+                 value.activeCommandId.isEmpty();
+        },
+        "Trim boundary line did not reach canonical source");
+    QString createdEntity;
+    for (const auto &primitive : result->sketchScene->primitives()) {
+      const QString candidate =
+          QString::fromStdString(primitive.entity.toString());
+      if (!existing.contains(candidate)) {
+        require(createdEntity.isEmpty(),
+                "line gesture created multiple entities");
+        createdEntity = candidate;
+      }
+    }
+    require(!createdEntity.isEmpty(), "line gesture exposed no new entity");
+    return std::pair{result, createdEntity};
+  };
+  static_cast<void>(addLine(-0.02));
+  const auto trimFixture = addLine(0.02);
+  require(trimFixture.first->sketchScene &&
+              trimFixture.first->sketchScene->primitives().size() ==
+                  trimBasePrimitiveCount + 2U,
+          "production Trim fixture geometry is incomplete");
+  const QString splitTarget = trimFixture.second;
+
+  port->requestCommand(QStringLiteral("sketch.trim"));
+  const QString trimBase = port->snapshot()->projectRevision;
+  require(port->snapshot()->activeCommandId == QStringLiteral("sketch.trim") &&
+              port->previewSketchCurveModify(rectangleEntities[0],
+                                             {0.0, -0.025}),
+          "production Trim did not accept hover preview");
+  const auto trimPreview = awaitSnapshot(
+      *port,
+      [](const ui::FrontendSnapshot &value) {
+        return std::ranges::count_if(
+                   value.sketchProjection.primitives,
+                   [](const ui::SketchPrimitiveProjection &primitive) {
+                     return primitive.draft &&
+                            primitive.id.startsWith(QStringLiteral(
+                                "draft.curve-modify."));
+                   }) == 2;
+      },
+      "production Trim did not publish two exact boundary markers");
+  require(trimPreview->projectRevision == trimBase,
+          "Trim hover preview mutated accepted state");
+
+  require(port->submitSketchInput(
+              {QStringLiteral("sketch.trim"), trimBase,
+               ui::SketchInputKind::Entity, {0.0, -0.025},
+               rectangleEntities[0], {}}) &&
+              port->snapshot()->commandDraft.state ==
+                  ui::CommandDraftState::Pending,
+          "one-click Trim did not enter its background operation");
+  const auto trimmed = awaitSnapshot(
+      *port,
+      [&trimBase](const ui::FrontendSnapshot &value) {
+        return value.projectRevision != trimBase &&
+               value.commandDraft.state == ui::CommandDraftState::Editing;
+      },
+      "production Trim did not publish its accepted revision");
+  require(
+          trimmed->activeCommandId == QStringLiteral("sketch.trim") &&
+          trimmed->sketchScene &&
+          trimmed->sketchScene->primitives().size() ==
+              trimBasePrimitiveCount + 3U &&
+          trimmed->modelSource.contains(QStringLiteral("curve_group(")) &&
+          trimmed->modelSource.count(QStringLiteral("point_on_object(")) >=
+              2 &&
+          std::ranges::any_of(
+              trimmed->structure, [](const ui::StructureItem &item) {
+                return item.label == QStringLiteral("Rectangle 1 (modified)");
+              }) &&
+          std::ranges::any_of(
+              trimmed->structure, [](const ui::StructureItem &item) {
+                return item.label ==
+                       QStringLiteral("Bottom edge, part 2");
+              }) &&
+          trimmed->inspectorStatus == QStringLiteral(
+                                          "Trim complete · choose another "
+                                          "curve segment"),
+      "persistent Trim lost geometry, parametric source, or human Structure");
+  port->cancelCommandDraft(QStringLiteral("sketch.trim"));
+  require(port->snapshot()->activeCommandId.isEmpty(),
+          "Escape did not leave persistent Trim");
+
+  port->requestCommand(QStringLiteral("sketch.split"));
+  const QString splitBase = port->snapshot()->projectRevision;
+  port->editField(QStringLiteral("sketch.split.external-constraints"),
+                  QStringLiteral("detach"));
+  require(port->snapshot()->activeCommandId == QStringLiteral("sketch.split") &&
+              port->previewSketchCurveModify(splitTarget, {0.02, 0.025}),
+          "production Split did not accept hover preview");
+  const auto splitPreview = awaitSnapshot(
+      *port,
+      [](const ui::FrontendSnapshot &value) {
+        return std::ranges::count_if(
+                   value.sketchProjection.primitives,
+                   [](const ui::SketchPrimitiveProjection &primitive) {
+                     return primitive.draft &&
+                            primitive.id.startsWith(QStringLiteral(
+                                "draft.curve-modify."));
+                   }) == 1;
+      },
+      "production Split did not publish its exact location marker");
+  require(splitPreview->projectRevision == splitBase,
+          "Split hover preview mutated accepted state");
+  require(port->submitSketchInput(
+              {QStringLiteral("sketch.split"), splitBase,
+               ui::SketchInputKind::Entity, {0.02, 0.025}, splitTarget, {}}) &&
+              port->snapshot()->commandDraft.state ==
+                  ui::CommandDraftState::Pending,
+          "one-click Split did not enter its background operation");
+  const auto split = awaitSnapshot(
+      *port,
+      [&splitBase](const ui::FrontendSnapshot &value) {
+        return value.projectRevision != splitBase &&
+               value.commandDraft.state == ui::CommandDraftState::Editing;
+      },
+      "production Split did not publish its accepted revision");
+  require(split->activeCommandId == QStringLiteral("sketch.split") &&
+              split->sketchScene &&
+              split->sketchScene->primitives().size() ==
+                  trimBasePrimitiveCount + 4U &&
+              split->modelSource.count(QStringLiteral("curve_group(")) >= 2 &&
+              split->modelSource.contains(QStringLiteral("coincident(")) &&
+              std::ranges::any_of(
+                  split->structure, [](const ui::StructureItem &item) {
+                    return item.label == QStringLiteral("Curve, part 2");
+                  }) &&
+              split->inspectorStatus == QStringLiteral(
+                                            "Split complete · choose another "
+                                            "curve location"),
+          "persistent Split lost geometry, source, or human Structure");
+  port->cancelCommandDraft(QStringLiteral("sketch.split"));
+  require(port->snapshot()->activeCommandId.isEmpty(),
+          "Escape did not leave persistent Split");
+
+  const auto addJoinLine = [&](ui::PlanePoint start, ui::PlanePoint end) {
+    std::set<QString> existing;
+    for (const auto &primitive : port->snapshot()->sketchScene->primitives())
+      existing.insert(QString::fromStdString(primitive.entity.toString()));
+    port->requestCommand(QStringLiteral("sketch.line"));
+    const QString baseRevision = port->snapshot()->projectRevision;
+    const auto input = [&](ui::PlanePoint point) {
+      return ui::SketchInputRequest{QStringLiteral("sketch.line"),
+                                    baseRevision,
+                                    ui::SketchInputKind::PlanePoint,
+                                    point,
+                                    {},
+                                    {}};
+    };
+    require(port->submitSketchInput(input(start)) &&
+                port->submitSketchInput(input(end)),
+            "Join line gesture was rejected");
+    const auto result = awaitSnapshot(
+        *port,
+        [&baseRevision](const ui::FrontendSnapshot &value) {
+          return value.projectRevision != baseRevision &&
+                 value.activeCommandId.isEmpty();
+        },
+        "Join line did not reach canonical source");
+    for (const auto &primitive : result->sketchScene->primitives()) {
+      const QString candidate =
+          QString::fromStdString(primitive.entity.toString());
+      if (!existing.contains(candidate))
+        return candidate;
+    }
+    throw std::runtime_error("Join line exposed no new entity");
+  };
+  const QString joinFirst =
+      addJoinLine({0.06, -0.03}, {0.06, 0.0});
+  static_cast<void>(addJoinLine({0.06, 0.0}, {0.09, 0.03}));
+  port->requestCommand(QStringLiteral("sketch.join"));
+  const QString joinBase = port->snapshot()->projectRevision;
+  const auto joinInput = [&](const QString &entity, const QString &pointKey,
+                             ui::PlanePoint point) {
+    return ui::SketchInputRequest{QStringLiteral("sketch.join"), joinBase,
+                                  ui::SketchInputKind::Entity, point, entity,
+                                  pointKey};
+  };
+  require(port->submitSketchInput(
+              joinInput(joinFirst, QStringLiteral("end"), {0.06, 0.0})) &&
+              port->snapshot()->commandDraft.state ==
+                  ui::CommandDraftState::Pending,
+          "shared-endpoint Join did not enter its background operation");
+  const auto joined = awaitSnapshot(
+      *port,
+      [&joinBase](const ui::FrontendSnapshot &value) {
+        return value.projectRevision != joinBase &&
+               value.commandDraft.state == ui::CommandDraftState::Editing;
+      },
+      "production Join did not publish its accepted revision");
+  require(joined->activeCommandId == QStringLiteral("sketch.join") &&
+              joined->modelSource.contains(
+                  QStringLiteral("joined_curve_object(")) &&
+              std::ranges::any_of(
+                  joined->structure, [](const ui::StructureItem &item) {
+                    return item.label == QStringLiteral("Joined curve 1");
+                  }) &&
+              joined->inspectorStatus == QStringLiteral(
+                                             "Join complete · choose another "
+                                             "shared endpoint"),
+          "persistent Join lost source or human Structure");
+  port->cancelCommandDraft(QStringLiteral("sketch.join"));
+  require(port->snapshot()->activeCommandId.isEmpty(),
+          "Escape did not leave persistent Join");
+
+  const QString convertTarget =
+      addJoinLine({0.12, -0.03}, {0.16, 0.02});
+  port->requestCommand(QStringLiteral("sketch.bspline.convert-to-nurbs"));
+  const QString convertBase = port->snapshot()->projectRevision;
+  require(port->submitSketchInput(
+              {QStringLiteral("sketch.bspline.convert-to-nurbs"), convertBase,
+               ui::SketchInputKind::Entity, {0.14, -0.005}, convertTarget,
+               {}}) &&
+              port->snapshot()->commandDraft.state ==
+                  ui::CommandDraftState::Pending,
+          "Convert to NURBS did not enter its background operation");
+  const auto converted = awaitSnapshot(
+      *port,
+      [&convertBase](const ui::FrontendSnapshot &value) {
+        return value.projectRevision != convertBase &&
+               value.commandDraft.state == ui::CommandDraftState::Editing;
+      },
+      "production Convert to NURBS did not publish its accepted revision");
+  const auto convertedPrimitive = std::ranges::find_if(
+      converted->sketchScene->primitives(),
+      [&convertTarget](const auto &primitive) {
+        return primitive.entity.toString() == convertTarget.toStdString();
+      });
+  require(converted->activeCommandId ==
+                  QStringLiteral("sketch.bspline.convert-to-nurbs") &&
+              convertedPrimitive != converted->sketchScene->primitives().end() &&
+              convertedPrimitive->kind == render::SketchPrimitiveKind::BSpline &&
+              converted->modelSource.contains(QStringLiteral("bspline_object(")) &&
+              std::ranges::any_of(
+                  converted->structure, [](const ui::StructureItem &item) {
+                    return item.kind == QStringLiteral("sketch-bspline") &&
+                           item.label.startsWith(QStringLiteral("B-spline "));
+                  }) &&
+              converted->inspectorStatus == QStringLiteral(
+                                                "Converted · choose another "
+                                                "analytic curve"),
+          "persistent Convert to NURBS lost source, identity, or Structure");
+  port->cancelCommandDraft(
+      QStringLiteral("sketch.bspline.convert-to-nurbs"));
+  require(port->snapshot()->activeCommandId.isEmpty(),
+          "Escape did not leave persistent Convert to NURBS");
 }
 
 } // namespace
@@ -2282,6 +2957,10 @@ int main(int argc, char **argv) {
   verifyBoundedDispatch();
   verifyRejectedEditPreservesHead();
   verifyPreparationFailureIsAsynchronous();
+  verifyTrimOperations();
+  verifySplitOperations();
+  verifyJoinOperations();
+  verifyNurbsConversionOperations();
   verifyProductionFrontendProjection();
   return 0;
 }

@@ -31,7 +31,8 @@ std::string targetKey(const Edit &edit) {
         } else if constexpr (std::is_same_v<Type, DeleteObject>) {
           return "object:" + value.id.toString();
         } else if constexpr (std::is_same_v<Type, AppendEntity> ||
-                             std::is_same_v<Type, ReplaceEntity>) {
+                             std::is_same_v<Type, ReplaceEntity> ||
+                             std::is_same_v<Type, RetypeEntity>) {
           return "entity:" + entityId(value.value).toString();
         } else if constexpr (std::is_same_v<Type, DeleteEntity>) {
           return "entity:" + value.id.toString();
@@ -68,10 +69,6 @@ Result<SourceEditIntent> apply(Definition &target, const Edit &edit) {
           if (found == target.objects.end())
             return std::unexpected(diagnostic("sketch.edit.object-missing",
                                               "Sketch object is missing"));
-          if (found->kind != value.value.kind)
-            return std::unexpected(
-                diagnostic("sketch.edit.object-kind",
-                           "Sketch object replacement changes its kind"));
           *found = value.value;
           return intent(SourceEditAction::Replace, SourceSection::Objects, id);
         } else if constexpr (std::is_same_v<Type, DeleteObject>) {
@@ -89,16 +86,18 @@ Result<SourceEditIntent> apply(Definition &target, const Edit &edit) {
                                               "Sketch entity already exists"));
           target.entities.push_back(value.value);
           return intent(SourceEditAction::Append, SourceSection::Entities, id);
-        } else if constexpr (std::is_same_v<Type, ReplaceEntity>) {
+        } else if constexpr (std::is_same_v<Type, ReplaceEntity> ||
+                             std::is_same_v<Type, RetypeEntity>) {
           const SketchEntityId id = entityId(value.value);
           auto found = findById(target.entities, id, entityId);
           if (found == target.entities.end())
             return std::unexpected(diagnostic("sketch.edit.entity-missing",
                                               "Sketch entity is missing"));
-          if (found->index() != value.value.index())
-            return std::unexpected(
-                diagnostic("sketch.edit.entity-kind",
-                           "Sketch entity replacement changes its kind"));
+          if constexpr (std::is_same_v<Type, ReplaceEntity>)
+            if (found->index() != value.value.index())
+              return std::unexpected(
+                  diagnostic("sketch.edit.entity-kind",
+                             "Sketch entity replacement changes its kind"));
           *found = value.value;
           return intent(SourceEditAction::Replace, SourceSection::Entities, id);
         } else if constexpr (std::is_same_v<Type, DeleteEntity>) {

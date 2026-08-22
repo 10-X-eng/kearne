@@ -57,10 +57,6 @@ SketchSceneItem::publishPickCoverage(SketchPickCoveragePolicy policy) {
   return offered;
 }
 
-SketchCurveLod SketchSceneItem::requestedLod() const {
-  return presenter_.requestedLod();
-}
-
 void SketchSceneItem::setPalette(SketchScenePalette palette) {
   {
     std::scoped_lock lock{presentationMutex_};
@@ -68,6 +64,16 @@ void SketchSceneItem::setPalette(SketchScenePalette palette) {
       return;
     palette_ = palette;
     ++paletteGeneration_;
+  }
+  requestFrame();
+}
+
+void SketchSceneItem::setPipelineWarmup(SketchPipelineWarmup warmup) {
+  {
+    std::scoped_lock lock{presentationMutex_};
+    if (pipelineWarmup_ == warmup)
+      return;
+    pipelineWarmup_ = warmup;
   }
   requestFrame();
 }
@@ -141,8 +147,8 @@ void SketchSceneItem::clearPresentation() {
   requestFrame();
 }
 
-SketchMeshMetrics SketchSceneItem::meshMetrics() const {
-  return rendererState_->meshMetrics();
+SketchVectorPacketMetrics SketchSceneItem::vectorPacketMetrics() const {
+  return rendererState_->vectorPacketMetrics();
 }
 
 std::uint64_t SketchSceneItem::geometryBuildCount() const {
@@ -155,6 +161,11 @@ SketchSynchronizationMetrics SketchSceneItem::synchronizationMetrics() const {
 
 SketchGpuUploadMetrics SketchSceneItem::gpuUploadMetrics() const {
   return rendererState_->uploadMetrics();
+}
+
+bool SketchSceneItem::requestedPipelinesReady() const {
+  std::scoped_lock lock{presentationMutex_};
+  return rendererState_->pipelineReady(pipelineWarmup_);
 }
 
 Diagnostic SketchSceneItem::lastDiagnostic() const {
@@ -181,10 +192,12 @@ QSGNode *SketchSceneItem::updatePaintNode(QSGNode *oldNode,
   }
 
   SketchScenePalette palette;
+  SketchPipelineWarmup pipelineWarmup;
   std::uint64_t paletteGeneration = 0U;
   {
     std::scoped_lock lock{presentationMutex_};
     palette = palette_;
+    pipelineWarmup = pipelineWarmup_;
     paletteGeneration = paletteGeneration_;
     lastDiagnostic_ = {};
   }
@@ -192,7 +205,7 @@ QSGNode *SketchSceneItem::updatePaintNode(QSGNode *oldNode,
   if (!renderer)
     renderer = new SketchFrameRenderer{*window(), rendererState_};
   renderer->synchronize(*desired, palette, paletteGeneration,
-                        QRectF{0.0, 0.0, width(), height()});
+                        QRectF{0.0, 0.0, width(), height()}, pipelineWarmup);
   return renderer;
 }
 

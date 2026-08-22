@@ -204,23 +204,7 @@ The sparse all-scene query refuses at exactly 1,024 refined targets in one pass 
 
 ### Sketch scene adapter candidate
 
-The production [sketch scene benchmark](../../apps/desktop/tests/sketch_scene_item_benchmark.cpp) uses deterministic mixed point, line, circle, and arc scenes. It validates bounds and UI-to-canonical picks before timing. Preparation includes CPU tessellation, stable spatial chunks, visibility data, and the pick index. Synchronization consumes a prepared packet. Camera timing uses 2,000 retained-mesh samples. Visibility and upload work is capped at 128 spatial nodes, 64 selected chunks, 2 MiB, and 32 node operations per slice. Upload-copy timing includes a scratch allocation and `memcpy`, not QSG creation or GPU transfer.
-
-Host and toolchain match the solver candidate above. Release results retain all samples without warm-up removal. Preparation and synchronization contain seven complete samples; slice distributions contain every slice from seven complete runs.
-
-| Primitives | Retained mesh | Peak prepare | Prepare p50/p95 | Sync p50/p95 |
-|---:|---:|---:|---:|---:|
-| 1,000 | 2,032,332 B | 5,727,932 B | 25.681 / 27.134 ms | 0.000 / 0.001 ms |
-| 10,000 | 20,717,480 B | 59,431,916 B | 279.851 / 295.231 ms | 0.000 / 0.001 ms |
-| 100,000 | 203,283,852 B | 538,277,764 B | 2,830.569 / 3,031.268 ms | 0.000 / 0.002 ms |
-
-| Primitives | Camera p50/p95 | Visibility slice p50/p95 | Upload-copy slice p50/p95 |
-|---:|---:|---:|---:|
-| 1,000 | 0.223 / 0.239 µs | 1.900 / 5.933 µs | 21.633 / 40.917 µs |
-| 10,000 | 0.215 / 0.233 µs | 1.935 / 10.179 µs | 22.143 / 59.247 µs |
-| 100,000 | 0.223 / 0.246 µs | 1.899 / 9.338 µs | 23.884 / 60.209 µs |
-
-The complete run took 25.89 seconds and peaked at 764,052 KiB RSS. Retained and peak figures include owned objects and container capacities, source-neutral provenance, and conservative non-overlapping preparation scratch; allocator metadata is excluded. Native OpenGL integration covers progressive publication, cancellation, retained camera/palette updates, render-off behavior, closing one of two controls, hiding and showing an item, item destruction/recreation, render-control invalidation/reinitialization, exact-stamp recovery, and final application reclaimer drain. AddressSanitizer covers the same lifecycle. GPU latency, simultaneous multi-control invalidation, Vulkan output, and an accepted `VIEW` manifest remain open.
+The production [sketch scene benchmark](../../apps/desktop/tests/sketch_scene_item_benchmark.cpp) measures native vector packet preparation, spatial visibility, and bounded GPU upload scheduling at 1,000, 10,000, and 100,000 mixed primitives. It reports record/data counts and retained/peak bytes. Sketch curves remain native definitions; the benchmark contains no curve flattening, triangle generation, or mesh upload. A Release baseline for the native-vector implementation remains to be recorded.
 
 The [ADR-0020](../adr/0020-inline-qrhi-sketch-renderer.md) acceptance run uses the production inline renderer on every Qt 6.8/6.11 and OpenGL/Vulkan pair. It records render-thread preparation and draw time, upload bytes, draw calls, render-target count, GPU bytes by render epoch, cache reuse, and input-to-presented-frame latency for the versioned 1,000/10,000/100,000 Sketch workloads; CPU copy timing cannot substitute for GPU evidence.
 

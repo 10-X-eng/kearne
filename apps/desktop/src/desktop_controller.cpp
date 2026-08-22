@@ -47,6 +47,10 @@ enum class LocalSketchCurveModifyCommand : std::uint8_t {
   Chamfer,
   Offset,
   Extend,
+  Trim,
+  Split,
+  Join,
+  ConvertToNurbs,
 };
 
 std::optional<LocalSketchCurveModifyCommand>
@@ -59,6 +63,14 @@ localSketchCurveModifyCommand(QStringView commandId) {
     return LocalSketchCurveModifyCommand::Offset;
   if (commandId == QStringLiteral("sketch.extend"))
     return LocalSketchCurveModifyCommand::Extend;
+  if (commandId == QStringLiteral("sketch.trim"))
+    return LocalSketchCurveModifyCommand::Trim;
+  if (commandId == QStringLiteral("sketch.split"))
+    return LocalSketchCurveModifyCommand::Split;
+  if (commandId == QStringLiteral("sketch.join"))
+    return LocalSketchCurveModifyCommand::Join;
+  if (commandId == QStringLiteral("sketch.bspline.convert-to-nurbs"))
+    return LocalSketchCurveModifyCommand::ConvertToNurbs;
   return std::nullopt;
 }
 
@@ -95,6 +107,13 @@ QString localSketchToolLabel(LocalSketchToolKind kind) {
 }
 
 QString sketchMemberLabel(std::string_view role) {
+  const std::size_t part = role.rfind("_part_");
+  if (part != std::string_view::npos && part != 0U && part + 6U < role.size())
+    return QStringLiteral("%1, part %2")
+        .arg(sketchMemberLabel(role.substr(0U, part)),
+             QString::fromLatin1(
+                 role.substr(part + 6U).data(),
+                 static_cast<qsizetype>(role.size() - part - 6U)));
   if (role == "bottom")
     return QStringLiteral("Bottom edge");
   if (role == "right")
@@ -175,6 +194,8 @@ sketchObjectPresentation(sketch::SketchObjectKind kind) {
     return {"Offset", "sketch-offset"};
   case sketch::SketchObjectKind::JoinedCurve:
     return {"Joined curve", "sketch-joined-curve"};
+  case sketch::SketchObjectKind::CurveGroup:
+    return {"Modified geometry", "sketch-curve-group"};
   }
   return {"Sketch geometry", "sketch-geometry"};
 }
@@ -209,6 +230,8 @@ QString sketchMemberStructureKind(sketch::SketchObjectKind kind,
     return QStringLiteral("sketch-offset-curve");
   if (kind == sketch::SketchObjectKind::JoinedCurve)
     return QStringLiteral("sketch-bspline");
+  if (kind == sketch::SketchObjectKind::CurveGroup)
+    return QStringLiteral("sketch-geometry");
   if (kind == sketch::SketchObjectKind::Ellipse)
     return QStringLiteral("sketch-ellipse");
   if (kind == sketch::SketchObjectKind::EllipticalArc)
@@ -306,6 +329,25 @@ QString workspaceLabel(const std::vector<WorkspaceDescriptor> &workspaces,
       return workspace.label;
   }
   return {};
+}
+
+QString sketchPointLabel(QStringView key) {
+  if (key == QStringLiteral("start"))
+    return QStringLiteral("Start point");
+  if (key == QStringLiteral("end"))
+    return QStringLiteral("End point");
+  if (key == QStringLiteral("center"))
+    return QStringLiteral("Center point");
+  if (key == QStringLiteral("major"))
+    return QStringLiteral("Major-axis point");
+  if (key == QStringLiteral("minor"))
+    return QStringLiteral("Minor-axis point");
+  if (key == QStringLiteral("focus"))
+    return QStringLiteral("Focus point");
+  if (key.startsWith(QStringLiteral("control.")))
+    return QStringLiteral("Control point %1")
+        .arg(key.sliced(QStringLiteral("control.").size()));
+  return QStringLiteral("Point");
 }
 
 struct CommandForm {
@@ -752,6 +794,74 @@ std::optional<CommandForm> commandFormFor(const QString &commandId,
         SketchInputKind::Entity,
         2,
         2,
+        {SketchSelectionKind::Curve}};
+  if (commandId == QStringLiteral("sketch.trim"))
+    return CommandForm{
+        QStringLiteral("Trim"),
+        QStringLiteral("Choose the curve segment to remove"),
+        {{commandId + QStringLiteral(".external-constraints"),
+          QStringLiteral("Affected constraints"),
+          FieldKind::Choice,
+          QStringLiteral("detach"),
+          {},
+          {{QStringLiteral("detach"), QStringLiteral("Remove affected")},
+           {QStringLiteral("refuse"), QStringLiteral("Keep and stop")}}}},
+        false,
+        false,
+        SketchInputKind::Entity,
+        1,
+        1,
+        {SketchSelectionKind::Curve}};
+  if (commandId == QStringLiteral("sketch.split"))
+    return CommandForm{
+        QStringLiteral("Split"),
+        QStringLiteral("Choose a location on the curve to split"),
+        {{commandId + QStringLiteral(".external-constraints"),
+          QStringLiteral("Affected constraints"),
+          FieldKind::Choice,
+          QStringLiteral("refuse"),
+          {},
+          {{QStringLiteral("refuse"), QStringLiteral("Keep and stop")},
+           {QStringLiteral("detach"), QStringLiteral("Remove and continue")}}}},
+        false,
+        false,
+        SketchInputKind::Entity,
+        1,
+        1,
+        {SketchSelectionKind::Curve}};
+  if (commandId == QStringLiteral("sketch.join"))
+    return CommandForm{
+        QStringLiteral("Join"),
+        QStringLiteral("Choose a shared curve endpoint"),
+        {{commandId + QStringLiteral(".external-constraints"),
+          QStringLiteral("Affected constraints"),
+          FieldKind::Choice,
+          QStringLiteral("refuse"),
+          {},
+          {{QStringLiteral("refuse"), QStringLiteral("Keep and stop")},
+           {QStringLiteral("detach"), QStringLiteral("Remove and continue")}}}},
+        false,
+        false,
+        SketchInputKind::Entity,
+        1,
+        1,
+        {SketchSelectionKind::Point}};
+  if (commandId == QStringLiteral("sketch.bspline.convert-to-nurbs"))
+    return CommandForm{
+        QStringLiteral("Convert to NURBS"),
+        QStringLiteral("Choose one analytic curve"),
+        {{commandId + QStringLiteral(".external-constraints"),
+          QStringLiteral("Incompatible constraints"),
+          FieldKind::Choice,
+          QStringLiteral("refuse"),
+          {},
+          {{QStringLiteral("refuse"), QStringLiteral("Keep and stop")},
+           {QStringLiteral("detach"), QStringLiteral("Remove and continue")}}}},
+        false,
+        false,
+        SketchInputKind::Entity,
+        1,
+        1,
         {SketchSelectionKind::Curve}};
   if (commandId == QStringLiteral("sketch.polygon"))
     return CommandForm{
@@ -1559,8 +1669,7 @@ public:
     else if (entityId == basePlateFunction_.id)
       snapshot_.selectedFunction = basePlateFunction_;
     snapshot_.selectionSummary = humanSelectionName(entityId);
-    snapshot_.selectedSketchEntityId.clear();
-    snapshot_.selectedSketchEntityIds.clear();
+    snapshot_.selectedSketchScopes.clear();
     if (!snapshot_.activeCommandId.isEmpty()) {
       const auto reference = std::ranges::find_if(
           snapshot_.fields, [](const FieldDescriptor &field) {
@@ -1584,7 +1693,31 @@ public:
       ++snapshot_.generation;
       return;
     }
-    projectHumanSelection(entityId);
+    projectHumanSelection(entityId, {});
+    if (snapshot_.sketchScene)
+      rebuildSketchProjection();
+    refreshContextCommands();
+    ++snapshot_.generation;
+  }
+
+  void selectSketchEntity(const SketchSelectionScope &selection) override {
+    if (!snapshot_.sketchEditing || !snapshot_.sketchScene)
+      return;
+    const auto entity = SketchEntityId::parse(selection.entityId.toStdString());
+    const render::PackedSketchPrimitive *primitive =
+        entity ? snapshot_.sketchScene->findPrimitive(*entity) : nullptr;
+    const auto projected = std::ranges::find(
+        snapshot_.sketchProjection.primitives, selection.entityId,
+        &SketchPrimitiveProjection::id);
+    if (!primitive || projected == snapshot_.sketchProjection.primitives.end() ||
+        (!selection.pointKey.isEmpty() &&
+         std::ranges::find(projected->pointKeys, selection.pointKey) ==
+             projected->pointKeys.end()))
+      return;
+    snapshot_.selectedEntityId = selection.entityId;
+    snapshot_.selectedSketchScopes.clear();
+    projectHumanSelection(selection.entityId, selection.pointKey);
+    rebuildSketchProjection();
     refreshContextCommands();
     ++snapshot_.generation;
   }
@@ -1647,6 +1780,41 @@ public:
       snapshot_.inspectorTitle = QStringLiteral("Sketch 1");
       snapshot_.inspectorStatus = QStringLiteral("Editing Sketch");
       restoreWorkspaceViewport();
+      ++snapshot_.generation;
+      return;
+    }
+    bool *splinePresentation = nullptr;
+    QString splinePresentationName;
+    if (commandId == QStringLiteral("sketch.bspline.control-polygon")) {
+      splinePresentation = &snapshot_.sketchControlPolygonVisible;
+      splinePresentationName = QStringLiteral("Control polygon");
+    } else if (commandId ==
+               QStringLiteral("sketch.bspline.curvature-comb")) {
+      splinePresentation = &snapshot_.sketchCurvatureCombVisible;
+      splinePresentationName = QStringLiteral("Curvature comb");
+    } else if (commandId == QStringLiteral("sketch.bspline.degree-labels")) {
+      splinePresentation = &snapshot_.sketchDegreeLabelsVisible;
+      splinePresentationName = QStringLiteral("Degree labels");
+    } else if (commandId == QStringLiteral("sketch.bspline.knot-labels")) {
+      splinePresentation = &snapshot_.sketchKnotLabelsVisible;
+      splinePresentationName = QStringLiteral("Knot multiplicity");
+    } else if (commandId == QStringLiteral("sketch.bspline.weight-labels")) {
+      splinePresentation = &snapshot_.sketchWeightLabelsVisible;
+      splinePresentationName = QStringLiteral("Pole weights");
+    }
+    if (localMode_ && splinePresentation) {
+      if (!snapshot_.sketchEditing || !hasSelectedBSpline()) {
+        snapshot_.inspectorStatus = QStringLiteral("Select one B-spline to show ") +
+                                    splinePresentationName.toLower();
+        ++snapshot_.generation;
+        return;
+      }
+      *splinePresentation = !*splinePresentation;
+      snapshot_.inspectorStatus =
+          splinePresentationName +
+          (*splinePresentation ? QStringLiteral(" shown")
+                               : QStringLiteral(" hidden"));
+      refreshContextCommands();
       ++snapshot_.generation;
       return;
     }
@@ -1889,6 +2057,10 @@ public:
               primitive->pointKeys.end();
       if ((localMode_ && localBSplineEditKind(request.commandId) &&
            primitive->kind != SketchPrimitiveKind::BSpline) ||
+          (localMode_ &&
+           request.commandId ==
+               QStringLiteral("sketch.bspline.convert-to-nurbs") &&
+           primitive->kind == SketchPrimitiveKind::BSpline) ||
           (required == SketchSelectionKind::Point && !pointExists) ||
           (required == SketchSelectionKind::Curve &&
            !request.subElementKey.isEmpty()) ||
@@ -1913,6 +2085,15 @@ public:
         snapshot_.sketchInteraction.inputCount ==
             snapshot_.sketchInteraction.maximumInputCount)
       return submitLocalSketchConstraint();
+    if (localMode_ &&
+        (request.commandId == QStringLiteral("sketch.trim") ||
+         request.commandId == QStringLiteral("sketch.split") ||
+         request.commandId == QStringLiteral("sketch.join") ||
+         request.commandId ==
+             QStringLiteral("sketch.bspline.convert-to-nurbs")) &&
+        snapshot_.sketchInteraction.inputCount ==
+            snapshot_.sketchInteraction.maximumInputCount)
+      return submitLocalSketchCurveModify();
     return true;
   }
 
@@ -1930,10 +2111,11 @@ public:
 
   bool toggleSketchConstruction() override {
     if (!localMode_ || !localSketchSession_ || !snapshot_.sketchEditing ||
-        snapshot_.selectedSketchEntityId.isEmpty() ||
+        snapshot_.selectedSketchScopes.size() != 1U ||
+        !snapshot_.selectedSketchScopes.front().pointKey.isEmpty() ||
         localSketchSession_->pendingOperationCount() != 0U)
       return false;
-    localEditEntity_ = snapshot_.selectedSketchEntityId;
+    localEditEntity_ = snapshot_.selectedSketchScopes.front().entityId;
     const bool queued = localSketchSession_->toggleConstruction(
         {localEditEntity_}, [this](Result<LocalSketchProjection> result) {
           completeLocalOperation(QStringLiteral("sketch.construction.toggle"),
@@ -1954,7 +2136,7 @@ public:
         !snapshot_.activeCommandId.isEmpty() || entityId.isEmpty() ||
         localSketchSession_->pendingOperationCount() != 0U)
       return false;
-    localSketchSession_->cancelCurveDragPreview();
+    localSketchSession_->cancelPreview();
     localEditEntity_ = entityId;
     const bool queued = localSketchSession_->dragCurve(
         {entityId, first.xMetres, first.yMetres, current.xMetres,
@@ -1996,10 +2178,81 @@ public:
   void clearSketchCurvePreview() override {
     if (!localSketchSession_)
       return;
-    localSketchSession_->cancelCurveDragPreview();
+    localSketchSession_->cancelPreview();
     if (snapshot_.sketchScene == localCommittedSketchScene_)
       return;
     snapshot_.sketchScene = localCommittedSketchScene_;
+    ++snapshot_.generation;
+    notifyChanged();
+  }
+
+  bool previewSketchCurveModify(const QString &entityId,
+                                PlanePoint reference) override {
+    const QString commandId = snapshot_.activeCommandId;
+    if (!localMode_ || !localSketchSession_ || !snapshot_.sketchEditing ||
+        (commandId != QStringLiteral("sketch.trim") &&
+         commandId != QStringLiteral("sketch.split")) || entityId.isEmpty() ||
+        localSketchSession_->pendingOperationCount() != 0U)
+      return false;
+    if (commandId == QStringLiteral("sketch.split")) {
+      const QString markerId = QStringLiteral("draft.curve-modify.1");
+      const auto marker = std::ranges::find(
+          snapshot_.sketchProjection.primitives, markerId,
+          &SketchPrimitiveProjection::id);
+      if (marker != snapshot_.sketchProjection.primitives.end()) {
+        if (marker->points.size() == 1U && marker->points.front() == reference)
+          return true;
+        marker->points = {reference};
+      } else {
+        rebuildSketchProjection();
+        appendDraftPoint(reference, markerId, false);
+      }
+      ++snapshot_.generation;
+      notifyChanged();
+      return true;
+    }
+    const QString expectedRevision = snapshot_.projectRevision;
+    const auto publish =
+        [this, commandId,
+         expectedRevision](std::vector<LocalSketchToolPoint> points) {
+          if (snapshot_.activeCommandId != commandId ||
+              snapshot_.projectRevision != expectedRevision)
+            return;
+          const auto previous = snapshot_.sketchProjection.primitives;
+          rebuildSketchProjection();
+          for (std::size_t index = 0U; index < points.size(); ++index) {
+            const LocalSketchToolPoint point = points[index];
+            appendDraftPoint(
+                {point.xMetres, point.yMetres},
+                QStringLiteral("draft.curve-modify.%1").arg(index + 1U),
+                false);
+          }
+          if (snapshot_.sketchProjection.primitives == previous)
+            return;
+          ++snapshot_.generation;
+          notifyChanged();
+        };
+    return localSketchSession_->previewTrim(
+        {entityId, reference.xMetres, reference.yMetres},
+        [publish](const Result<LocalTrimPreview> &result) mutable {
+          if (result)
+            publish(result->boundaries);
+        });
+  }
+
+  void clearSketchCurveModifyPreview() override {
+    if (!localSketchSession_)
+      return;
+    localSketchSession_->cancelPreview();
+    const bool visible = std::ranges::any_of(
+        snapshot_.sketchProjection.primitives,
+        [](const SketchPrimitiveProjection &primitive) {
+          return primitive.id.startsWith(
+              QStringLiteral("draft.curve-modify."));
+        });
+    if (!visible)
+      return;
+    rebuildSketchProjection();
     ++snapshot_.generation;
     notifyChanged();
   }
@@ -2084,6 +2337,8 @@ public:
   void cancelCommandDraft(const QString &commandId) override {
     if (commandId != snapshot_.activeCommandId)
       return;
+    if (localSketchSession_)
+      localSketchSession_->cancelPreview();
     snapshot_.activeCommandId.clear();
     snapshot_.fields.clear();
     snapshot_.commandDraft = {};
@@ -2266,29 +2521,69 @@ private:
     return QStringLiteral("Model geometry");
   }
 
-  void refreshContextCommands() {
-    const bool sketchSelected = hasSelectedSketch();
-    for (CommandDescriptor &command : snapshot_.commandCatalog) {
-      if (command.id == QStringLiteral("sketch.edit")) {
-        command.available = sketchSelected;
-        command.unavailableReason =
-            sketchSelected ? QString{}
-                           : QStringLiteral("Select a Sketch to edit");
-      } else if (command.id.startsWith(QStringLiteral("sketch."))) {
-        const bool implemented = hasFrontendCommandContractId(command.id);
-        command.available = snapshot_.sketchEditing && implemented;
-        command.unavailableReason =
-            command.available ? QString{}
-            : !snapshot_.sketchEditing
-                ? QStringLiteral("Open a Sketch to use this tool")
-                : commandUnavailableReason(command.id);
-      }
-    }
-    snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId,
-                                     snapshot_.sketchEditing, sketchSelected);
+  [[nodiscard]] bool hasSelectedBSpline() const {
+    if (!snapshot_.sketchScene || snapshot_.selectedSketchScopes.size() != 1U ||
+        !snapshot_.selectedSketchScopes.front().pointKey.isEmpty())
+      return false;
+    const auto entity = SketchEntityId::parse(
+        snapshot_.selectedSketchScopes.front().entityId.toStdString());
+    const render::PackedSketchPrimitive *primitive =
+        entity ? snapshot_.sketchScene->findPrimitive(*entity) : nullptr;
+    return primitive &&
+           primitive->kind == render::SketchPrimitiveKind::BSpline;
   }
 
-  void projectHumanSelection(const QString &entityId) {
+  void refreshContextCommands() {
+    const bool sketchSelected = hasSelectedSketch();
+    const auto splinePresentationState = [this](QStringView command)
+        -> std::optional<bool> {
+      if (command == QStringLiteral("sketch.bspline.control-polygon"))
+        return snapshot_.sketchControlPolygonVisible;
+      if (command == QStringLiteral("sketch.bspline.curvature-comb"))
+        return snapshot_.sketchCurvatureCombVisible;
+      if (command == QStringLiteral("sketch.bspline.degree-labels"))
+        return snapshot_.sketchDegreeLabelsVisible;
+      if (command == QStringLiteral("sketch.bspline.knot-labels"))
+        return snapshot_.sketchKnotLabelsVisible;
+      if (command == QStringLiteral("sketch.bspline.weight-labels"))
+        return snapshot_.sketchWeightLabelsVisible;
+      return std::nullopt;
+    };
+    const auto update = [this, sketchSelected, &splinePresentationState](
+                            std::vector<CommandDescriptor> &commands) {
+      for (CommandDescriptor &command : commands) {
+        if (command.id == QStringLiteral("sketch.edit")) {
+          command.available = sketchSelected;
+          command.unavailableReason =
+              sketchSelected ? QString{}
+                             : QStringLiteral("Select a Sketch to edit");
+        } else if (const auto state =
+                       splinePresentationState(command.id)) {
+          command.available = snapshot_.sketchEditing && hasSelectedBSpline();
+          command.checked = *state;
+          command.unavailableReason =
+              command.available
+                  ? QString{}
+                  : QStringLiteral("Select one B-spline in an open Sketch");
+        } else if (command.id.startsWith(QStringLiteral("sketch."))) {
+          const bool implemented = hasFrontendCommandContractId(command.id);
+          command.available = snapshot_.sketchEditing && implemented;
+          command.unavailableReason =
+              command.available ? QString{}
+              : !snapshot_.sketchEditing
+                  ? QStringLiteral("Open a Sketch to use this tool")
+                  : commandUnavailableReason(command.id);
+        }
+      }
+    };
+    update(snapshot_.commandCatalog);
+    snapshot_.commands = commandsFor(snapshot_.activeWorkspaceId,
+                                     snapshot_.sketchEditing, sketchSelected);
+    update(snapshot_.commands);
+  }
+
+  void projectHumanSelection(const QString &entityId,
+                             const QString &pointKey) {
     const StructureItem *item = structureItem(entityId);
     const QString label = humanSelectionName(entityId);
     snapshot_.selectionSummary = label;
@@ -2331,8 +2626,45 @@ private:
       const render::PackedSketchPrimitive *primitive =
           sketchId ? snapshot_.sketchScene->findPrimitive(*sketchId) : nullptr;
       if (primitive) {
-        snapshot_.selectedSketchEntityId = entityId;
-        snapshot_.selectedSketchEntityIds = {entityId};
+        if (!pointKey.isEmpty()) {
+          const auto projected = std::ranges::find(
+              snapshot_.sketchProjection.primitives, entityId,
+              &SketchPrimitiveProjection::id);
+          if (projected == snapshot_.sketchProjection.primitives.end())
+            return;
+          const auto key = std::ranges::find(projected->pointKeys, pointKey);
+          if (key == projected->pointKeys.end())
+            return;
+          const std::size_t index =
+              static_cast<std::size_t>(key - projected->pointKeys.begin());
+          if (index >= projected->points.size())
+            return;
+          const PlanePoint point = projected->points[index];
+          const QString pointLabel = sketchPointLabel(pointKey);
+          snapshot_.selectedSketchScopes = {{entityId, pointKey}};
+          snapshot_.selectionSummary = label + QStringLiteral(" · ") + pointLabel;
+          snapshot_.inspectorTitle = snapshot_.selectionSummary;
+          snapshot_.inspectorStatus =
+              snapshot_.sketchEditing ? QStringLiteral("Selected in Sketch")
+                                      : QStringLiteral("Open the Sketch to edit");
+          snapshot_.fields = {
+              readOnlyTextField(QStringLiteral("selection.type"),
+                                QStringLiteral("Type"),
+                                QStringLiteral("Point")),
+              readOnlyTextField(QStringLiteral("selection.parent"),
+                                QStringLiteral("Geometry"), label),
+              readOnlyTextField(
+                  QStringLiteral("selection.x"), QStringLiteral("X"),
+                  formatDisplayedLength(millimetersFromMetres(point.xMetres),
+                                        snapshot_.projectLengthUnitId)),
+              readOnlyTextField(
+                  QStringLiteral("selection.y"), QStringLiteral("Y"),
+                  formatDisplayedLength(millimetersFromMetres(point.yMetres),
+                                        snapshot_.projectLengthUnitId)),
+          };
+          return;
+        }
+        snapshot_.selectedSketchScopes = {{entityId, {}}};
         snapshot_.inspectorTitle = label;
         snapshot_.inspectorStatus =
             snapshot_.sketchEditing
@@ -2499,14 +2831,14 @@ private:
             }
           },
           *constraint);
-      snapshot_.selectedSketchEntityId.clear();
-      snapshot_.selectedSketchEntityIds.clear();
+      snapshot_.selectedSketchScopes.clear();
       QStringList geometry;
       for (const SketchEntityId &selected : entities) {
         const QString id = QString::fromStdString(selected.toString());
-        if (std::ranges::find(snapshot_.selectedSketchEntityIds, id) ==
-            snapshot_.selectedSketchEntityIds.end()) {
-          snapshot_.selectedSketchEntityIds.push_back(id);
+        const SketchSelectionScope scope{id, {}};
+        if (std::ranges::find(snapshot_.selectedSketchScopes, scope) ==
+            snapshot_.selectedSketchScopes.end()) {
+          snapshot_.selectedSketchScopes.push_back(scope);
           geometry.push_back(humanSelectionName(id));
         }
       }
@@ -2531,11 +2863,11 @@ private:
     }
 
     if (const sketch::SketchObject *object = sketchObject(entityId)) {
-      snapshot_.selectedSketchEntityIds.clear();
-      snapshot_.selectedSketchEntityIds.reserve(object->members.size());
+      snapshot_.selectedSketchScopes.clear();
+      snapshot_.selectedSketchScopes.reserve(object->members.size());
       for (const sketch::SketchObjectMember &member : object->members)
-        snapshot_.selectedSketchEntityIds.push_back(
-            QString::fromStdString(member.entity.toString()));
+        snapshot_.selectedSketchScopes.push_back(
+            {QString::fromStdString(member.entity.toString()), {}});
       double minimumX = std::numeric_limits<double>::infinity();
       double minimumY = std::numeric_limits<double>::infinity();
       double maximumX = -std::numeric_limits<double>::infinity();
@@ -2813,6 +3145,8 @@ private:
       type = QStringLiteral("Project");
     } else if (kind == QStringLiteral("sketch-rectangle")) {
       type = QStringLiteral("Rectangle");
+    } else if (kind == QStringLiteral("sketch-curve-group")) {
+      type = QStringLiteral("Modified geometry");
     } else if (kind == QStringLiteral("sketch-point")) {
       type = QStringLiteral("Point");
     } else if (kind == QStringLiteral("sketch-line")) {
@@ -2841,7 +3175,7 @@ private:
 
   void refreshInspectorContext() {
     if (!snapshot_.selectedEntityId.isEmpty()) {
-      projectHumanSelection(snapshot_.selectedEntityId);
+      projectHumanSelection(snapshot_.selectedEntityId, {});
       return;
     }
     if (snapshot_.activeWorkspaceId == QStringLiteral("sketch")) {
@@ -2884,50 +3218,42 @@ private:
       primitive.construction =
           source.style < styles.size() &&
           styles[source.style].role == render::SketchStyleRole::Construction;
-      primitive.selected =
-          std::ranges::find(snapshot_.selectedSketchEntityIds, primitive.id) !=
-          snapshot_.selectedSketchEntityIds.end();
+      primitive.selected = std::ranges::any_of(
+          snapshot_.selectedSketchScopes,
+          [&primitive](const SketchSelectionScope &selection) {
+            return selection.entityId == primitive.id &&
+                   selection.pointKey.isEmpty();
+          });
+      for (const SketchSelectionScope &selection :
+           snapshot_.selectedSketchScopes)
+        if (selection.entityId == primitive.id &&
+            !selection.pointKey.isEmpty())
+          primitive.selectedPointKeys.push_back(selection.pointKey);
       if (source.kind == render::SketchPrimitiveKind::BSpline) {
         const render::PackedSketchSpline &spline =
             snapshot_.sketchScene->splines()[source.spline];
         const std::size_t count = spline.controlPointCount;
-        const sketch::NurbsView curve{
+        primitive.kind = SketchPrimitiveKind::BSpline;
+        primitive.splineDegree = spline.degree;
+        primitive.splinePeriodic = spline.periodic;
+        const auto coordinates =
             snapshot_.sketchScene->splineControlPointCoordinates().subspan(
                 static_cast<std::size_t>(spline.firstControlPoint) * 2U,
-                count * 2U),
-            snapshot_.sketchScene->splineKnots().subspan(
-                spline.firstKnot, count + spline.degree + 1U),
-            snapshot_.sketchScene->splineWeights().subspan(spline.firstWeight,
-                                                           count),
-            spline.degree};
-        double minimumX = curve.controlPointCoordinates[0];
-        double minimumY = curve.controlPointCoordinates[1];
-        double maximumX = minimumX;
-        double maximumY = minimumY;
-        for (std::size_t index = 1U; index < count; ++index) {
-          minimumX =
-              std::min(minimumX, curve.controlPointCoordinates[index * 2U]);
-          minimumY = std::min(minimumY,
-                              curve.controlPointCoordinates[index * 2U + 1U]);
-          maximumX =
-              std::max(maximumX, curve.controlPointCoordinates[index * 2U]);
-          maximumY = std::max(maximumY,
-                              curve.controlPointCoordinates[index * 2U + 1U]);
+                count * 2U);
+        primitive.points.reserve(count);
+        primitive.pointKeys.reserve(count);
+        for (std::size_t index = 0U; index < count; ++index) {
+          primitive.points.push_back(
+              {coordinates[index * 2U], coordinates[index * 2U + 1U]});
+          primitive.pointKeys.push_back(
+              QStringLiteral("control.%1").arg(index + 1U));
         }
-        const double projectionTolerance = std::max(
-            1.0e-9,
-            std::hypot(maximumX - minimumX, maximumY - minimumY) * 1.0e-4);
-        auto tessellated =
-            sketch::tessellateNurbs(curve, projectionTolerance, 4'096U);
-        if (!tessellated)
-          continue;
-        primitive.kind = SketchPrimitiveKind::BSpline;
-        primitive.points.reserve(tessellated->points.size());
-        for (const sketch::NurbsPoint point : tessellated->points)
-          primitive.points.push_back({point.x, point.y});
-        primitive.pointKeys.resize(primitive.points.size());
-        primitive.pointKeys.front() = QStringLiteral("start");
-        primitive.pointKeys.back() = QStringLiteral("end");
+        const auto knots = snapshot_.sketchScene->splineKnots().subspan(
+            spline.firstKnot, count + spline.degree + 1U);
+        primitive.splineKnots.assign(knots.begin(), knots.end());
+        const auto weights = snapshot_.sketchScene->splineWeights().subspan(
+            spline.firstWeight, count);
+        primitive.splineWeights.assign(weights.begin(), weights.end());
         result.push_back(std::move(primitive));
         continue;
       }
@@ -3494,9 +3820,10 @@ private:
     if (!localSketchSession_ || !command || sketchInputs_.empty() ||
         sketchInputs_.size() > 1024U ||
         snapshot_.commandDraft.state == CommandDraftState::Pending ||
-        std::ranges::any_of(sketchInputs_, [](const auto &input) {
-          return !input.subElementKey.isEmpty();
-        }))
+        (*command != LocalSketchCurveModifyCommand::Join &&
+         std::ranges::any_of(sketchInputs_, [](const auto &input) {
+           return !input.subElementKey.isEmpty();
+         })))
       return reject(QStringLiteral("Choose whole Sketch curves"));
 
     const auto constraintPolicy =
@@ -3527,6 +3854,55 @@ private:
         edit.entityIds.push_back(input.entityId);
       queued = localSketchSession_->offset(
           std::move(edit),
+          [this, commandId](Result<LocalSketchProjection> result) {
+            completeLocalOperation(commandId, std::move(result));
+          });
+    } else if (*command == LocalSketchCurveModifyCommand::Trim) {
+      if (sketchInputs_.size() != 1U)
+        return reject(QStringLiteral("Choose one curve segment"));
+      localSketchSession_->cancelPreview();
+      LocalTrimEdit edit;
+      edit.curve = {sketchInputs_.front().entityId,
+                    sketchInputs_.front().planePoint.xMetres,
+                    sketchInputs_.front().planePoint.yMetres};
+      edit.constraints = constraintPolicy;
+      queued = localSketchSession_->trim(
+          std::move(edit),
+          [this, commandId](Result<LocalSketchProjection> result) {
+            completeLocalOperation(commandId, std::move(result));
+          });
+    } else if (*command == LocalSketchCurveModifyCommand::Split) {
+      if (sketchInputs_.size() != 1U)
+        return reject(QStringLiteral("Choose one location on a curve"));
+      localSketchSession_->cancelPreview();
+      LocalSplitEdit edit;
+      edit.curve = {sketchInputs_.front().entityId,
+                    sketchInputs_.front().planePoint.xMetres,
+                    sketchInputs_.front().planePoint.yMetres};
+      edit.constraints = constraintPolicy;
+      queued = localSketchSession_->split(
+          std::move(edit),
+          [this, commandId](Result<LocalSketchProjection> result) {
+            completeLocalOperation(commandId, std::move(result));
+          });
+    } else if (*command == LocalSketchCurveModifyCommand::Join) {
+      if (sketchInputs_.size() != 1U ||
+          sketchInputs_[0].subElementKey.isEmpty())
+        return reject(QStringLiteral("Choose one shared curve endpoint"));
+      LocalJoinEdit edit;
+      edit.first = {sketchInputs_[0].entityId,
+                    sketchInputs_[0].subElementKey};
+      edit.constraints = constraintPolicy;
+      queued = localSketchSession_->join(
+          std::move(edit),
+          [this, commandId](Result<LocalSketchProjection> result) {
+            completeLocalOperation(commandId, std::move(result));
+          });
+    } else if (*command == LocalSketchCurveModifyCommand::ConvertToNurbs) {
+      if (sketchInputs_.size() != 1U)
+        return reject(QStringLiteral("Choose one analytic curve"));
+      queued = localSketchSession_->convertToNurbs(
+          {sketchInputs_.front().entityId, constraintPolicy},
           [this, commandId](Result<LocalSketchProjection> result) {
             completeLocalOperation(commandId, std::move(result));
           });
@@ -3869,11 +4245,21 @@ private:
            QLatin1StringView{presentation.structureKind}});
       for (const sketch::SketchObjectMember &member : object.members) {
         owned.insert(member.entity);
-        if (object.members.size() > 1U)
+        if (object.members.size() > 1U) {
+          QString memberKind =
+              sketchMemberStructureKind(object.kind, member.role);
+          if (object.kind == sketch::SketchObjectKind::CurveGroup &&
+              projection.scene) {
+            if (const auto *primitive =
+                    projection.scene->findPrimitive(member.entity))
+              memberKind = QLatin1StringView{
+                  sketchPrimitivePresentation(primitive->kind).structureKind};
+          }
           snapshot_.structure.push_back(
               {QString::fromStdString(member.entity.toString()),
                sketchMemberLabel(member.role), 4,
-               sketchMemberStructureKind(object.kind, member.role)});
+               std::move(memberKind)});
+        }
       }
     }
     std::array<std::size_t,
@@ -3920,6 +4306,8 @@ private:
           return QString::fromLatin1(
               constraint->label.data(),
               static_cast<qsizetype>(constraint->label.size()));
+        if (localSketchCurveModifyCommand(commandId))
+          return commandLabel(sketchCommandRecords(), commandId);
         if (commandId == QStringLiteral("sketch.dimension"))
           return QStringLiteral("Dimension");
         if (commandId == QStringLiteral("sketch.curve.drag"))
@@ -3943,8 +4331,7 @@ private:
         QStringLiteral("Canonical source and evaluated geometry");
     snapshot_.selectionSummary = QStringLiteral("Nothing selected");
     snapshot_.selectedEntityId.clear();
-    snapshot_.selectedSketchEntityId.clear();
-    snapshot_.selectedSketchEntityIds.clear();
+    snapshot_.selectedSketchScopes.clear();
     snapshot_.sketchProjection.primitives = baseSketchPrimitives();
     switch (projection.plane) {
     case LocalSketchPlane::XY:
@@ -3964,9 +4351,14 @@ private:
                               Result<LocalSketchProjection> result) {
     if (!result) {
       snapshot_.sketchScene = localCommittedSketchScene_;
-      if (localSketchToolKind(commandId)) {
+      if (localSketchToolKind(commandId) ||
+          commandId == QStringLiteral("sketch.trim") ||
+          commandId == QStringLiteral("sketch.split") ||
+          commandId == QStringLiteral("sketch.join") ||
+          commandId ==
+              QStringLiteral("sketch.bspline.convert-to-nurbs")) {
         sketchInputs_.clear();
-        snapshot_.sketchProjection.primitives.clear();
+        rebuildSketchProjection();
         snapshot_.sketchInteraction.expectedRevision =
             snapshot_.projectRevision;
         snapshot_.sketchInteraction.inputCount = 0;
@@ -4038,6 +4430,43 @@ private:
       snapshot_.inspectorTitle = QStringLiteral("Sketch");
       snapshot_.inspectorStatus =
           QStringLiteral("B-spline updated · Select active");
+    } else if (commandId == QStringLiteral("sketch.trim") ||
+               commandId == QStringLiteral("sketch.split") ||
+               commandId == QStringLiteral("sketch.join") ||
+               commandId ==
+                   QStringLiteral("sketch.bspline.convert-to-nurbs")) {
+      sketchInputs_.clear();
+      snapshot_.sketchInteraction.expectedRevision = snapshot_.projectRevision;
+      snapshot_.sketchInteraction.inputKind = SketchInputKind::Entity;
+      snapshot_.sketchInteraction.inputCount = 0;
+      snapshot_.commandDraft.baseRevision = snapshot_.projectRevision;
+      snapshot_.commandDraft.state = CommandDraftState::Editing;
+      snapshot_.commandDraft.previewSupported = false;
+      snapshot_.commandDraft.applySupported = false;
+      rebuildSketchProjection();
+      const bool trim = commandId == QStringLiteral("sketch.trim");
+      const bool split = commandId == QStringLiteral("sketch.split");
+      const bool join = commandId == QStringLiteral("sketch.join");
+      snapshot_.inspectorTitle =
+          trim    ? QStringLiteral("Trim")
+          : split ? QStringLiteral("Split")
+          : join  ? QStringLiteral("Join")
+                  : QStringLiteral("Convert to NURBS");
+      snapshot_.inspectorStatus = trim
+                                      ? QStringLiteral(
+                                            "Trim complete · choose another "
+                                            "curve segment")
+                                  : split
+                                      ? QStringLiteral(
+                                            "Split complete · choose another "
+                                            "curve location")
+                                  : join
+                                      ? QStringLiteral(
+                                            "Join complete · choose another "
+                                            "shared endpoint")
+                                      : QStringLiteral(
+                                            "Converted · choose another "
+                                            "analytic curve");
     } else if (localSketchTransformCommand(commandId) ||
                localSketchCurveModifyCommand(commandId)) {
       sketchInputs_.clear();
@@ -4065,7 +4494,7 @@ private:
       snapshot_.commandDraft = {};
       clearSketchInteraction();
       snapshot_.selectedEntityId = localEditEntity_;
-      projectHumanSelection(localEditEntity_);
+      projectHumanSelection(localEditEntity_, {});
     } else if (commandId == QStringLiteral("source.replace")) {
       snapshot_.activeCommandId.clear();
       snapshot_.fields.clear();

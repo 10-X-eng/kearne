@@ -26,6 +26,9 @@ A compound tool writes its object, primitives, and constraints in one structural
 source edit. Edits that preserve the operation preserve its identity and member
 roles. An edit that destroys the operation replaces it explicitly with the
 resulting human objects; it does not silently keep a false label.
+If a partial edit leaves named members but invalidates their compound kind, the
+same object ID and roles continue in a modified `curve_group`; new geometry
+retains its own operation object.
 
 Structure presents operation objects. Member primitives are disclosed only by
 expansion or contextual selection. Derived profiles never replace source intent

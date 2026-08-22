@@ -4,7 +4,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <new>
 #include <numeric>
 
 namespace kearne::sketch {
@@ -16,12 +15,6 @@ struct HomogeneousPoint {
   double x;
   double y;
   double weight;
-};
-
-struct LongHomogeneousPoint {
-  long double x;
-  long double y;
-  long double weight;
 };
 
 template <typename Pole>
@@ -62,134 +55,6 @@ double squaredDistance(NurbsPoint first, NurbsPoint second) {
   return x * x + y * y;
 }
 
-double conservativeDouble(long double value) {
-  if (!(value > 0.0L))
-    return 0.0;
-  if (!std::isfinite(value) ||
-      value >= static_cast<long double>(std::numeric_limits<double>::max()))
-    return std::numeric_limits<double>::infinity();
-  return std::nextafter(static_cast<double>(value),
-                        std::numeric_limits<double>::infinity());
-}
-
-LongHomogeneousPoint longHomogeneousPole(NurbsView curve,
-                                         std::size_t index,
-                                         long double originX,
-                                         long double originY) {
-  const long double weight = curve.weights[index];
-  return {static_cast<long double>(
-              curve.controlPointCoordinates[index * 2U] - originX) *
-              weight,
-          static_cast<long double>(
-              curve.controlPointCoordinates[index * 2U + 1U] - originY) *
-              weight,
-          weight};
-}
-
-LongHomogeneousPoint homogeneousDerivative(NurbsView curve,
-                                            std::size_t index,
-                                            long double originX,
-                                            long double originY) {
-  const LongHomogeneousPoint first =
-      longHomogeneousPole(curve, index, originX, originY);
-  const LongHomogeneousPoint second =
-      longHomogeneousPole(curve, index + 1U, originX, originY);
-  const long double denominator =
-      static_cast<long double>(curve.knots[index + curve.degree + 1U]) -
-      static_cast<long double>(curve.knots[index + 1U]);
-  if (!(denominator > 0.0L))
-    return {};
-  const long double scale =
-      static_cast<long double>(curve.degree) / denominator;
-  return {(second.x - first.x) * scale, (second.y - first.y) * scale,
-          (second.weight - first.weight) * scale};
-}
-
-double spanSecondDerivativeBound(NurbsView curve, std::size_t span) {
-  if (curve.degree < 2U)
-    return 0.0;
-
-  const std::size_t firstPole = span - curve.degree;
-  const long double originX =
-      curve.controlPointCoordinates[firstPole * 2U];
-  const long double originY =
-      curve.controlPointCoordinates[firstPole * 2U + 1U];
-  long double minimumWeight = std::numeric_limits<long double>::infinity();
-  long double maximumX = 0.0L;
-  long double maximumY = 0.0L;
-  for (std::size_t index = firstPole; index <= span; ++index) {
-    const LongHomogeneousPoint pole =
-        longHomogeneousPole(curve, index, originX, originY);
-    minimumWeight = std::min(minimumWeight, pole.weight);
-    maximumX = std::max(maximumX, std::abs(pole.x));
-    maximumY = std::max(maximumY, std::abs(pole.y));
-  }
-
-  long double maximumFirstX = 0.0L;
-  long double maximumFirstY = 0.0L;
-  long double maximumFirstWeight = 0.0L;
-  for (std::size_t index = firstPole; index < span; ++index) {
-    const LongHomogeneousPoint derivative =
-        homogeneousDerivative(curve, index, originX, originY);
-    maximumFirstX = std::max(maximumFirstX, std::abs(derivative.x));
-    maximumFirstY = std::max(maximumFirstY, std::abs(derivative.y));
-    maximumFirstWeight = std::max(
-        maximumFirstWeight,
-        std::abs(derivative.weight));
-  }
-
-  long double maximumSecondX = 0.0L;
-  long double maximumSecondY = 0.0L;
-  long double maximumSecondWeight = 0.0L;
-  for (std::size_t index = firstPole; index + 1U < span; ++index) {
-    const LongHomogeneousPoint first =
-        homogeneousDerivative(curve, index, originX, originY);
-    const LongHomogeneousPoint second =
-        homogeneousDerivative(curve, index + 1U, originX, originY);
-    const long double denominator =
-        static_cast<long double>(curve.knots[index + curve.degree + 1U]) -
-        static_cast<long double>(curve.knots[index + 2U]);
-    if (!(denominator > 0.0L))
-      continue;
-    const long double scale =
-        static_cast<long double>(curve.degree - 1U) / denominator;
-    maximumSecondX = std::max(
-        maximumSecondX,
-        std::abs((second.x - first.x) * scale));
-    maximumSecondY = std::max(
-        maximumSecondY,
-        std::abs((second.y - first.y) * scale));
-    maximumSecondWeight = std::max(
-        maximumSecondWeight,
-        std::abs((second.weight - first.weight) * scale));
-  }
-
-  const long double weight2 = minimumWeight * minimumWeight;
-  const long double weight3 = weight2 * minimumWeight;
-  const auto coordinateBound = [&](long double coordinate,
-                                   long double firstDerivative,
-                                   long double secondDerivative) {
-    return secondDerivative / minimumWeight +
-           coordinate * maximumSecondWeight / weight2 +
-           2.0L * firstDerivative * maximumFirstWeight / weight2 +
-           2.0L * coordinate * maximumFirstWeight * maximumFirstWeight /
-               weight3;
-  };
-  const long double x =
-      coordinateBound(maximumX, maximumFirstX, maximumSecondX);
-  const long double y =
-      coordinateBound(maximumY, maximumFirstY, maximumSecondY);
-  return conservativeDouble(std::hypot(x, y));
-}
-
-double chordDeviationBound(double secondDerivativeBound, double first,
-                           double last) {
-  const long double width =
-      static_cast<long double>(last) - static_cast<long double>(first);
-  return conservativeDouble(static_cast<long double>(secondDerivativeBound) *
-                            width * width / 8.0L);
-}
-
 } // namespace
 
 std::pair<double, double> nurbsDomain(NurbsView curve) {
@@ -198,23 +63,30 @@ std::pair<double, double> nurbsDomain(NurbsView curve) {
 
 NurbsPoint evaluateNurbs(NurbsView curve, double parameter) {
   const std::size_t count = curve.weights.size();
+  const double originX = curve.controlPointCoordinates[0];
+  const double originY = curve.controlPointCoordinates[1];
   const HomogeneousPoint value = evaluateHomogeneous(
       curve.knots, count, curve.degree, parameter, [&](std::size_t pole) {
         const double weight = curve.weights[pole];
         return HomogeneousPoint{
-            curve.controlPointCoordinates[pole * 2U] * weight,
-            curve.controlPointCoordinates[pole * 2U + 1U] * weight, weight};
+            (curve.controlPointCoordinates[pole * 2U] - originX) * weight,
+            (curve.controlPointCoordinates[pole * 2U + 1U] - originY) * weight,
+            weight};
       });
-  return {value.x / value.weight, value.y / value.weight};
+  return {originX + value.x / value.weight,
+          originY + value.y / value.weight};
 }
 
 NurbsPoint differentiateNurbs(NurbsView curve, double parameter) {
   const std::size_t count = curve.weights.size();
+  const double originX = curve.controlPointCoordinates[0];
+  const double originY = curve.controlPointCoordinates[1];
   const auto pole = [&](std::size_t index) {
     const double weight = curve.weights[index];
     return HomogeneousPoint{
-        curve.controlPointCoordinates[index * 2U] * weight,
-        curve.controlPointCoordinates[index * 2U + 1U] * weight, weight};
+        (curve.controlPointCoordinates[index * 2U] - originX) * weight,
+        (curve.controlPointCoordinates[index * 2U + 1U] - originY) * weight,
+        weight};
   };
   const HomogeneousPoint value =
       evaluateHomogeneous(curve.knots, count, curve.degree, parameter, pole);
@@ -236,6 +108,61 @@ NurbsPoint differentiateNurbs(NurbsView curve, double parameter) {
               denominator,
           (derivative.y * value.weight - value.y * derivative.weight) /
               denominator};
+}
+
+NurbsPoint differentiateNurbsSecond(NurbsView curve, double parameter) {
+  const std::size_t count = curve.weights.size();
+  const double originX = curve.controlPointCoordinates[0];
+  const double originY = curve.controlPointCoordinates[1];
+  const auto pole = [&](std::size_t index) {
+    const double weight = curve.weights[index];
+    return HomogeneousPoint{
+        (curve.controlPointCoordinates[index * 2U] - originX) * weight,
+        (curve.controlPointCoordinates[index * 2U + 1U] - originY) * weight,
+        weight};
+  };
+  const auto firstPole = [&](std::size_t index) {
+    const HomogeneousPoint first = pole(index);
+    const HomogeneousPoint second = pole(index + 1U);
+    const double span =
+        curve.knots[index + curve.degree + 1U] - curve.knots[index + 1U];
+    const double scale =
+        span == 0.0 ? 0.0 : static_cast<double>(curve.degree) / span;
+    return HomogeneousPoint{(second.x - first.x) * scale,
+                            (second.y - first.y) * scale,
+                            (second.weight - first.weight) * scale};
+  };
+  const HomogeneousPoint value =
+      evaluateHomogeneous(curve.knots, count, curve.degree, parameter, pole);
+  const HomogeneousPoint first = evaluateHomogeneous(
+      curve.knots.subspan(1U, curve.knots.size() - 2U), count - 1U,
+      curve.degree - 1U, parameter, firstPole);
+  HomogeneousPoint second{};
+  if (curve.degree >= 2U)
+    second = evaluateHomogeneous(
+        curve.knots.subspan(2U, curve.knots.size() - 4U), count - 2U,
+        curve.degree - 2U, parameter, [&](std::size_t index) {
+          const HomogeneousPoint previous = firstPole(index);
+          const HomogeneousPoint next = firstPole(index + 1U);
+          const double span = curve.knots[index + curve.degree + 1U] -
+                              curve.knots[index + 2U];
+          const double scale =
+              span == 0.0 ? 0.0
+                          : static_cast<double>(curve.degree - 1U) / span;
+          return HomogeneousPoint{(next.x - previous.x) * scale,
+                                  (next.y - previous.y) * scale,
+                                  (next.weight - previous.weight) * scale};
+        });
+  const double weight2 = value.weight * value.weight;
+  const double weight3 = weight2 * value.weight;
+  return {(second.x * weight2 - value.x * second.weight * value.weight -
+           2.0 * first.x * value.weight * first.weight +
+           2.0 * value.x * first.weight * first.weight) /
+              weight3,
+          (second.y * weight2 - value.y * second.weight * value.weight -
+           2.0 * first.y * value.weight * first.weight +
+           2.0 * value.y * first.weight * first.weight) /
+              weight3};
 }
 
 std::size_t periodicNurbsTailCount(NurbsView curve, double coordinateTolerance,
@@ -331,107 +258,6 @@ NurbsProjection projectToNurbs(NurbsView curve, NurbsPoint query) {
     }
   }
   return best;
-}
-
-Result<NurbsPolyline> tessellateNurbs(NurbsView curve, double maximumError,
-                                      std::size_t maximumSegments,
-                                      std::stop_token cancellation) {
-  if (!std::isfinite(maximumError) || maximumError <= 0.0 ||
-      maximumSegments == 0U)
-    return std::unexpected(diagnostic("sketch.nurbs.invalid-tessellation",
-                                      "NURBS tessellation limits are invalid"));
-  if (curve.degree == 0U || curve.degree > maximumDegree ||
-      curve.weights.size() <= curve.degree ||
-      curve.controlPointCoordinates.size() != curve.weights.size() * 2U ||
-      curve.knots.size() != curve.weights.size() + curve.degree + 1U ||
-      !std::ranges::all_of(curve.controlPointCoordinates, [](double value) {
-        return std::isfinite(value);
-      }) ||
-      !std::ranges::all_of(curve.knots,
-                           [](double value) { return std::isfinite(value); }) ||
-      !std::ranges::all_of(curve.weights, [](double value) {
-        return std::isfinite(value) && value > 0.0;
-      }) ||
-      !std::ranges::is_sorted(curve.knots) ||
-      !(curve.knots[curve.degree] < curve.knots[curve.weights.size()]))
-    return std::unexpected(diagnostic("sketch.nurbs.invalid-curve",
-                                      "NURBS curve data is invalid"));
-  struct Segment {
-    double first;
-    double last;
-    NurbsPoint firstPoint;
-    NurbsPoint lastPoint;
-    double secondDerivativeBound;
-  };
-  try {
-    const std::size_t seedsPerSpan =
-        std::max<std::size_t>(2U, static_cast<std::size_t>(curve.degree) * 2U);
-    std::vector<Segment> seeds;
-    for (std::size_t span = curve.degree; span < curve.weights.size(); ++span) {
-      const double first = curve.knots[span];
-      const double last = curve.knots[span + 1U];
-      if (!(first < last))
-        continue;
-      const double secondDerivativeBound =
-          spanSecondDerivativeBound(curve, span);
-      for (std::size_t seed = 0U; seed < seedsPerSpan; ++seed) {
-        const double lower = std::lerp(first, last,
-                                       static_cast<double>(seed) /
-                                           static_cast<double>(seedsPerSpan));
-        const double upper = std::lerp(first, last,
-                                       static_cast<double>(seed + 1U) /
-                                           static_cast<double>(seedsPerSpan));
-        seeds.push_back({lower, upper, evaluateNurbs(curve, lower),
-                         evaluateNurbs(curve, upper), secondDerivativeBound});
-      }
-    }
-    if (seeds.empty() || seeds.size() > maximumSegments)
-      return std::unexpected(
-          diagnostic("sketch.nurbs.tessellation-budget",
-                     "NURBS tessellation exceeds its segment budget"));
-    std::ranges::reverse(seeds);
-    std::vector<Segment> stack = std::move(seeds);
-
-    NurbsPolyline result{{stack.back().firstPoint}, 0.0, 0U, 0U, 0U};
-    result.points.reserve(
-        std::min(maximumSegments + 1U, stack.size() * 2U + 1U));
-    std::size_t work = 0U;
-    while (!stack.empty()) {
-      if ((++work & 0xffU) == 0U && cancellation.stop_requested())
-        return std::unexpected(diagnostic("sketch.nurbs.cancelled",
-                                          "NURBS tessellation was cancelled"));
-      const Segment segment = stack.back();
-      stack.pop_back();
-      const double middle = std::midpoint(segment.first, segment.last);
-      const NurbsPoint middlePoint = evaluateNurbs(curve, middle);
-      const double deviation = chordDeviationBound(
-          segment.secondDerivativeBound, segment.first, segment.last);
-      if (deviation <= maximumError) {
-        result.points.push_back(segment.lastPoint);
-        result.maximumCertifiedDeviation =
-            std::max(result.maximumCertifiedDeviation, deviation);
-        continue;
-      }
-      if (result.points.size() + stack.size() >= maximumSegments)
-        return std::unexpected(
-            diagnostic("sketch.nurbs.tessellation-budget",
-                       "NURBS tessellation exceeds its segment budget"));
-      stack.push_back({middle, segment.last, middlePoint, segment.lastPoint,
-                       segment.secondDerivativeBound});
-      stack.push_back({segment.first, middle, segment.firstPoint, middlePoint,
-                       segment.secondDerivativeBound});
-    }
-    if (cancellation.stop_requested())
-      return std::unexpected(diagnostic("sketch.nurbs.cancelled",
-                                        "NURBS tessellation was cancelled"));
-    result.retainedBytes = result.points.capacity() * sizeof(NurbsPoint);
-    result.scratchBytes = stack.capacity() * sizeof(Segment);
-    result.peakBytes = result.retainedBytes + result.scratchBytes;
-    return result;
-  } catch (const std::bad_alloc &) {
-    return std::unexpected(diagnostic("sketch.nurbs.allocation-failed",
-                                      "NURBS tessellation allocation failed"));
-  }
 }
 
 } // namespace kearne::sketch

@@ -23,8 +23,8 @@ public:
   publishCamera(SketchCamera2d camera);
   [[nodiscard]] Result<SketchPickCoverageDecision>
   publishPickCoverage(SketchPickCoveragePolicy policy);
-  [[nodiscard]] SketchCurveLod requestedLod() const;
   void setPalette(SketchScenePalette palette);
+  void setPipelineWarmup(SketchPipelineWarmup warmup);
 
   [[nodiscard]] Result<SketchItemPickEvidence> pick(
       QPointF itemLogical, double toleranceLogicalPixels,
@@ -35,10 +35,11 @@ public:
   presentedScene() const;
   [[nodiscard]] Result<std::shared_ptr<const void>> retirementOwner() const;
   void clearPresentation();
-  [[nodiscard]] SketchMeshMetrics meshMetrics() const;
+  [[nodiscard]] SketchVectorPacketMetrics vectorPacketMetrics() const;
   [[nodiscard]] std::uint64_t geometryBuildCount() const;
   [[nodiscard]] SketchSynchronizationMetrics synchronizationMetrics() const;
   [[nodiscard]] SketchGpuUploadMetrics gpuUploadMetrics() const;
+  [[nodiscard]] bool requestedPipelinesReady() const;
   [[nodiscard]] Diagnostic lastDiagnostic() const;
 
 protected:
@@ -56,6 +57,7 @@ private:
   SketchScenePresenter presenter_;
   mutable std::mutex presentationMutex_;
   SketchScenePalette palette_;
+  SketchPipelineWarmup pipelineWarmup_;
   Diagnostic lastDiagnostic_;
   std::uint64_t paletteGeneration_ = 1;
   std::atomic_bool updateQueued_ = false;

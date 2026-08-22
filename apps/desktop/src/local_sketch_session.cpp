@@ -3,6 +3,7 @@
 
 #include <kearne/adapters/ceres_sketch_solver.hpp>
 #include <kearne/adapters/occ_bspline.hpp>
+#include <kearne/adapters/occ_curve_geometry.hpp>
 #include <kearne/adapters/sketch_source_worker.hpp>
 #include <kearne/document/canonical.hpp>
 #include <kearne/document/content_store.hpp>
@@ -1293,6 +1294,232 @@ struct Backend final {
     return applyEdits(std::move(*edited));
   }
 
+  Result<LocalSketchProjection> trim(const LocalTrimEdit &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before trimming its geometry"));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(
+          diagnostic("desktop.sketch.trim-constraint-policy",
+                     "Trim constraint policy is invalid"));
+    auto entity = SketchEntityId::parse(request.curve.entityId.toStdString());
+    auto referenceX = length(request.curve.referenceXMetres);
+    auto referenceY = length(request.curve.referenceYMetres);
+    auto split = makeId<SketchEntityId>();
+    auto firstBoundary = makeId<SketchConstraintId>();
+    auto secondBoundary = makeId<SketchConstraintId>();
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    if (!referenceX)
+      return std::unexpected(std::move(referenceX.error()));
+    if (!referenceY)
+      return std::unexpected(std::move(referenceY.error()));
+    if (!split)
+      return std::unexpected(std::move(split.error()));
+    if (!firstBoundary)
+      return std::unexpected(std::move(firstBoundary.error()));
+    if (!secondBoundary)
+      return std::unexpected(std::move(secondBoundary.error()));
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    auto edited = adapters::trimCurve(
+        state->definition,
+        {{*entity, {*referenceX, *referenceY}},
+         {*split, {*firstBoundary, *secondBoundary}}, constraintPolicy});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalTrimPreview> previewTrim(const LocalCurvePick &request) const {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before previewing Trim"));
+    auto entity = SketchEntityId::parse(request.entityId.toStdString());
+    auto referenceX = length(request.referenceXMetres);
+    auto referenceY = length(request.referenceYMetres);
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    if (!referenceX)
+      return std::unexpected(std::move(referenceX.error()));
+    if (!referenceY)
+      return std::unexpected(std::move(referenceY.error()));
+    auto preview = adapters::previewTrim(
+        state->definition, {*entity, {*referenceX, *referenceY}});
+    if (!preview)
+      return std::unexpected(std::move(preview.error()));
+    LocalTrimPreview result;
+    result.deletesCurve = preview->deletesCurve;
+    result.boundaries.reserve(preview->boundaries.size());
+    for (const adapters::TrimBoundary &boundary : preview->boundaries)
+      result.boundaries.push_back(
+          {boundary.point.x.si(), boundary.point.y.si()});
+    return result;
+  }
+
+  Result<LocalSketchProjection> split(const LocalSplitEdit &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before splitting its geometry"));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(
+          diagnostic("desktop.sketch.split-constraint-policy",
+                     "Split constraint policy is invalid"));
+    auto entity = SketchEntityId::parse(request.curve.entityId.toStdString());
+    auto referenceX = length(request.curve.referenceXMetres);
+    auto referenceY = length(request.curve.referenceYMetres);
+    auto second = makeId<SketchEntityId>();
+    auto seam = makeId<SketchConstraintId>();
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    if (!referenceX)
+      return std::unexpected(std::move(referenceX.error()));
+    if (!referenceY)
+      return std::unexpected(std::move(referenceY.error()));
+    if (!second)
+      return std::unexpected(std::move(second.error()));
+    if (!seam)
+      return std::unexpected(std::move(seam.error()));
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    auto edited = adapters::splitCurve(
+        state->definition,
+        {{*entity, {*referenceX, *referenceY}}, {*second, *seam},
+         constraintPolicy});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSplitPreview> previewSplit(const LocalCurvePick &request) const {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before previewing Split"));
+    auto entity = SketchEntityId::parse(request.entityId.toStdString());
+    auto referenceX = length(request.referenceXMetres);
+    auto referenceY = length(request.referenceYMetres);
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    if (!referenceX)
+      return std::unexpected(std::move(referenceX.error()));
+    if (!referenceY)
+      return std::unexpected(std::move(referenceY.error()));
+    auto preview = adapters::previewSplit(
+        state->definition, {*entity, {*referenceX, *referenceY}});
+    if (!preview)
+      return std::unexpected(std::move(preview.error()));
+    return LocalSplitPreview{
+        {preview->point.x.si(), preview->point.y.si()}};
+  }
+
+  Result<LocalSketchProjection> join(const LocalJoinEdit &request) {
+    if (!state)
+      return std::unexpected(
+          diagnostic("desktop.sketch.not-created",
+                     "create a Sketch before joining its geometry"));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(
+          diagnostic("desktop.sketch.join-constraint-policy",
+                     "Join constraint policy is invalid"));
+    auto firstEntity =
+        SketchEntityId::parse(request.first.entityId.toStdString());
+    auto firstPoint = pointKey(request.first.pointKey);
+    auto object = makeId<SketchObjectId>();
+    if (!firstEntity)
+      return std::unexpected(std::move(firstEntity.error()));
+    if (!firstPoint)
+      return std::unexpected(std::move(firstPoint.error()));
+    if (!object)
+      return std::unexpected(std::move(object.error()));
+    const sketch::NumericalProfile profile;
+    const sketch::PointRef firstReference{*firstEntity, *firstPoint};
+    std::optional<sketch::PointRef> secondReference;
+    if (!request.second.entityId.isEmpty()) {
+      auto secondEntity =
+          SketchEntityId::parse(request.second.entityId.toStdString());
+      auto secondPoint = pointKey(request.second.pointKey);
+      if (!secondEntity)
+        return std::unexpected(std::move(secondEntity.error()));
+      if (!secondPoint)
+        return std::unexpected(std::move(secondPoint.error()));
+      secondReference = sketch::PointRef{*secondEntity, *secondPoint};
+    } else {
+      auto selected = sketch::resolvePoint(state->definition, firstReference);
+      if (!selected)
+        return std::unexpected(std::move(selected.error()));
+      for (const sketch::Entity &candidate : state->definition.entities) {
+        const SketchEntityId candidateId = sketch::entityId(candidate);
+        if (candidateId == firstReference.entity)
+          continue;
+        for (const sketch::PointKey key :
+             {sketch::PointKey::Start, sketch::PointKey::End}) {
+          auto point =
+              sketch::resolvePoint(state->definition, {candidateId, key});
+          if (point &&
+              std::hypot(point->x.si() - selected->x.si(),
+                         point->y.si() - selected->y.si()) <=
+                  profile.lengthToleranceMeters) {
+            if (secondReference)
+              return std::unexpected(diagnostic(
+                  "desktop.sketch.join-ambiguous",
+                  "Shared endpoint belongs to more than two curves"));
+            secondReference = sketch::PointRef{candidateId, key};
+          }
+        }
+      }
+      if (!secondReference)
+        return std::unexpected(diagnostic(
+            "desktop.sketch.join-disconnected",
+            "Shared endpoint does not meet another open curve"));
+    }
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    auto edited = adapters::joinCurves(
+        state->definition,
+        {firstReference, *secondReference, *object, constraintPolicy}, profile);
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
+  Result<LocalSketchProjection>
+  convertToNurbs(const LocalConvertToNurbsEdit &request) {
+    if (!state)
+      return std::unexpected(diagnostic(
+          "desktop.sketch.not-created",
+          "create a Sketch before converting its geometry"));
+    if (request.constraints != LocalExternalConstraintPolicy::Refuse &&
+        request.constraints != LocalExternalConstraintPolicy::Detach)
+      return std::unexpected(diagnostic(
+          "desktop.sketch.convert-to-nurbs-constraint-policy",
+          "Convert to NURBS constraint policy is invalid"));
+    auto entity = SketchEntityId::parse(request.entityId.toStdString());
+    if (!entity)
+      return std::unexpected(std::move(entity.error()));
+    const auto constraintPolicy =
+        request.constraints == LocalExternalConstraintPolicy::Detach
+            ? sketch::ExternalConstraintPolicy::Detach
+            : sketch::ExternalConstraintPolicy::Refuse;
+    auto edited = adapters::convertToNurbs(
+        state->definition, {*entity, constraintPolicy});
+    if (!edited)
+      return std::unexpected(std::move(edited.error()));
+    return applyEdits(std::move(*edited));
+  }
+
   Result<sketch::AppliedEdits>
   curveDragEdits(const LocalSketchCurveDrag &drag) const {
     if (!state)
@@ -1581,6 +1808,23 @@ private:
   std::uint64_t sceneGeneration = 0U;
 };
 
+struct LocalTrimPreviewRequest {
+  LocalCurvePick curve;
+};
+
+struct LocalSplitPreviewRequest {
+  LocalCurvePick curve;
+};
+
+using LocalPreviewRequest = std::variant<LocalSketchCurveDrag,
+                                         LocalTrimPreviewRequest,
+                                         LocalSplitPreviewRequest>;
+using LocalPreviewResult = std::variant<
+    std::shared_ptr<const render::SketchSceneSnapshot>, LocalTrimPreview,
+    LocalSplitPreview>;
+using LocalPreviewCompletion =
+    std::function<void(Result<LocalPreviewResult> preview)>;
+
 class SessionWorker final : public QObject {
 public:
   explicit SessionWorker(adapters::FramedWorkerProcessConfig process)
@@ -1646,17 +1890,57 @@ public:
     return backend_->extend(edit);
   }
 
+  Result<LocalSketchProjection> trim(const LocalTrimEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->trim(edit);
+  }
+
+  Result<LocalSketchProjection> split(const LocalSplitEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->split(edit);
+  }
+
+  Result<LocalSketchProjection> join(const LocalJoinEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->join(edit);
+  }
+
+  Result<LocalSketchProjection>
+  convertToNurbs(const LocalConvertToNurbsEdit &edit) {
+    if (auto ready = ensureBackend(); !ready)
+      return std::unexpected(std::move(ready.error()));
+    return backend_->convertToNurbs(edit);
+  }
+
   Result<LocalSketchProjection> dragCurve(const LocalSketchCurveDrag &drag) {
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
     return backend_->dragCurve(drag);
   }
 
-  Result<std::shared_ptr<const render::SketchSceneSnapshot>>
-  previewCurveDrag(const LocalSketchCurveDrag &drag) {
+  Result<LocalPreviewResult> preview(const LocalPreviewRequest &request) {
     if (auto ready = ensureBackend(); !ready)
       return std::unexpected(std::move(ready.error()));
-    return backend_->previewCurveDrag(drag);
+    if (const auto *drag = std::get_if<LocalSketchCurveDrag>(&request)) {
+      auto result = backend_->previewCurveDrag(*drag);
+      if (!result)
+        return std::unexpected(std::move(result.error()));
+      return LocalPreviewResult{std::move(*result)};
+    }
+    if (const auto *trim = std::get_if<LocalTrimPreviewRequest>(&request)) {
+      auto result = backend_->previewTrim(trim->curve);
+      if (!result)
+        return std::unexpected(std::move(result.error()));
+      return LocalPreviewResult{std::move(*result)};
+    }
+    auto result =
+        backend_->previewSplit(std::get<LocalSplitPreviewRequest>(request).curve);
+    if (!result)
+      return std::unexpected(std::move(result.error()));
+    return LocalPreviewResult{std::move(*result)};
   }
 
   Result<LocalSketchProjection>
@@ -1789,44 +2073,42 @@ struct LocalSketchSession::Impl final {
     startPreparation();
   }
 
-  struct PendingCurvePreview {
-    LocalSketchCurveDrag drag;
-    CurvePreviewCompletion completion;
+  struct PendingPreview {
+    LocalPreviewRequest request;
+    LocalPreviewCompletion completion;
     std::uint64_t sequence = 0U;
   };
 
-  bool previewCurveDrag(LocalSketchCurveDrag drag,
-                        CurvePreviewCompletion completion) {
+  bool preview(LocalPreviewRequest request, LocalPreviewCompletion completion) {
     if (stopping || !worker || !completion ||
         previewSequence == std::numeric_limits<std::uint64_t>::max())
       return false;
-    latestCurvePreview = PendingCurvePreview{
-        std::move(drag), std::move(completion), ++previewSequence};
-    if (!curvePreviewRunning)
-      dispatchCurvePreview();
+    latestPreview = PendingPreview{std::move(request), std::move(completion),
+                                   ++previewSequence};
+    if (!previewRunning)
+      dispatchPreview();
     return true;
   }
 
-  void cancelCurveDragPreview() {
-    latestCurvePreview.reset();
+  void cancelPreview() {
+    latestPreview.reset();
     if (previewSequence != std::numeric_limits<std::uint64_t>::max())
       ++previewSequence;
   }
 
-  void dispatchCurvePreview() {
-    if (curvePreviewRunning || !latestCurvePreview || stopping || !worker)
+  void dispatchPreview() {
+    if (previewRunning || !latestPreview || stopping || !worker)
       return;
-    PendingCurvePreview request = std::move(*latestCurvePreview);
-    latestCurvePreview.reset();
-    curvePreviewRunning = true;
-    CurvePreviewCompletion dispatchFailure = request.completion;
+    PendingPreview request = std::move(*latestPreview);
+    latestPreview.reset();
+    previewRunning = true;
+    LocalPreviewCompletion dispatchFailure = request.completion;
     const QPointer<LocalSketchSession> lifetime{&owner};
     const bool queued = QMetaObject::invokeMethod(
         worker,
         [target = worker, lifetime, request = std::move(request)]() mutable {
-          auto result = std::make_shared<Result<std::shared_ptr<
-              const render::SketchSceneSnapshot>>>(
-              target->previewCurveDrag(request.drag));
+          auto result = std::make_shared<Result<LocalPreviewResult>>(
+              target->preview(request.request));
           if (!lifetime)
             return;
           static_cast<void>(QMetaObject::invokeMethod(
@@ -1835,28 +2117,29 @@ struct LocalSketchSession::Impl final {
                completion = std::move(request.completion),
                result = std::move(result)]() mutable {
                 if (lifetime)
-                  lifetime->impl_->finishCurvePreview(
-                      sequence, std::move(completion), std::move(*result));
+                  lifetime->impl_->finishPreview(sequence,
+                                                  std::move(completion),
+                                                  std::move(*result));
               },
               Qt::QueuedConnection));
         },
         Qt::QueuedConnection);
     if (!queued) {
-      curvePreviewRunning = false;
+      previewRunning = false;
       dispatchFailure(std::unexpected(diagnostic(
           "desktop.sketch.preview-dispatch",
-          "Sketch drag preview could not be dispatched")));
+          "Sketch preview could not be dispatched")));
     }
   }
 
-  void finishCurvePreview(
-      std::uint64_t sequence, CurvePreviewCompletion completion,
-      Result<std::shared_ptr<const render::SketchSceneSnapshot>> result) {
-    curvePreviewRunning = false;
-    if (sequence == previewSequence && !latestCurvePreview)
+  void finishPreview(std::uint64_t sequence,
+                     LocalPreviewCompletion completion,
+                     Result<LocalPreviewResult> result) {
+    previewRunning = false;
+    if (sequence == previewSequence && !latestPreview)
       completion(std::move(result));
-    if (latestCurvePreview)
-      dispatchCurvePreview();
+    if (latestPreview)
+      dispatchPreview();
   }
 
   ~Impl() {
@@ -1909,12 +2192,12 @@ struct LocalSketchSession::Impl final {
   SessionWorker *worker;
   std::atomic_size_t pending = 0U;
   std::vector<ReadinessCompletion> readinessCompletions;
-  std::optional<PendingCurvePreview> latestCurvePreview;
+  std::optional<PendingPreview> latestPreview;
   std::optional<Diagnostic> preparationError;
   std::uint64_t previewSequence = 0U;
   bool preparationQueued = false;
   bool preparationReady = false;
-  bool curvePreviewRunning = false;
+  bool previewRunning = false;
   bool stopping = false;
 };
 
@@ -2009,6 +2292,39 @@ bool LocalSketchSession::extend(LocalExtendEdit edit, Completion completion) {
       std::move(completion));
 }
 
+bool LocalSketchSession::trim(LocalTrimEdit edit, Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.trim(edit);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::split(LocalSplitEdit edit, Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.split(edit);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::join(LocalJoinEdit edit, Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.join(edit);
+      },
+      std::move(completion));
+}
+
+bool LocalSketchSession::convertToNurbs(LocalConvertToNurbsEdit edit,
+                                        Completion completion) {
+  return impl_->submit(
+      [edit = std::move(edit)](SessionWorker &worker) {
+        return worker.convertToNurbs(edit);
+      },
+      std::move(completion));
+}
+
 bool LocalSketchSession::dragCurve(LocalSketchCurveDrag drag,
                                    Completion completion) {
   return impl_->submit(
@@ -2020,11 +2336,76 @@ bool LocalSketchSession::dragCurve(LocalSketchCurveDrag drag,
 
 bool LocalSketchSession::previewCurveDrag(
     LocalSketchCurveDrag drag, CurvePreviewCompletion completion) {
-  return impl_->previewCurveDrag(std::move(drag), std::move(completion));
+  if (!completion)
+    return false;
+  return impl_->preview(
+      std::move(drag),
+      [completion = std::move(completion)](
+          Result<LocalPreviewResult> result) mutable {
+        if (!result) {
+          completion(std::unexpected(std::move(result.error())));
+          return;
+        }
+        auto *scene = std::get_if<
+            std::shared_ptr<const render::SketchSceneSnapshot>>(&*result);
+        if (!scene) {
+          completion(std::unexpected(diagnostic(
+              "desktop.sketch.preview-kind",
+              "Sketch preview returned the wrong result kind")));
+          return;
+        }
+        completion(std::move(*scene));
+      });
 }
 
-void LocalSketchSession::cancelCurveDragPreview() {
-  impl_->cancelCurveDragPreview();
+bool LocalSketchSession::previewTrim(LocalCurvePick curve,
+                                     TrimPreviewCompletion completion) {
+  if (!completion)
+    return false;
+  return impl_->preview(
+      LocalTrimPreviewRequest{std::move(curve)},
+      [completion = std::move(completion)](
+          Result<LocalPreviewResult> result) mutable {
+        if (!result) {
+          completion(std::unexpected(std::move(result.error())));
+          return;
+        }
+        auto *preview = std::get_if<LocalTrimPreview>(&*result);
+        if (!preview) {
+          completion(std::unexpected(diagnostic(
+              "desktop.sketch.preview-kind",
+              "Sketch preview returned the wrong result kind")));
+          return;
+        }
+        completion(std::move(*preview));
+      });
+}
+
+bool LocalSketchSession::previewSplit(LocalCurvePick curve,
+                                      SplitPreviewCompletion completion) {
+  if (!completion)
+    return false;
+  return impl_->preview(
+      LocalSplitPreviewRequest{std::move(curve)},
+      [completion = std::move(completion)](
+          Result<LocalPreviewResult> result) mutable {
+        if (!result) {
+          completion(std::unexpected(std::move(result.error())));
+          return;
+        }
+        auto *preview = std::get_if<LocalSplitPreview>(&*result);
+        if (!preview) {
+          completion(std::unexpected(diagnostic(
+              "desktop.sketch.preview-kind",
+              "Sketch preview returned the wrong result kind")));
+          return;
+        }
+        completion(std::move(*preview));
+      });
+}
+
+void LocalSketchSession::cancelPreview() {
+  impl_->cancelPreview();
 }
 
 bool LocalSketchSession::replaceSource(LocalSourceReplacement replacement,

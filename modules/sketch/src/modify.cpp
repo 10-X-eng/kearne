@@ -3,9 +3,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <numbers>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
 
 namespace kearne::sketch {
@@ -93,15 +95,17 @@ Result<void> collectConstraintDeletes(const Definition &current,
   return {};
 }
 
-void dissolvePartialObjects(const Definition &current,
+void preservePartialObjects(const Definition &current,
                             const std::set<SketchEntityId> &affected,
                             std::vector<Edit> &edits) {
   for (const SketchObject &object : current.objects)
-    if (object.members.size() > 1U &&
+    if (object.kind != SketchObjectKind::CurveGroup &&
+        object.members.size() > 1U &&
         std::ranges::any_of(object.members, [&](const auto &member) {
           return affected.contains(member.entity);
         }))
-      edits.emplace_back(DeleteObject{object.id});
+      edits.emplace_back(
+          ReplaceObject{curveGroupAfterPartialEdit(object)});
 }
 
 PointKey editedEndpoint(bool retainedStart) {
@@ -117,16 +121,35 @@ struct RetainedRay {
 Result<RetainedRay> retainedRay(const LineEntity &line, Point2 intersection,
                                 Point2 reference,
                                 const NumericalProfile &profile) {
-  const double startDistance = std::hypot(reference.x.si() - line.start.x.si(),
-                                          reference.y.si() - line.start.y.si());
-  const double endDistance = std::hypot(reference.x.si() - line.end.x.si(),
-                                        reference.y.si() - line.end.y.si());
-  const bool retainStart = startDistance <= endDistance;
+  const Vector2 startOffset = line.start - intersection;
+  const Vector2 endOffset = line.end - intersection;
+  const double startLength = magnitude(startOffset);
+  const double endLength = magnitude(endOffset);
+  const bool validStart = std::isfinite(startLength) &&
+                          startLength >= profile.minimumLengthMeters;
+  const bool validEnd = std::isfinite(endLength) &&
+                        endLength >= profile.minimumLengthMeters;
+  if (!validStart && !validEnd)
+    return std::unexpected(diagnostic("sketch.modify.degenerate-direction",
+                                      "Curve direction is degenerate"));
+
+  bool retainStart = validStart;
+  if (validStart && validEnd) {
+    const Vector2 startDirection = startOffset * (1.0 / startLength);
+    const Vector2 endDirection = endOffset * (1.0 / endLength);
+    const Vector2 referenceOffset = reference - intersection;
+    const double startScore = dot(startDirection, referenceOffset);
+    const double endScore = dot(endDirection, referenceOffset);
+    retainStart = std::abs(startScore - endScore) <=
+                          profile.minimumLengthMeters
+                      ? startLength >= endLength
+                      : startScore > endScore;
+  }
   const Point2 endpoint = retainStart ? line.start : line.end;
-  auto direction = normalized(endpoint - intersection, profile);
-  if (!direction)
-    return std::unexpected(std::move(direction.error()));
-  return RetainedRay{endpoint, *direction, retainStart};
+  const double endpointLength = retainStart ? startLength : endLength;
+  const Vector2 direction =
+      (retainStart ? startOffset : endOffset) * (1.0 / endpointLength);
+  return RetainedRay{endpoint, direction, retainStart};
 }
 
 LineEntity trimmedLine(const LineEntity &source, const RetainedRay &ray,
@@ -153,6 +176,173 @@ Result<AngleValue> angle(double value) {
     return std::unexpected(diagnostic("sketch.modify.angle-range",
                                       "Curve edit produces an invalid angle"));
   return result;
+}
+
+bool isCurve(const Entity &entity) {
+  return !std::holds_alternative<PointEntity>(entity);
+}
+
+bool construction(const Entity &entity) {
+  return std::visit([](const auto &value) { return value.construction; },
+                    entity);
+}
+
+std::string splitMemberRole(const SketchObject &object,
+                            std::string_view sourceRole) {
+  for (std::size_t part = 2U;; ++part) {
+    const std::string suffix = "_part_" + std::to_string(part);
+    const std::size_t baseLength = std::min(
+        sourceRole.size(), static_cast<std::size_t>(32U - suffix.size()));
+    std::string candidate{sourceRole.substr(0U, baseLength)};
+    candidate += suffix;
+    if (std::ranges::none_of(object.members, [&](const auto &member) {
+          return member.role == candidate;
+        }))
+      return candidate;
+  }
+}
+
+Result<AppliedEdits>
+replaceCurveWithSegments(const Definition &current, CurvePick curve,
+                         const std::vector<Entity> &segments,
+                         const std::vector<Constraint> &appendedConstraints,
+                         ExternalConstraintPolicy constraintPolicy,
+                         const NumericalProfile &profile) {
+  const Entity *source = findEntity(current, curve.entity);
+  std::vector<Edit> edits;
+  edits.reserve(current.constraints.size() + appendedConstraints.size() + 4U);
+  if (auto detached = collectConstraintDeletes(
+          current, {curve.entity}, constraintPolicy, edits);
+      !detached)
+    return std::unexpected(std::move(detached.error()));
+
+  for (const SketchObject &owner : current.objects) {
+    const auto member = std::ranges::find(
+        owner.members, curve.entity, &SketchObjectMember::entity);
+    if (member == owner.members.end())
+      continue;
+    if (segments.empty()) {
+      SketchObject remainder = owner;
+      remainder.members.erase(remainder.members.begin() +
+                              std::distance(owner.members.begin(), member));
+      if (remainder.members.empty())
+        edits.emplace_back(DeleteObject{owner.id});
+      else
+        edits.emplace_back(
+            ReplaceObject{curveGroupAfterPartialEdit(remainder)});
+    } else if (segments.size() == 2U || owner.members.size() > 1U ||
+               source->index() != segments.front().index()) {
+      SketchObject replacement = curveGroupAfterPartialEdit(owner);
+      if (segments.size() == 2U) {
+        const auto insertion = replacement.members.begin() +
+                               std::distance(owner.members.begin(), member) + 1;
+        replacement.members.insert(
+            insertion,
+            {splitMemberRole(replacement, member->role),
+             entityId(segments[1])});
+      }
+      if (replacement != owner)
+        edits.emplace_back(ReplaceObject{std::move(replacement)});
+    }
+    break;
+  }
+
+  if (segments.empty()) {
+    edits.emplace_back(DeleteEntity{curve.entity});
+  } else {
+    if (source->index() == segments.front().index())
+      edits.emplace_back(ReplaceEntity{segments.front()});
+    else
+      edits.emplace_back(RetypeEntity{segments.front()});
+    if (segments.size() == 2U)
+      edits.emplace_back(AppendEntity{segments[1]});
+  }
+  for (const Constraint &constraint : appendedConstraints)
+    edits.emplace_back(AppendConstraint{constraint});
+  return applyEdits(current, edits, profile);
+}
+
+PointKey oppositeEndpoint(PointKey key) {
+  return key == PointKey::Start ? PointKey::End : PointKey::Start;
+}
+
+bool sameEntityPair(SketchEntityId first, SketchEntityId second,
+                    const JoinEdit &edit) {
+  return (first == edit.first.entity && second == edit.second.entity) ||
+         (first == edit.second.entity && second == edit.first.entity);
+}
+
+bool joinedSeam(const Coincident &constraint, const JoinEdit &edit) {
+  return (constraint.first == edit.first && constraint.second == edit.second) ||
+         (constraint.first == edit.second && constraint.second == edit.first);
+}
+
+bool remapJoinPoint(PointRef &point, const JoinEdit &edit) {
+  if (point.entity != edit.first.entity && point.entity != edit.second.entity)
+    return true;
+  const PointRef selected = point.entity == edit.first.entity ? edit.first
+                                                              : edit.second;
+  if (point.key != oppositeEndpoint(selected.key))
+    return false;
+  point = {edit.joined.id, point.entity == edit.first.entity
+                               ? PointKey::Start
+                               : PointKey::End};
+  return true;
+}
+
+std::optional<Constraint> remapJoinConstraint(const Constraint &constraint,
+                                              const JoinEdit &edit) {
+  if (const auto *coincident = std::get_if<Coincident>(&constraint);
+      coincident && joinedSeam(*coincident, edit))
+    return std::nullopt;
+  if (const auto *tangent = std::get_if<Tangent>(&constraint);
+      tangent && sameEntityPair(tangent->first, tangent->second, edit))
+    return std::nullopt;
+
+  Constraint replacement = constraint;
+  const bool mapped = std::visit(
+      [&]<typename Value>(Value &value) {
+        using Type = std::decay_t<Value>;
+        if constexpr (std::is_same_v<Type, Coincident>) {
+          return remapJoinPoint(value.first, edit) &&
+                 remapJoinPoint(value.second, edit);
+        } else if constexpr (std::is_same_v<Type, PointOnObject>) {
+          if (!remapJoinPoint(value.point, edit))
+            return false;
+          if (value.curve == edit.first.entity ||
+              value.curve == edit.second.entity)
+            value.curve = edit.joined.id;
+          return true;
+        } else if constexpr (std::is_same_v<Type, SymmetricAboutPoint>) {
+          return remapJoinPoint(value.first, edit) &&
+                 remapJoinPoint(value.second, edit) &&
+                 remapJoinPoint(value.center, edit);
+        } else if constexpr (std::is_same_v<Type, Lock>) {
+          return remapJoinPoint(value.point, edit);
+        } else if constexpr (std::is_same_v<Type, Distance> ||
+                             std::is_same_v<Type, HorizontalDistance> ||
+                             std::is_same_v<Type, VerticalDistance>) {
+          return remapJoinPoint(value.first, edit) &&
+                 remapJoinPoint(value.second, edit);
+        } else if constexpr (std::is_same_v<Type, Group>) {
+          for (SketchEntityId &entity : value.entities)
+            if (entity == edit.first.entity || entity == edit.second.entity)
+              entity = edit.joined.id;
+          std::ranges::sort(value.entities);
+          const auto unique = std::ranges::unique(value.entities);
+          value.entities.erase(unique.begin(), unique.end());
+          return value.entities.size() >= 2U;
+        } else {
+          const auto references = constraintEntityIds(Constraint{value});
+          return std::ranges::none_of(references, [&](SketchEntityId entity) {
+            return entity == edit.first.entity ||
+                   entity == edit.second.entity;
+          });
+        }
+      },
+      replacement);
+  return mapped ? std::optional<Constraint>{std::move(replacement)}
+                : std::optional<Constraint>{};
 }
 
 } // namespace
@@ -235,7 +425,7 @@ Result<AppliedEdits> editLineCorner(const Definition &current,
           collectConstraintDeletes(current, affected, edit.constraints, edits);
       !detached)
     return std::unexpected(std::move(detached.error()));
-  dissolvePartialObjects(current, affected, edits);
+  preservePartialObjects(current, affected, edits);
   edits.emplace_back(ReplaceEntity{trimmedLine(*first, *firstRay, *firstTrim)});
   edits.emplace_back(
       ReplaceEntity{trimmedLine(*second, *secondRay, *secondTrim)});
@@ -340,11 +530,20 @@ Result<AppliedEdits> offsetCurves(const Definition &current,
                                                  edit.constraints, edits);
         !detached)
       return std::unexpected(std::move(detached.error()));
-    for (const SketchObject &object : current.objects)
-      if (std::ranges::any_of(object.members, [&](const auto &member) {
+    for (const SketchObject &object : current.objects) {
+      if (!std::ranges::any_of(object.members, [&](const auto &member) {
             return selected.contains(member.entity);
           }))
+        continue;
+      SketchObject remainder = curveGroupAfterPartialEdit(object);
+      std::erase_if(remainder.members, [&](const auto &member) {
+        return selected.contains(member.entity);
+      });
+      if (remainder.members.empty())
         edits.emplace_back(DeleteObject{object.id});
+      else
+        edits.emplace_back(ReplaceObject{std::move(remainder)});
+    }
     for (SketchEntityId id : edit.curves)
       edits.emplace_back(DeleteEntity{id});
   }
@@ -500,6 +699,240 @@ Result<AppliedEdits> extendCurve(const Definition &current,
     return std::unexpected(std::move(detached.error()));
   edits.emplace_back(ReplaceEntity{std::move(*replacement)});
   return applyEdits(current, edits, profile);
+}
+
+Result<AppliedEdits> trimCurve(const Definition &current, const TrimEdit &edit,
+                               const NumericalProfile &profile) {
+  if (auto valid = validate(current, profile); !valid)
+    return std::unexpected(std::move(valid.error()));
+  const Entity *source = findEntity(current, edit.curve.entity);
+  if (!source)
+    return std::unexpected(
+        diagnostic("sketch.trim.curve-missing", "Trim curve is missing"));
+  if (!isCurve(*source) || edit.retained.size() > 2U ||
+      edit.boundaries.size() > 2U ||
+      (edit.retained.empty() && !edit.boundaries.empty()) ||
+      (edit.constraints != ExternalConstraintPolicy::Refuse &&
+       edit.constraints != ExternalConstraintPolicy::Detach))
+    return std::unexpected(
+        diagnostic("sketch.trim.input", "Trim input is invalid"));
+  if (!edit.retained.empty() &&
+      (entityId(edit.retained.front()) != edit.curve.entity ||
+       !isCurve(edit.retained.front())))
+    return std::unexpected(diagnostic(
+        "sketch.trim.primary-identity",
+        "First retained segment must preserve the trimmed curve identity"));
+  if (edit.retained.size() == 2U &&
+      (entityId(edit.retained[1]) == edit.curve.entity ||
+       !isCurve(edit.retained[1])))
+    return std::unexpected(diagnostic(
+        "sketch.trim.split-identity",
+        "Second retained segment needs a distinct curve identity"));
+
+  std::set<SketchConstraintId> boundaryIds;
+  std::set<PointRef> boundaryPoints;
+  for (const PointOnObject &boundary : edit.boundaries) {
+    const bool retainedEndpoint =
+        (boundary.point.key == PointKey::Start ||
+         boundary.point.key == PointKey::End) &&
+        std::ranges::any_of(edit.retained, [&](const Entity &entity) {
+          return entityId(entity) == boundary.point.entity;
+        });
+    const Entity *cuttingCurve = findEntity(current, boundary.curve);
+    if (!retainedEndpoint || boundary.curve == edit.curve.entity ||
+        !cuttingCurve || !isCurve(*cuttingCurve) ||
+        !boundaryIds.insert(boundary.id).second ||
+        !boundaryPoints.insert(boundary.point).second)
+      return std::unexpected(diagnostic(
+          "sketch.trim.boundary", "Trim boundary constraint is invalid"));
+  }
+
+  std::vector<Constraint> boundaries;
+  boundaries.reserve(edit.boundaries.size());
+  for (const PointOnObject &boundary : edit.boundaries)
+    boundaries.emplace_back(boundary);
+  return replaceCurveWithSegments(current, edit.curve, edit.retained,
+                                  boundaries, edit.constraints, profile);
+}
+
+Result<AppliedEdits> splitCurve(const Definition &current,
+                                const SplitEdit &edit,
+                                const NumericalProfile &profile) {
+  if (auto valid = validate(current, profile); !valid)
+    return std::unexpected(std::move(valid.error()));
+  const Entity *source = findEntity(current, edit.curve.entity);
+  if (!source)
+    return std::unexpected(
+        diagnostic("sketch.split.curve-missing", "Split curve is missing"));
+  if (!isCurve(*source) || edit.segments.empty() || edit.segments.size() > 2U ||
+      entityId(edit.segments.front()) != edit.curve.entity ||
+      !isCurve(edit.segments.front()) ||
+      (edit.segments.size() == 2U &&
+       (entityId(edit.segments[1]) == edit.curve.entity ||
+        !isCurve(edit.segments[1]))) ||
+      edit.seam.first.entity != edit.curve.entity ||
+      edit.seam.first.key != PointKey::End ||
+      edit.seam.second.entity != entityId(edit.segments.back()) ||
+      edit.seam.second.key != PointKey::Start ||
+      (edit.constraints != ExternalConstraintPolicy::Refuse &&
+       edit.constraints != ExternalConstraintPolicy::Detach))
+    return std::unexpected(
+        diagnostic("sketch.split.input", "Split input is invalid"));
+  return replaceCurveWithSegments(current, edit.curve, edit.segments,
+                                  {Constraint{edit.seam}}, edit.constraints,
+                                  profile);
+}
+
+Result<AppliedEdits> joinCurves(const Definition &current,
+                                const JoinEdit &edit,
+                                const NumericalProfile &profile) {
+  if (auto valid = validate(current, profile); !valid)
+    return std::unexpected(std::move(valid.error()));
+  const Entity *first = findEntity(current, edit.first.entity);
+  const Entity *second = findEntity(current, edit.second.entity);
+  const bool endpoints =
+      (edit.first.key == PointKey::Start || edit.first.key == PointKey::End) &&
+      (edit.second.key == PointKey::Start ||
+       edit.second.key == PointKey::End);
+  if (!first || !second || first == second || !isCurve(*first) ||
+      !isCurve(*second) || !endpoints || edit.joined.id != edit.first.entity ||
+      edit.joined.periodic || construction(*first) != edit.joined.construction ||
+      construction(*second) != edit.joined.construction ||
+      (edit.constraints != ExternalConstraintPolicy::Refuse &&
+       edit.constraints != ExternalConstraintPolicy::Detach))
+    return std::unexpected(
+        diagnostic("sketch.join.input", "Join input is invalid"));
+  auto firstSeam = resolvePoint(current, edit.first);
+  auto secondSeam = resolvePoint(current, edit.second);
+  auto firstFar =
+      resolvePoint(current, {edit.first.entity, oppositeEndpoint(edit.first.key)});
+  auto secondFar = resolvePoint(
+      current, {edit.second.entity, oppositeEndpoint(edit.second.key)});
+  if (!firstSeam || !secondSeam || !firstFar || !secondFar ||
+      edit.joined.controlPoints.empty() ||
+      magnitude(*firstSeam - *secondSeam) >
+                        profile.lengthToleranceMeters ||
+      magnitude(*firstFar - edit.joined.controlPoints.front()) >
+          profile.lengthToleranceMeters ||
+      magnitude(*secondFar - edit.joined.controlPoints.back()) >
+          profile.lengthToleranceMeters)
+    return std::unexpected(diagnostic(
+        "sketch.join.geometry", "Joined curve does not preserve its endpoints"));
+
+  std::vector<Edit> edits;
+  edits.reserve(current.objects.size() + current.constraints.size() + 4U);
+  for (const Constraint &constraint : current.constraints) {
+    const auto references = constraintEntityIds(constraint);
+    if (std::ranges::none_of(references, [&](SketchEntityId entity) {
+          return entity == edit.first.entity || entity == edit.second.entity;
+        }))
+      continue;
+    auto replacement = remapJoinConstraint(constraint, edit);
+    if (!replacement) {
+      const bool consumed =
+          (std::holds_alternative<Coincident>(constraint) &&
+           joinedSeam(std::get<Coincident>(constraint), edit)) ||
+          (std::holds_alternative<Tangent>(constraint) &&
+           sameEntityPair(std::get<Tangent>(constraint).first,
+                          std::get<Tangent>(constraint).second, edit));
+      if (!consumed && edit.constraints == ExternalConstraintPolicy::Refuse)
+        return std::unexpected(diagnostic(
+            "sketch.join.constrained-geometry",
+            "Selected curves have constraints that cannot be preserved"));
+      edits.emplace_back(DeleteConstraint{constraintId(constraint)});
+    } else if (*replacement != constraint) {
+      edits.emplace_back(ReplaceConstraint{std::move(*replacement)});
+    }
+  }
+
+  const std::set selected{edit.first.entity, edit.second.entity};
+  for (const SketchObject &owner : current.objects) {
+    SketchObject remainder = owner;
+    std::erase_if(remainder.members, [&](const SketchObjectMember &member) {
+      return selected.contains(member.entity);
+    });
+    if (remainder.members.size() == owner.members.size())
+      continue;
+    if (remainder.members.empty())
+      edits.emplace_back(DeleteObject{owner.id});
+    else
+      edits.emplace_back(
+          ReplaceObject{curveGroupAfterPartialEdit(remainder)});
+  }
+  if (first->index() == Entity{edit.joined}.index())
+    edits.emplace_back(ReplaceEntity{edit.joined});
+  else
+    edits.emplace_back(RetypeEntity{edit.joined});
+  edits.emplace_back(DeleteEntity{edit.second.entity});
+  edits.emplace_back(AppendObject{SketchObject{
+      edit.object, nextSketchObjectLabel(current, "Joined curve "),
+      SketchObjectKind::JoinedCurve, {{"curve", edit.joined.id}}}});
+  return applyEdits(current, edits, profile);
+}
+
+Result<AppliedEdits> convertToNurbs(const Definition &current,
+                                    const ConvertToNurbsEdit &edit,
+                                    const NumericalProfile &profile) {
+  if (auto valid = validate(current, profile); !valid)
+    return std::unexpected(std::move(valid.error()));
+  const Entity *source = findEntity(current, edit.curve.id);
+  if (!source || !isCurve(*source) ||
+      std::holds_alternative<BSplineEntity>(*source) ||
+      construction(*source) != edit.curve.construction ||
+      (edit.constraints != ExternalConstraintPolicy::Refuse &&
+       edit.constraints != ExternalConstraintPolicy::Detach))
+    return std::unexpected(diagnostic(
+        "sketch.convert-to-nurbs.input", "NURBS conversion input is invalid"));
+  if (auto valid = validate(Entity{edit.curve}, profile); !valid)
+    return std::unexpected(std::move(valid.error()));
+
+  std::vector<Edit> structuralEdits;
+  structuralEdits.reserve(current.objects.size() + 1U);
+  for (const SketchObject &owner : current.objects) {
+    const auto member = std::ranges::find(
+        owner.members, edit.curve.id, &SketchObjectMember::entity);
+    if (member == owner.members.end())
+      continue;
+    SketchObject replacement = owner;
+    if (owner.members.size() == 1U) {
+      replacement.kind = SketchObjectKind::BSpline;
+      replacement.label = nextSketchObjectLabel(current, "B-spline ");
+    } else {
+      replacement = curveGroupAfterPartialEdit(owner);
+    }
+    structuralEdits.emplace_back(ReplaceObject{std::move(replacement)});
+  }
+  structuralEdits.emplace_back(RetypeEntity{edit.curve});
+
+  std::vector<const Constraint *> affected;
+  affected.reserve(current.constraints.size());
+  std::vector<Edit> detachedEdits = structuralEdits;
+  detachedEdits.reserve(structuralEdits.size() + current.constraints.size());
+  for (const Constraint &constraint : current.constraints) {
+    const auto references = constraintEntityIds(constraint);
+    if (std::ranges::find(references, edit.curve.id) == references.end())
+      continue;
+    affected.push_back(&constraint);
+    detachedEdits.emplace_back(DeleteConstraint{constraintId(constraint)});
+  }
+  if (affected.empty())
+    return applyEdits(current, structuralEdits, profile);
+
+  auto detached = applyEdits(current, detachedEdits, profile);
+  if (!detached)
+    return std::unexpected(std::move(detached.error()));
+  std::vector<Edit> finalEdits = structuralEdits;
+  finalEdits.reserve(detachedEdits.size());
+  for (const Constraint *constraint : affected) {
+    if (validateConstraint(detached->target, *constraint, profile))
+      continue;
+    if (edit.constraints == ExternalConstraintPolicy::Refuse)
+      return std::unexpected(diagnostic(
+          "sketch.convert-to-nurbs.constrained-geometry",
+          "Selected curve has constraints that cannot be preserved"));
+    finalEdits.emplace_back(DeleteConstraint{constraintId(*constraint)});
+  }
+  return applyEdits(current, finalEdits, profile);
 }
 
 } // namespace kearne::sketch

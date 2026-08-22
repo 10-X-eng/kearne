@@ -204,6 +204,7 @@ QVariantList commandRecords(const std::vector<CommandDescriptor> &commands) {
         {QStringLiteral("shortcut"), command.shortcut},
         {QStringLiteral("primary"), command.primary},
         {QStringLiteral("available"), command.available},
+        {QStringLiteral("checked"), command.checked},
         {QStringLiteral("unavailableReason"), command.unavailableReason}};
   });
 }
@@ -436,7 +437,14 @@ std::uint32_t changedProjections(const FrontendSnapshot &previous,
       previous.gridSpacingMillimeters != next.gridSpacingMillimeters ||
       previous.sketchProjection != next.sketchProjection ||
       previous.sketchInteraction != next.sketchInteraction ||
-      previous.selectedSketchEntityIds != next.selectedSketchEntityIds ||
+      previous.selectedSketchScopes != next.selectedSketchScopes ||
+      previous.sketchControlPolygonVisible !=
+          next.sketchControlPolygonVisible ||
+      previous.sketchCurvatureCombVisible !=
+          next.sketchCurvatureCombVisible ||
+      previous.sketchDegreeLabelsVisible != next.sketchDegreeLabelsVisible ||
+      previous.sketchKnotLabelsVisible != next.sketchKnotLabelsVisible ||
+      previous.sketchWeightLabelsVisible != next.sketchWeightLabelsVisible ||
       previous.sketchScene != next.sketchScene)
     changed |= sketchProjection;
   if (previous.defaultLengthUnitId != next.defaultLengthUnitId ||
@@ -602,7 +610,22 @@ bool UiSession::sourceEditingAvailable() const {
 bool UiSession::canUndo() const { return snapshot_->canUndo; }
 bool UiSession::canRedo() const { return snapshot_->canRedo; }
 bool UiSession::sketchGesturePreviewVisible() const {
-  return gesturePreview_.visible();
+  return gesturePreview_.visible() ||
+         std::ranges::any_of(
+             snapshot_->sketchProjection.primitives,
+             [](const SketchPrimitiveProjection &primitive) {
+               return primitive.draft;
+             });
+}
+
+std::uint64_t UiSession::sketchGesturePreviewGeneration() const {
+  return sketchGesturePreviewVisible() && !gesturePreview_.visible()
+             ? snapshot_->generation
+             : gesturePreview_.generation();
+}
+std::span<const SketchPrimitiveProjection>
+UiSession::sketchGesturePreviewPrimitives() const {
+  return gesturePreview_.primitives();
 }
 QVariantList UiSession::sketchPreviewMeasurements() const {
   QVariantList result;
@@ -1001,7 +1024,7 @@ bool UiSession::submitSketchPointerClick(qreal itemX, qreal itemY) {
     refresh();
     return accepted;
   }
-  controller_->selectEntity(picked->entityId);
+  controller_->selectSketchEntity({picked->entityId, picked->pointKey});
   refresh();
   return true;
 }
@@ -1019,6 +1042,19 @@ bool UiSession::updateSketchPointerHover(qreal itemX, qreal itemY) {
           : SketchSelectionKind::Any;
   auto picked = sketchPickHandler_(QPointF{itemX, itemY}, 8.0, targets);
   const bool hit = picked.has_value();
+  const bool persistentModifyHover =
+      snapshot_->activeCommandId == QStringLiteral("sketch.trim") ||
+      snapshot_->activeCommandId == QStringLiteral("sketch.split") ||
+      snapshot_->activeCommandId == QStringLiteral("sketch.join");
+  const bool previewModify =
+      snapshot_->activeCommandId == QStringLiteral("sketch.trim") ||
+      snapshot_->activeCommandId == QStringLiteral("sketch.split");
+  if (persistentModifyHover && !picked && !sketchHoveredEntityId_.isEmpty() &&
+      ++sketchModifyHoverMisses_ < 4)
+    picked = SketchPickSelection{sketchHoveredEntityId_,
+                                 sketchHoveredPointKey_, {}};
+  else if (picked || !persistentModifyHover)
+    sketchModifyHoverMisses_ = 0;
   const QString entity = picked ? picked->entityId : QString{};
   const QString point = picked ? picked->pointKey : QString{};
   if (entity != sketchHoveredEntityId_ || point != sketchHoveredPointKey_) {
@@ -1026,11 +1062,21 @@ bool UiSession::updateSketchPointerHover(qreal itemX, qreal itemY) {
     sketchHoveredPointKey_ = point;
     emit sketchHoverChanged();
   }
+  if (previewModify) {
+    if (hit)
+      static_cast<void>(controller_->previewSketchCurveModify(
+          picked->entityId,
+          {metresFromMillimeters(picked->closestPointMillimeters.x()),
+           metresFromMillimeters(picked->closestPointMillimeters.y())}));
+    else if (!picked)
+      controller_->clearSketchCurveModifyPreview();
+  }
   sketchHoverHandler_(std::move(picked));
   return hit;
 }
 
 void UiSession::clearSketchPointerHover() {
+  sketchModifyHoverMisses_ = 0;
   if (!sketchHoveredEntityId_.isEmpty() || !sketchHoveredPointKey_.isEmpty()) {
     sketchHoveredEntityId_.clear();
     sketchHoveredPointKey_.clear();
@@ -1038,6 +1084,9 @@ void UiSession::clearSketchPointerHover() {
   }
   if (sketchHoverHandler_)
     sketchHoverHandler_(std::nullopt);
+  if (snapshot_->activeCommandId == QStringLiteral("sketch.trim") ||
+      snapshot_->activeCommandId == QStringLiteral("sketch.split"))
+    controller_->clearSketchCurveModifyPreview();
 }
 
 bool UiSession::beginSketchCurveDrag(qreal itemPressX, qreal itemPressY) {

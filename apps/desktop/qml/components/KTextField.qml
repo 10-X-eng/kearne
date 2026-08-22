@@ -9,7 +9,7 @@ TextField {
     property string semanticName: placeholderText
     property string semanticRole: "textbox"
     property var semanticActions: readOnly ? ["focus"] : ["focus", "setValue"]
-    property string semanticValue: readOnly ? "" : text
+    property string semanticValue: text
 
     function performSemanticAction(action, value) {
         if (action === "focus") {

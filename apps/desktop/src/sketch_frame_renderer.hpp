@@ -26,6 +26,12 @@ struct SketchGpuUploadPolicy {
   static constexpr std::uint64_t frameBudgetNanoseconds = 16'666'667U;
 };
 
+struct SketchPipelineWarmup {
+  bool lowDegreeNurbs = false;
+  bool generalNurbs = false;
+  bool operator==(const SketchPipelineWarmup &) const = default;
+};
+
 struct SketchGpuUploadMetrics {
   std::uint64_t slices = 0;
   std::uint64_t chunksUploaded = 0;
@@ -68,22 +74,26 @@ struct SketchGpuUploadMetrics {
 class SketchFrameRendererState final {
 public:
   [[nodiscard]] std::shared_ptr<const PresentedSketchFrame> presented() const;
-  [[nodiscard]] SketchMeshMetrics meshMetrics() const;
+  [[nodiscard]] SketchVectorPacketMetrics vectorPacketMetrics() const;
   [[nodiscard]] SketchGpuUploadMetrics uploadMetrics() const;
   [[nodiscard]] std::uint64_t geometryBuildCount() const;
   [[nodiscard]] Diagnostic lastDiagnostic() const;
+  [[nodiscard]] bool pipelineReady(SketchPipelineWarmup warmup) const noexcept;
   void invalidate() noexcept;
 
 private:
   void publish(std::shared_ptr<const PresentedSketchFrame> frame,
-               SketchMeshMetrics meshMetrics,
+               SketchVectorPacketMetrics vectorPacketMetrics,
                SketchGpuUploadMetrics uploadMetrics,
-               std::uint64_t geometryBuildCount, bool clearDiagnostic);
+               std::uint64_t geometryBuildCount, bool clearDiagnostic,
+               SketchPipelineWarmup readyPipelines);
   void report(Diagnostic diagnostic, SketchGpuUploadMetrics uploadMetrics);
 
   std::atomic<std::shared_ptr<const PresentedSketchFrame>> presented_;
+  std::atomic_bool lowDegreeNurbsReady_ = false;
+  std::atomic_bool generalNurbsReady_ = false;
   mutable std::mutex mutex_;
-  SketchMeshMetrics meshMetrics_;
+  SketchVectorPacketMetrics vectorPacketMetrics_;
   SketchGpuUploadMetrics uploadMetrics_;
   Diagnostic diagnostic_;
   std::uint64_t geometryBuildCount_ = 0U;
@@ -99,7 +109,7 @@ public:
 
   void synchronize(std::shared_ptr<const SynchronizedSketchScene> desired,
                    SketchScenePalette palette, std::uint64_t paletteGeneration,
-                   QRectF itemRect);
+                   QRectF itemRect, SketchPipelineWarmup warmup = {});
 
   void prepare() override;
   void render(const RenderState *state) override;

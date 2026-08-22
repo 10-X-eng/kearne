@@ -123,6 +123,7 @@ struct CommandDescriptor {
   QString shortcut;
   bool primary = false;
   bool available = true;
+  bool checked = false;
   QString unavailableReason;
 };
 
@@ -170,6 +171,10 @@ struct SketchPrimitiveProjection {
   double sweepAngleRadians = 0.0;
   double secondaryRadiusMetres = 0.0;
   double rotationAngleRadians = 0.0;
+  std::vector<double> splineKnots{};
+  std::vector<double> splineWeights{};
+  std::uint32_t splineDegree = 0U;
+  bool splinePeriodic = false;
 };
 
 struct SketchProjection {
@@ -205,6 +210,13 @@ struct SketchInputRequest {
   PlanePoint planePoint;
   QString entityId;
   QString subElementKey;
+};
+
+struct SketchSelectionScope {
+  bool operator==(const SketchSelectionScope &) const = default;
+
+  QString entityId;
+  QString pointKey;
 };
 
 struct WorkspaceDescriptor {
@@ -369,8 +381,7 @@ struct FrontendSnapshot {
   QString modelHealth;
   QString selectionSummary;
   QString selectedEntityId;
-  QString selectedSketchEntityId;
-  std::vector<QString> selectedSketchEntityIds;
+  std::vector<SketchSelectionScope> selectedSketchScopes;
   QString agentStatus;
   QString modelSource;
   FunctionSummary selectedFunction;
@@ -382,6 +393,11 @@ struct FrontendSnapshot {
   QString gridSpacingLabel;
   double gridSpacingMillimeters = 10.0;
   bool sketchEditing = false;
+  bool sketchControlPolygonVisible = false;
+  bool sketchCurvatureCombVisible = false;
+  bool sketchDegreeLabelsVisible = false;
+  bool sketchKnotLabelsVisible = false;
+  bool sketchWeightLabelsVisible = false;
   bool backendConnected = false;
   bool projectPersistenceAvailable = false;
   bool sourceEditingAvailable = false;
@@ -425,6 +441,7 @@ public:
   virtual void setChangeHandler(ChangeHandler handler) = 0;
   virtual void selectWorkspace(const QString &workspaceId) = 0;
   virtual void selectEntity(const QString &entityId) = 0;
+  virtual void selectSketchEntity(const SketchSelectionScope &selection) = 0;
   virtual void requestCommand(const QString &commandId) = 0;
   virtual void setPreference(const QString &preferenceId,
                              const PreferenceValue &value) = 0;
@@ -442,6 +459,9 @@ public:
   virtual bool previewSketchCurve(const QString &entityId, PlanePoint first,
                                   PlanePoint current) = 0;
   virtual void clearSketchCurvePreview() = 0;
+  virtual bool previewSketchCurveModify(const QString &entityId,
+                                        PlanePoint reference) = 0;
+  virtual void clearSketchCurveModifyPreview() = 0;
   virtual void cancelCommandDraft(const QString &commandId) = 0;
   virtual bool submitParameterEdit(const ParameterEditRequest &request) = 0;
   virtual bool submitSourceEdit(const SourceEditRequest &request,

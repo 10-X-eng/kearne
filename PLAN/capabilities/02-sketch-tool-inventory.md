@@ -102,10 +102,10 @@ Every row must use stable IDs, typed units, structural source edits, exact prese
 |---|---|---|---|
 | Fillet | Trimmed curves plus tangent arc object | Corner or curve pair and radius | partial |
 | Chamfer | Trimmed curves plus chamfer line object | Corner or curve pair and distance | partial |
-| Trim | Structural curve replacement or deletion | Curve segment | missing |
-| Split | Multiple curve objects preserving ancestry | Curve and split points | missing |
-| Extend | Structural curve replacement | Curve end and boundary | missing |
-| Join | Joined compatible curve object | Ordered curves | missing |
+| Trim | Structural curve replacement or deletion with constrained cut boundaries | Curve segment | local |
+| Split | Multiple curve objects with a constrained seam and preserved ancestry | Curve and split point | local |
+| Extend | Structural curve replacement | Line or circular-arc end and target | partial |
+| Join | Exact B-spline retaining first-curve identity and preservable far-end constraints | Shared endpoint | local |
 | Project | Associative external-geometry reference | Model geometry | missing |
 | Intersection | Associative intersection-point reference | Model geometry | missing |
 | Linked Sketch copy | Associative copied-geometry reference | Sketch and objects | missing |
@@ -122,14 +122,16 @@ Every row must use stable IDs, typed units, structural source edits, exact prese
 
 | Tool | Canonical effect | Input | State |
 |---|---|---|---|
-| Convert to NURBS | Exact NURBS representation | Compatible curve | missing |
+| Convert to NURBS | Exact stable-ID NURBS; compatible constraints survive | Analytic curve and incompatible-constraint policy | local |
 | Increase / decrease degree | Exact elevation or bounded lower-degree approximation | Spline and maximum deviation when reducing | local |
 | Increase / decrease knot multiplicity | Exact insertion or bounded knot removal | Spline, knot, and maximum deviation when removing | local |
 | Insert knot | Shape-preserving knot-vector and control-point replacement | Spline and parameter | local |
 | Pole weight | Rational weight replacement | Spline pole and weight | local |
-| Control polygon | Presentation toggle | Spline | missing |
-| Curvature comb | Presentation toggle | Spline | missing |
-| Degree / knot overlay | Presentation toggle | Spline | missing |
+| Control polygon | Presentation toggle | Spline | local |
+| Curvature comb | Presentation toggle | Spline | local |
+| Degree labels | Presentation toggle | Spline | local |
+| Knot multiplicity labels | Presentation toggle | Spline | local |
+| Pole weight labels | Presentation toggle | Spline | local |
 
 ## Selection and inspection
 

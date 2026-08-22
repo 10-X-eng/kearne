@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sketch_scene_products.hpp"
-#include "sketch_stroke_mesh.hpp"
+#include "sketch_vector_packet.hpp"
 
 #include <kearne/render/sketch_scene.hpp>
 
@@ -28,13 +28,14 @@
 namespace kearne::ui {
 
 class PreparedSketchProducts;
+class PreparedSketchScene;
 class SketchFrameRenderer;
-struct SketchSceneMeshAdapterAccess;
+struct SketchVectorPacketAdapterAccess;
 
 struct SketchScenePalette {
   QRgb regular = qRgb(49, 116, 179);
   QRgb construction = qRgb(111, 122, 135);
-  QRgb selected = qRgb(18, 146, 230);
+  QRgb selected = qRgb(0, 151, 167);
   QRgb preview = qRgb(24, 154, 116);
   QRgb diagnostic = qRgb(210, 66, 74);
   QRgb hovered = qRgb(245, 158, 11);
@@ -43,68 +44,68 @@ struct SketchScenePalette {
   [[nodiscard]] QRgb color(render::SketchStyleRole role) const;
 };
 
-// One exact triangle-index range inside an immutable upload chunk. A primitive
-// may have multiple ranges when it crosses spatial tiles or chunk byte bounds.
+// One native vector-record range inside an immutable upload chunk.
 struct SketchPrimitiveChunkSpan {
   std::uint32_t chunk = 0;
-  std::uint32_t firstIndex = 0;
-  std::uint32_t indexCount = 0;
+  std::uint32_t firstRecord = 0;
+  std::uint32_t recordCount = 0;
   bool operator==(const SketchPrimitiveChunkSpan &) const = default;
 };
 
-struct SketchPrimitiveTessellationEntry {
+struct SketchPrimitiveVectorEntry {
   render::SketchPrimitiveHandle primitive;
   std::uint32_t firstSpan = 0;
   std::uint32_t spanCount = 0;
-  std::uint32_t indexCount = 0;
-  bool operator==(const SketchPrimitiveTessellationEntry &) const = default;
+  std::uint32_t recordCount = 0;
+  bool operator==(const SketchPrimitiveVectorEntry &) const = default;
 };
 
-// Packed binary-search index over the exact chunk ranges produced by base
-// tessellation. It owns no vertex or index payload and is safe to share across
-// every view that retains the prepared scene.
-class SketchPrimitiveTessellationIndex final {
+class SketchPrimitiveVectorIndex final {
 public:
-  [[nodiscard]] std::span<const SketchPrimitiveTessellationEntry>
+  [[nodiscard]] std::span<const SketchPrimitiveVectorEntry>
   entries() const {
     return entries_;
   }
   [[nodiscard]] std::span<const SketchPrimitiveChunkSpan> spans() const {
     return spans_;
   }
-  [[nodiscard]] const SketchPrimitiveTessellationEntry *
+  [[nodiscard]] const SketchPrimitiveVectorEntry *
   find(render::SketchPrimitiveHandle primitive) const;
   [[nodiscard]] std::span<const SketchPrimitiveChunkSpan>
   spans(render::SketchPrimitiveHandle primitive) const;
   [[nodiscard]] std::size_t retainedBytes() const { return retainedBytes_; }
 
 private:
-  SketchPrimitiveTessellationIndex(
-      std::vector<SketchPrimitiveTessellationEntry> entries,
+  SketchPrimitiveVectorIndex(
+      std::vector<SketchPrimitiveVectorEntry> entries,
       std::vector<SketchPrimitiveChunkSpan> spans, std::size_t retainedBytes);
 
-  std::vector<SketchPrimitiveTessellationEntry> entries_;
+  std::vector<SketchPrimitiveVectorEntry> entries_;
   std::vector<SketchPrimitiveChunkSpan> spans_;
   std::size_t retainedBytes_ = 0;
 
-  friend class SketchSceneMesh;
-  friend struct SketchSceneMeshAdapterAccess;
+  friend class SketchVectorPacket;
+  friend struct SketchVectorPacketAdapterAccess;
+  friend Result<std::shared_ptr<const PreparedSketchScene>>
+      prepareSketchScene(std::shared_ptr<const render::SketchSceneSnapshot>,
+                         render::SketchPickIndexOptions,
+                         SketchVectorUploadOptions,
+                         std::shared_ptr<const PreparedSketchScene>,
+                         std::stop_token);
 };
 
-[[nodiscard]] Result<SketchSceneMesh>
-buildSketchSceneMesh(const render::SketchSceneSnapshot &scene,
-                     SketchCurveLod lod = {},
-                     SketchTessellationOptions tessellation = {},
-                     SketchUploadOptions upload = {},
-                     std::shared_ptr<const SketchSceneMesh> reuse = {},
-                     std::stop_token cancellation = {});
+[[nodiscard]] Result<SketchVectorPacket>
+buildSketchVectorPacket(const render::SketchSceneSnapshot &scene,
+                        SketchVectorUploadOptions upload = {},
+                        std::shared_ptr<const SketchVectorPacket> reuse = {},
+                        std::stop_token cancellation = {});
 
 // Complete camera-independent render input. Preparation is pure and may run on
 // any worker thread; render synchronization only moves this immutable pointer.
 class PreparedSketchScene final {
 public:
   struct Metrics {
-    std::size_t meshRetainedBytes = 0U;
+    std::size_t vectorRetainedBytes = 0U;
     std::size_t provenanceRetainedBytes = 0U;
     std::size_t pickIndexRetainedBytes = 0U;
     std::size_t totalRetainedBytes = 0U;
@@ -123,14 +124,13 @@ public:
   [[nodiscard]] const render::SketchPickIndexOptions &pickOptions() const {
     return pickOptions_;
   }
-  [[nodiscard]] const std::shared_ptr<const SketchSceneMesh> &mesh() const {
-    return mesh_;
+  [[nodiscard]] const std::shared_ptr<const SketchVectorPacket> &packet() const {
+    return packet_;
   }
-  [[nodiscard]] const std::shared_ptr<const SketchPrimitiveTessellationIndex> &
-  primitiveTessellationIndex() const {
-    return primitiveTessellationIndex_;
+  [[nodiscard]] const std::shared_ptr<const SketchPrimitiveVectorIndex> &
+  primitiveVectorIndex() const {
+    return primitiveVectorIndex_;
   }
-  [[nodiscard]] SketchCurveLod lod() const { return lod_; }
   [[nodiscard]] const Metrics &metrics() const { return metrics_; }
 
 private:
@@ -138,35 +138,31 @@ private:
                       std::shared_ptr<const render::SketchSceneSnapshot> scene,
                       std::shared_ptr<const render::SketchPickIndex> pickIndex,
                       render::SketchPickIndexOptions pickOptions,
-                      std::shared_ptr<const SketchSceneMesh> mesh,
-                      std::shared_ptr<const SketchPrimitiveTessellationIndex>
-                          primitiveTessellationIndex,
-                      Metrics metrics, SketchCurveLod lod);
+                      std::shared_ptr<const SketchVectorPacket> packet,
+                      std::shared_ptr<const SketchPrimitiveVectorIndex>
+                          primitiveVectorIndex,
+                      Metrics metrics);
 
   render::SceneStamp stamp_;
   std::shared_ptr<const render::SketchSceneSnapshot> scene_;
   std::shared_ptr<const render::SketchPickIndex> pickIndex_;
   render::SketchPickIndexOptions pickOptions_;
-  std::shared_ptr<const SketchSceneMesh> mesh_;
-  std::shared_ptr<const SketchPrimitiveTessellationIndex>
-      primitiveTessellationIndex_;
+  std::shared_ptr<const SketchVectorPacket> packet_;
+  std::shared_ptr<const SketchPrimitiveVectorIndex> primitiveVectorIndex_;
   Metrics metrics_;
-  SketchCurveLod lod_;
 
   friend Result<std::shared_ptr<const PreparedSketchScene>>
       prepareSketchScene(std::shared_ptr<const render::SketchSceneSnapshot>,
-                         SketchCurveLod, SketchTessellationOptions,
-                         render::SketchPickIndexOptions, SketchUploadOptions,
+                         render::SketchPickIndexOptions,
+                         SketchVectorUploadOptions,
                          std::shared_ptr<const PreparedSketchScene>,
                          std::stop_token);
 };
 
 [[nodiscard]] Result<std::shared_ptr<const PreparedSketchScene>>
 prepareSketchScene(std::shared_ptr<const render::SketchSceneSnapshot> scene,
-                   SketchCurveLod lod = {},
-                   SketchTessellationOptions tessellation = {},
                    render::SketchPickIndexOptions picking = {},
-                   SketchUploadOptions upload = {},
+                   SketchVectorUploadOptions upload = {},
                    std::shared_ptr<const PreparedSketchScene> reuse = {},
                    std::stop_token cancellation = {});
 
@@ -185,20 +181,20 @@ public:
   [[nodiscard]] static Result<ProgressiveSketchUpload> create(
       std::shared_ptr<const PreparedSketchScene> prepared,
       std::vector<std::uint32_t> requiredChunks,
-      std::span<const std::shared_ptr<const SketchUploadChunk>> residentChunks);
+      std::span<const std::shared_ptr<const SketchVectorChunk>> residentChunks);
   [[nodiscard]] static Result<ProgressiveSketchUpload> create(
       std::shared_ptr<const PreparedSketchScene> prepared,
       SketchChunkSequence requiredChunks,
-      std::span<const std::shared_ptr<const SketchUploadChunk>> residentChunks);
+      std::span<const std::shared_ptr<const SketchVectorChunk>> residentChunks);
   [[nodiscard]] static Result<ProgressiveSketchUpload> create(
-      std::shared_ptr<const SketchSceneMesh> mesh,
+      std::shared_ptr<const SketchVectorPacket> packet,
       SketchChunkSequence requiredChunks,
-      std::span<const std::shared_ptr<const SketchUploadChunk>> residentChunks);
+      std::span<const std::shared_ptr<const SketchVectorChunk>> residentChunks);
 
   [[nodiscard]] Result<SketchUploadSlice>
   takeNextSlice(std::size_t maximumBytes, std::size_t maximumChunks);
-  [[nodiscard]] const std::shared_ptr<const SketchSceneMesh> &mesh() const {
-    return mesh_;
+  [[nodiscard]] const std::shared_ptr<const SketchVectorPacket> &packet() const {
+    return packet_;
   }
   [[nodiscard]] const SketchChunkSequence &requiredChunks() const {
     return requiredChunks_;
@@ -215,13 +211,13 @@ public:
 private:
   static constexpr std::size_t maximumResidentIdentityBytes =
       16U * 1024U * 1024U;
-  ProgressiveSketchUpload(std::shared_ptr<const SketchSceneMesh> mesh,
+  ProgressiveSketchUpload(std::shared_ptr<const SketchVectorPacket> packet,
                           SketchChunkSequence requiredChunks,
-                          std::vector<const SketchUploadChunk *> resident);
+                          std::vector<const SketchVectorChunk *> resident);
 
-  std::shared_ptr<const SketchSceneMesh> mesh_;
+  std::shared_ptr<const SketchVectorPacket> packet_;
   SketchChunkSequence requiredChunks_;
-  std::vector<const SketchUploadChunk *> residentChunks_;
+  std::vector<const SketchVectorChunk *> residentChunks_;
   std::size_t cursor_ = 0;
   std::size_t reusedCount_ = 0;
 };
@@ -241,8 +237,7 @@ public:
   scene() const;
   [[nodiscard]] const std::shared_ptr<const render::SketchPickIndex> &
   pickIndex() const;
-  [[nodiscard]] const std::shared_ptr<const SketchSceneMesh> &mesh() const;
-  [[nodiscard]] SketchCurveLod lod() const;
+  [[nodiscard]] const std::shared_ptr<const SketchVectorPacket> &packet() const;
   [[nodiscard]] const SketchViewTransform &transform() const {
     return transform_;
   }
@@ -333,7 +328,6 @@ enum class PreparedSketchSceneDecision : std::uint8_t {
   StaleTarget = 3,
   StaleGeneration = 4,
   GenerationConflict = 5,
-  StaleLod = 6,
 };
 
 struct PreparedSketchSceneOffer {
@@ -350,6 +344,10 @@ struct SketchSynchronizationMetrics {
 };
 
 struct SketchItemPickEvidence {
+  SketchItemPickEvidence(render::SceneStamp sceneStamp,
+                         SketchProductStamp productStamp)
+      : scene(std::move(sceneStamp)), product(std::move(productStamp)) {}
+
   render::SceneStamp scene;
   SketchProductStamp product;
   std::shared_ptr<const SketchSceneProducts> products;
@@ -364,8 +362,7 @@ struct SketchItemPickEvidence {
   std::optional<double> displayedDistanceLogicalPixels;
   render::SketchPickMetrics analyticMetrics;
   std::uint32_t renderedSpanProbes = 0U;
-  std::uint32_t renderedTriangleTests = 0U;
-  std::uint32_t renderedPatternIntervals = 0U;
+  std::uint32_t renderedCurveEvaluations = 0U;
   std::shared_ptr<const PresentedSketchFrame> presented;
 };
 
@@ -382,8 +379,6 @@ public:
   publishCamera(SketchCamera2d camera);
   [[nodiscard]] Result<SketchPickCoverageDecision>
   publishPickCoverage(SketchPickCoveragePolicy policy);
-  [[nodiscard]] SketchCurveLod requestedLod() const;
-
   // Called during Qt Quick synchronization on the render thread. Publication
   // only swaps immutable pointers and builds a constant-cost view transform.
   [[nodiscard]] Result<std::shared_ptr<const SynchronizedSketchScene>>

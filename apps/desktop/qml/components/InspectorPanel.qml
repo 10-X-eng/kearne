@@ -14,6 +14,11 @@ Rectangle {
     property var semanticActions: []
     property int activePage: App.ui.inspectorPage
     property bool closable: false
+    readonly property var activeCommand: App.ui.commandCatalog.find(
+                                             command => command.id === App.ui.activeCommandId)
+    readonly property string headerIcon: activeCommand
+                                             ? activeCommand.icon
+                                             : (App.ui.sketchEditing ? "sketch" : "model")
     signal closeRequested()
 
     function previewSourceDraft() {
@@ -52,11 +57,12 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
 
-                Rectangle {
+                KIcon {
                     Layout.preferredWidth: Theme.iconSizeSmall
                     Layout.preferredHeight: Theme.iconSizeSmall
-                    color: Theme.transparent
-                    border.color: Theme.accent
+                    name: root.headerIcon
+                    color: Theme.textMuted
+                    accentColor: Theme.accent
                 }
 
                 Text {
@@ -380,81 +386,92 @@ Rectangle {
                 descriptor: App.ui.selectedFunction
             }
 
-            TextArea {
-                id: sourceEditor
-                property string semanticId: "inspector.source.editor"
-                property string semanticName: App.ui.selectedFunction.sourcePath
-                                              + " native build123d source"
-                property string semanticRole: "textbox"
-                property var semanticActions: readOnly
-                                              ? ["focus"]
-                                              : ["focus", "setValue",
-                                                 "prependText"]
-                property string semanticValue: conflict ? "conflict"
-                                                       : (dirty ? "modified" : "current")
-                property string baselineText: ""
-                property string baselineRevision: ""
-                readonly property bool dirty: text !== baselineText
-                readonly property bool conflict: dirty
-                                                 && baselineRevision
-                                                    !== App.ui.selectedFunction.revision
-
-                function loadBaseline() {
-                    baselineText = App.ui.modelSource
-                    baselineRevision = App.ui.selectedFunction.revision
-                    text = baselineText
-                }
-
-                function performSemanticAction(action, value) {
-                    if (action === "focus") {
-                        forceActiveFocus()
-                        return true
-                    }
-                    if (readOnly)
-                        return false
-                    if (action === "setValue") {
-                        text = String(value)
-                        return true
-                    }
-                    if (action === "prependText") {
-                        text = String(value) + text
-                        return true
-                    }
-                    return false
-                }
-
+            ScrollView {
+                id: sourceViewport
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: Theme.space2
                 Layout.rightMargin: Theme.space2
-                readOnly: !App.ui.sourceEditingAvailable
-                selectByMouse: true
-                wrapMode: TextEdit.NoWrap
-                color: Theme.text
-                selectionColor: Theme.accentSoft
-                selectedTextColor: Theme.text
-                font.family: Theme.fontDataFamily
-                font.pixelSize: Theme.fontSmall
-                Accessible.name: semanticName
-                Accessible.id: semanticId
-                Accessible.role: Accessible.EditableText
-                Accessible.editable: !readOnly
-                Accessible.focusable: enabled && visible
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AsNeeded
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
                 background: Rectangle {
                     radius: Theme.radiusSmall
                     color: Theme.surfaceRaised
-                    border.color: parent.activeFocus ? Theme.focus : Theme.border
-                    border.width: parent.activeFocus ? 2 : 1
+                    border.color: sourceEditor.activeFocus ? Theme.focus : Theme.border
+                    border.width: sourceEditor.activeFocus ? 2 : 1
                 }
 
-                Component.onCompleted: loadBaseline()
+                TextArea {
+                    id: sourceEditor
+                    property string semanticId: "inspector.source.editor"
+                    property string semanticName: App.ui.selectedFunction.sourcePath
+                                                  + " native build123d source"
+                    property string semanticRole: "textbox"
+                    property var semanticActions: readOnly
+                                                  ? ["focus"]
+                                                  : ["focus", "setValue",
+                                                     "prependText"]
+                    property string semanticValue: conflict ? "conflict"
+                                                           : (dirty ? "modified" : "current")
+                    property string baselineText: ""
+                    property string baselineRevision: ""
+                    readonly property bool dirty: text !== baselineText
+                    readonly property bool conflict: dirty
+                                                     && baselineRevision
+                                                        !== App.ui.selectedFunction.revision
 
-                Connections {
-                    target: App.ui
-                    function onProjectProjectionChanged() {
-                        if (!sourceEditor.dirty
-                                || sourceEditor.text === App.ui.modelSource)
-                            sourceEditor.loadBaseline()
+                    function loadBaseline() {
+                        baselineText = App.ui.modelSource
+                        baselineRevision = App.ui.selectedFunction.revision
+                        text = baselineText
+                    }
+
+                    function performSemanticAction(action, value) {
+                        if (action === "focus") {
+                            forceActiveFocus()
+                            return true
+                        }
+                        if (readOnly)
+                            return false
+                        if (action === "setValue") {
+                            text = String(value)
+                            return true
+                        }
+                        if (action === "prependText") {
+                            text = String(value) + text
+                            return true
+                        }
+                        return false
+                    }
+
+                    width: Math.max(sourceViewport.availableWidth, implicitWidth)
+                    height: Math.max(sourceViewport.availableHeight, implicitHeight)
+                    readOnly: !App.ui.sourceEditingAvailable
+                    selectByMouse: true
+                    wrapMode: TextEdit.NoWrap
+                    color: Theme.text
+                    selectionColor: Theme.accentSoft
+                    selectedTextColor: Theme.text
+                    font.family: Theme.fontDataFamily
+                    font.pixelSize: Theme.fontSmall
+                    Accessible.name: semanticName
+                    Accessible.id: semanticId
+                    Accessible.role: Accessible.EditableText
+                    Accessible.editable: !readOnly
+                    Accessible.focusable: enabled && visible
+                    background: null
+
+                    Component.onCompleted: loadBaseline()
+
+                    Connections {
+                        target: App.ui
+                        function onProjectProjectionChanged() {
+                            if (!sourceEditor.dirty
+                                    || sourceEditor.text === App.ui.modelSource)
+                                sourceEditor.loadBaseline()
+                        }
                     }
                 }
             }
@@ -476,11 +493,11 @@ Rectangle {
                 }
 
                 Text {
+                    visible: sourceEditor.dirty
                     Layout.fillWidth: true
                     text: sourceEditor.conflict
                           ? "The source revision changed; preserve this draft and reload before applying."
-                          : (sourceEditor.dirty ? "Uncommitted source revision"
-                                                : App.ui.selectedFunction.revision)
+                          : "Uncommitted source changes"
                     color: sourceEditor.conflict ? Theme.error : Theme.textMuted
                     font.pixelSize: Theme.fontSmall
                     elide: Text.ElideRight

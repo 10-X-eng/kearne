@@ -627,6 +627,7 @@ def profile(plane):
                     "integer": "1",
                     "entity_ref": stable,
                     "entity_refs": f'({stable}, "{uuid7(99_000 + index)}")',
+                    "object_members": f'(("curve", {stable}),)',
                     "point_ref": f"at({stable})",
                 }[argument.kind]
                 arguments.append(value)

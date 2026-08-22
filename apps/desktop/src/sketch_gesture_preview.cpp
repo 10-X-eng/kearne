@@ -310,6 +310,7 @@ bool SketchGesturePreview::updateGesture(
   measurements_ = std::move(measurements);
   construction_ = construction;
   visible_ = true;
+  ++generation_;
   emit previewChanged();
   return true;
 }
@@ -321,6 +322,7 @@ void SketchGesturePreview::clear() {
   inputPoints_.clear();
   primitives_.clear();
   measurements_.clear();
+  ++generation_;
   emit previewChanged();
 }
 

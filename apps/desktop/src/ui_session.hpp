@@ -222,6 +222,9 @@ public:
   [[nodiscard]] bool canUndo() const;
   [[nodiscard]] bool canRedo() const;
   [[nodiscard]] bool sketchGesturePreviewVisible() const;
+  [[nodiscard]] std::uint64_t sketchGesturePreviewGeneration() const;
+  [[nodiscard]] std::span<const SketchPrimitiveProjection>
+  sketchGesturePreviewPrimitives() const;
   [[nodiscard]] QVariantList sketchPreviewMeasurements() const;
   [[nodiscard]] QVariantList sketchPreviewPrimitives() const;
   [[nodiscard]] QVariantList lengthUnits() const;
@@ -316,8 +319,24 @@ public:
   void clearSketchPickHandler();
   void setSketchHoverHandler(SketchHoverHandler handler);
   void clearSketchHoverHandler();
-  [[nodiscard]] const std::vector<QString> &selectedSketchEntityIds() const {
-    return snapshot_->selectedSketchEntityIds;
+  [[nodiscard]] const std::vector<SketchSelectionScope> &
+  selectedSketchScopes() const {
+    return snapshot_->selectedSketchScopes;
+  }
+  [[nodiscard]] bool sketchControlPolygonVisible() const {
+    return snapshot_->sketchControlPolygonVisible;
+  }
+  [[nodiscard]] bool sketchCurvatureCombVisible() const {
+    return snapshot_->sketchCurvatureCombVisible;
+  }
+  [[nodiscard]] bool sketchDegreeLabelsVisible() const {
+    return snapshot_->sketchDegreeLabelsVisible;
+  }
+  [[nodiscard]] bool sketchKnotLabelsVisible() const {
+    return snapshot_->sketchKnotLabelsVisible;
+  }
+  [[nodiscard]] bool sketchWeightLabelsVisible() const {
+    return snapshot_->sketchWeightLabelsVisible;
   }
   [[nodiscard]] std::span<const SketchPrimitiveProjection>
   sketchPrimitiveProjections() const {
@@ -342,6 +361,7 @@ private:
   QString settingsCategoryId_ = QStringLiteral("appearance");
   QString sketchHoveredEntityId_;
   QString sketchHoveredPointKey_;
+  int sketchModifyHoverMisses_ = 0;
   struct SketchCurveDragTarget {
     QString entityId;
     PlanePoint first;

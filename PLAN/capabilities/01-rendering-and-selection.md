@@ -62,7 +62,7 @@ The port does not contain modeling commands or expose raw GPU objects to QML.
 
 ### RND-004 — Thread contract
 
-QML state is owned by the UI thread. GPU resources and submission are owned by the Qt Quick render thread/backend. Projection, tessellation, spatial-index construction, and upload-packet preparation run on bounded workers. Synchronization swaps immutable pointers and fixed-size view state; neither thread waits for geometry.
+QML state is owned by the UI thread. GPU resources and submission are owned by the Qt Quick render thread/backend. Projection, 3D tessellation, spatial-index construction, and upload-packet preparation run on bounded workers. Sketch projection preserves native vector primitives and NURBS data. Synchronization swaps immutable pointers and fixed-size view state; neither thread waits for geometry.
 
 ### RND-005 — Graphics backend policy
 
@@ -70,7 +70,9 @@ The Sketch backend candidate is one inline `QSGRenderNode`/QRhi renderer under [
 
 ### RND-006 — Frame continuity
 
-Camera manipulation uses the most recent published scene and never waits for newer tessellation. Placeholder, coarse LOD, or last-known-good geometry is visibly classified rather than blocking input.
+Camera manipulation uses the most recent published scene and never waits for geometry. Placeholder, coarse 3D LOD, or last-known-good geometry is visibly classified rather than blocking input.
+
+Command readiness includes required render pipelines, so an accepted result does not incur a hidden first-use compilation stall.
 
 ## 5. Mesh and edge artifacts
 
@@ -99,7 +101,7 @@ Picking is two-stage when necessary:
 
 A pick carries the exact displayed `SceneStamp`. A persistent command accepts it only while that stamp, revision, evaluation key, and tool preconditions remain current. Target equality without generation and digest equality is insufficient.
 
-Pick eligibility uses the exact resident tessellation, stroke pattern, and presentation products of one displayed frame. Analytic indexing may find candidates but cannot make hidden, clipped, provisional, or absent geometry selectable. Node, candidate, resident-span, triangle, and pattern work have explicit limits; exhaustion returns no partial pick.
+Pick eligibility uses the exact resident presentation products of one displayed frame. Sketch picking evaluates its native vector data and displayed stroke pattern; it has no triangle stage. Analytic indexing may find candidates but cannot make hidden, clipped, provisional, or absent geometry selectable. Node, candidate, resident-span, curve-evaluation, and pattern work have explicit limits; exhaustion returns no partial pick.
 
 ### RND-011 — Stable selection sets
 
@@ -131,11 +133,13 @@ A permanent deterministic calibration solid verifies projection, standard views,
 
 ### RND-017 — Presentation overlays
 
-Presentation has three distinct products. A base-state overlay restyles existing evaluated entities for hover, selection, diagnostics, or preview emphasis. A marker packet draws constraint, inference, DOF, dimension, and snapped-cursor annotations. A provisional-geometry packet draws incomplete active-tool geometry. None changes the evaluated base digest, pick index, bounds, or mesh.
+Presentation has three distinct products. A base-state overlay restyles existing evaluated entities for hover, selection, diagnostics, or preview emphasis. A marker packet draws constraint, inference, DOF, dimension, snapped-cursor, and spline-editing annotations. A provisional-geometry packet draws incomplete active-tool geometry. None changes the evaluated base digest, pick index, bounds, or base geometry.
+
+Curvature combs use analytic rational derivatives and at most 65 exact normal vectors. Automatic display scale preserves relative signed curvature without changing geometry.
 
 Base-state entries reference semantic entities in one exact `SceneStamp`. Markers use canonical SI positions or exact base/provisional references. Provisional identity contains the base stamp, edit session, tool instance, monotonic generation, and payload digest; its tool-local references never enter source commands or persistent selection. A completed command preview is an evaluated base scene with its own stamp, not provisional geometry.
 
-The base Sketch scene contains geometry plus regular/construction classification. An independently generated overlay references its exact base `SceneStamp`, normalizes semantic IDs, and applies `Diagnostic > Preview > Selected > Hovered > Construction > Regular`. Overlay generation is monotonic and independent of scene generation. Retargeting clears overlays for other stamps; style and overlay changes preserve the base digest, pick index, mesh chunks, and evaluation key.
+The base Sketch scene contains native vector geometry plus regular/construction classification. An independently generated overlay references its exact base `SceneStamp`, normalizes semantic IDs, and applies `Diagnostic > Preview > Selected > Hovered > Construction > Regular`. Overlay generation is monotonic and independent of scene generation. Retargeting clears overlays for other stamps; style and overlay changes preserve the base digest, pick index, vector packets, and evaluation key.
 
 Undo-last-input publishes a newer provisional generation. Stop-tool, finish, cancel, or any base/edit-session/tool retarget clears provisional state. Camera changes preserve canonical markers but invalidate snapped-cursor evidence created from another camera generation. Sketch evaluation requests exclude all presentation products; their desktop ports remain open.
 
@@ -157,9 +161,9 @@ MVP requires shaded, shaded-with-edges, wireframe, transparent preview, selectio
 
 ## 8. Device loss and memory
 
-- GPU resources are recreatable from mesh artifacts.
+- GPU resources are recreatable from immutable render packets.
 - Device loss invalidates backend resources, not semantic selections.
-- Memory budgets apply separately to CPU mesh mappings and GPU allocations.
+- Memory budgets apply separately to CPU render packets and GPU allocations.
 - LRU eviction honors visible/pinned resources and can fall back to coarse LOD.
 - Resource destruction occurs on the owning render context/thread.
 
@@ -167,7 +171,7 @@ MVP requires shaded, shaded-with-edges, wireframe, transparent preview, selectio
 
 One render-port conformance suite runs against a deterministic null backend, the initial interactive backend, and future custom backends. A reference scene model generates add/update/remove/reorder/LOD/device-loss operations and checks backend-observable scene equivalence.
 
-Selection properties generate meshes and primitive mappings to verify:
+Selection properties generate render packets and primitive mappings to verify:
 
 - every selectable primitive maps to the correct semantic reference;
 - transform and instancing preserve occurrence identity;
@@ -187,7 +191,7 @@ Image snapshots are limited to a small portable visual-smoke corpus with toleran
 
 ## 11. Open decisions
 
-- **RND-OPEN-001:** 3D exact-geometry interaction behind the Kearne-owned mesh renderer; Sketch uses the native mesh path.
+- **RND-OPEN-001:** 3D exact-geometry interaction behind the Kearne-owned mesh renderer; Sketch uses its native vector path.
 - **RND-OPEN-002:** Qt graphics backend matrix by platform.
 - **RND-OPEN-003:** GPU versus CPU first-stage picking for MVP.
 - **RND-OPEN-004:** Versioned mesh artifact format and compression.

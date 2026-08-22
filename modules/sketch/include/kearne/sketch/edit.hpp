@@ -28,6 +28,12 @@ struct ReplaceEntity {
   Entity value;
 };
 
+// Explicitly changes a stable entity's geometry kind. Ordinary replacement
+// remains kind-preserving so accidental topology changes are refused.
+struct RetypeEntity {
+  Entity value;
+};
+
 struct DeleteEntity {
   SketchEntityId id;
 };
@@ -46,7 +52,7 @@ struct DeleteConstraint {
 
 using Edit =
     std::variant<AppendObject, ReplaceObject, DeleteObject, AppendEntity,
-                 ReplaceEntity, DeleteEntity, AppendConstraint,
+                 ReplaceEntity, RetypeEntity, DeleteEntity, AppendConstraint,
                  ReplaceConstraint, DeleteConstraint>;
 
 enum class SourceEditAction : std::uint8_t { Append, Replace, Delete };

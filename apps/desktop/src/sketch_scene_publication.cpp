@@ -38,6 +38,18 @@ template <typename Value> void updateMaximum(Value &maximum, Value value) {
   maximum = std::max(maximum, value);
 }
 
+[[nodiscard]] bool samePickOptions(render::SketchPickIndexOptions first,
+                                   render::SketchPickIndexOptions second) {
+  return first.maximumRetainedBytes == second.maximumRetainedBytes &&
+         first.maximumScratchBytes == second.maximumScratchBytes &&
+         first.maximumPeakBuildBytes == second.maximumPeakBuildBytes &&
+         first.maximumLeafTargets == second.maximumLeafTargets &&
+         first.maximumVisitedNodesPerPass ==
+             second.maximumVisitedNodesPerPass &&
+         first.maximumRefinedTargetsPerPass ==
+             second.maximumRefinedTargetsPerPass;
+}
+
 struct SketchPublicationRetirementOwner {
   std::shared_ptr<const SketchSceneProducts> products;
   std::shared_ptr<const void> item;
@@ -187,7 +199,7 @@ struct SketchPreparationExecutor::Impl {
       prepare = [](const SketchPreparationRequest &request,
                    std::shared_ptr<const PreparedSketchProducts> reuse,
                    std::stop_token stop) {
-        return prepareSketchProducts(request.products, request.lod, {},
+        return prepareSketchProducts(request.products, request.options,
                                      std::move(reuse), stop);
       };
     }
@@ -337,10 +349,11 @@ struct SketchPreparationExecutor::Impl {
       return std::unexpected(publicationDiagnostic(
           "desktop.sketch.preparation-result-instance",
           "prepared sketch products do not retain the exact request packet"));
-    if ((*prepared)->lod() != request.lod)
+    if (!samePickOptions((*prepared)->base()->pickOptions(),
+                         request.options.picking))
       return std::unexpected(publicationDiagnostic(
-          "desktop.sketch.preparation-result-lod",
-          "prepared sketch product LOD does not match its request"));
+          "desktop.sketch.preparation-result-options",
+          "prepared sketch product options do not match its request"));
     return prepared;
   }
 
@@ -661,7 +674,8 @@ SketchPreparationExecutor::subscribe(QObject &lifetime,
 
 Result<SketchPreparationSubmission> SketchPreparationExecutor::submit(
     SketchPreparationSubscription subscription,
-    std::shared_ptr<const SketchSceneProducts> products, SketchCurveLod lod) {
+    std::shared_ptr<const SketchSceneProducts> products,
+    SketchProductPreparationOptions options) {
   if (auto ui = requireThread(*this); !ui)
     return std::unexpected(std::move(ui.error()));
   if (!products)
@@ -695,7 +709,8 @@ Result<SketchPreparationSubmission> SketchPreparationExecutor::submit(
     if (impl_->fault)
       impl_->fault(FaultSite::Submission);
     request = std::make_shared<const Impl::Request>(Impl::Request{
-        subscription, SketchPreparationEpoch{epoch}, std::move(products), lod});
+        subscription, SketchPreparationEpoch{epoch}, std::move(products),
+        options});
   } catch (...) {
     return std::unexpected(
         publicationDiagnostic("desktop.sketch.preparation-request-allocation",
@@ -989,7 +1004,7 @@ void SketchPreparationExecutor::drainCompletions() {
         sink->deliver(
             {delivery->request->subscription, delivery->request->epoch,
              delivery->request->products->stamp, delivery->request->products,
-             delivery->request->lod, delivery->prepared});
+             delivery->request->options, delivery->prepared});
         delivered = true;
       } catch (...) {
       }
@@ -1126,7 +1141,6 @@ SketchScenePublicationController::retarget(render::SceneTarget target) {
   desired_ = target;
   currentProducts_.reset();
   requestedProduct_.reset();
-  requestedLod_.reset();
   markerView_.reset();
   markerViewWatermark_.reset();
   markerViewValue_.store(0U, std::memory_order_release);
@@ -1258,19 +1272,16 @@ SketchScenePublicationController::scheduleCurrentProducts(bool changed) {
         "desktop.sketch.publication-scheduling-unavailable",
         "sketch preparation cannot be scheduled without live publication "
         "state"));
-  const SketchCurveLod lod = item_->requestedLod();
-  if (requestedProduct_ && requestedLod_ &&
-      *requestedProduct_ == currentProducts_->stamp && *requestedLod_ == lod)
+  if (requestedProduct_ && *requestedProduct_ == currentProducts_->stamp)
     return SketchScenePublicationOffer{publication_, changed, false, false};
 
-  auto submitted = executor_->submit(*subscription_, currentProducts_, lod);
+  auto submitted = executor_->submit(*subscription_, currentProducts_);
   if (!submitted) {
     Diagnostic failure = std::move(submitted.error());
     setLastDiagnostic(failure);
     return std::unexpected(std::move(failure));
   }
   requestedProduct_ = currentProducts_->stamp;
-  requestedLod_ = lod;
   preparationRequests_.fetch_add(1, std::memory_order_relaxed);
   return SketchScenePublicationOffer{publication_, changed, true,
                                      submitted->superseded};
@@ -1280,13 +1291,11 @@ void SketchScenePublicationController::deliver(
     const SketchPreparationCompletionView &completion) {
   if (shutdown_.load(std::memory_order_acquire) || !subscription_ ||
       completion.subscription != *subscription_ || !item_ ||
-      !currentProducts_ || completion.products != currentProducts_ ||
-      item_->requestedLod() != completion.lod) {
+      !currentProducts_ || completion.products != currentProducts_) {
     staleCompletions_.fetch_add(1, std::memory_order_relaxed);
     if (!shutdown_.load(std::memory_order_acquire) && item_ &&
         currentProducts_) {
       requestedProduct_.reset();
-      requestedLod_.reset();
       auto scheduled = scheduleCurrentProducts(false);
       if (!scheduled)
         setLastDiagnostic(std::move(scheduled.error()));
@@ -1295,7 +1304,6 @@ void SketchScenePublicationController::deliver(
   }
   if (!completion.prepared) {
     requestedProduct_.reset();
-    requestedLod_.reset();
     setLastDiagnostic(completion.prepared.error());
     return;
   }
@@ -1304,7 +1312,6 @@ void SketchScenePublicationController::deliver(
   if (!offered) {
     itemRejections_.fetch_add(1, std::memory_order_relaxed);
     requestedProduct_.reset();
-    requestedLod_.reset();
     setLastDiagnostic(std::move(offered.error()));
     return;
   }
@@ -1312,7 +1319,6 @@ void SketchScenePublicationController::deliver(
       offered->decision != PreparedSketchSceneDecision::Duplicate) {
     itemRejections_.fetch_add(1, std::memory_order_relaxed);
     requestedProduct_.reset();
-    requestedLod_.reset();
     return;
   }
   itemPublications_.fetch_add(1, std::memory_order_relaxed);
@@ -1331,14 +1337,6 @@ SketchScenePublicationController::publishCamera(SketchCamera2d camera) {
     return decision;
   if (*decision == SketchCameraDecision::Accepted) {
     invalidateViewMarkers();
-    if (currentProducts_ && requestedLod_ &&
-        *requestedLod_ != item_->requestedLod()) {
-      requestedProduct_.reset();
-      requestedLod_.reset();
-      auto scheduled = scheduleCurrentProducts(false);
-      if (!scheduled)
-        return std::unexpected(std::move(scheduled.error()));
-    }
   }
   return decision;
 }
@@ -1483,7 +1481,6 @@ Result<void> SketchScenePublicationController::shutdown() {
   }
 
   requestedProduct_.reset();
-  requestedLod_.reset();
   executor_.clear();
   item_.clear();
   shutdown_.store(true, std::memory_order_release);

@@ -64,7 +64,7 @@ struct SketchPreparationRequest {
   SketchPreparationSubscription subscription;
   SketchPreparationEpoch epoch;
   std::shared_ptr<const SketchSceneProducts> products;
-  SketchCurveLod lod;
+  SketchProductPreparationOptions options;
 };
 
 struct SketchPreparationCompletionView {
@@ -72,7 +72,7 @@ struct SketchPreparationCompletionView {
   SketchPreparationEpoch epoch;
   const SketchProductStamp &product;
   const std::shared_ptr<const SketchSceneProducts> &products;
-  SketchCurveLod lod;
+  const SketchProductPreparationOptions &options;
   const Result<std::shared_ptr<const PreparedSketchProducts>> &prepared;
 };
 
@@ -159,7 +159,7 @@ public:
   [[nodiscard]] Result<SketchPreparationSubmission>
   submit(SketchPreparationSubscription subscription,
          std::shared_ptr<const SketchSceneProducts> products,
-         SketchCurveLod lod);
+         SketchProductPreparationOptions options = {});
   [[nodiscard]] Result<void>
   invalidate(SketchPreparationSubscription subscription);
   [[nodiscard]] Result<void>
@@ -263,7 +263,6 @@ private:
   std::shared_ptr<const SketchSceneProducts> currentProducts_;
   std::optional<SketchProductGeneration> productClock_;
   std::optional<SketchProductStamp> requestedProduct_;
-  std::optional<SketchCurveLod> requestedLod_;
   std::optional<render::SketchMarkerViewGeneration> markerView_;
   std::optional<render::SketchMarkerViewGeneration> markerViewWatermark_;
   std::atomic_uint64_t markerViewValue_ = 0;

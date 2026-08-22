@@ -1295,6 +1295,33 @@ std::size_t closedProfileCount(const Definition &definition) {
   return profiles;
 }
 
+Result<void> validate(const Entity &entity, const NumericalProfile &profile) {
+  if (auto valid = validateProfile(profile); !valid)
+    return valid;
+  return validateGeometry(flatten(entity), profile, "sketch.entity",
+                          "sketch entity");
+}
+
+Result<void> validateConstraint(const Definition &definition,
+                                const Constraint &constraint,
+                                const NumericalProfile &profile) {
+  if (auto valid = validateProfile(profile); !valid)
+    return valid;
+  auto flat = flatten(definition.entities);
+  if (!flat)
+    return std::unexpected(std::move(flat.error()));
+  for (const FlatEntity &entity : *flat)
+    if (auto valid = validateGeometry(entity, profile, "sketch.entity",
+                                      "sketch entity");
+        !valid)
+      return valid;
+  const EntityIndex index = indexOf(*flat);
+  auto checked = residualsFor(constraint, *flat, index, *flat, index, profile);
+  if (!checked)
+    return std::unexpected(std::move(checked.error()));
+  return {};
+}
+
 Result<void> validate(const Definition &definition,
                       const NumericalProfile &profile) {
   if (auto valid = validateProfile(profile); !valid)
@@ -1365,6 +1392,8 @@ Result<void> validate(const Definition &definition,
         return std::holds_alternative<LineEntity>(entity) ||
                std::holds_alternative<CircleEntity>(entity) ||
                std::holds_alternative<ArcEntity>(entity);
+      case SketchObjectKind::CurveGroup:
+        return !std::holds_alternative<PointEntity>(entity);
       case SketchObjectKind::JoinedCurve:
         return std::holds_alternative<BSplineEntity>(entity);
       case SketchObjectKind::Ellipse:
@@ -1417,10 +1446,12 @@ Result<void> validate(const Definition &definition,
       break;
     case SketchObjectKind::Polyline:
     case SketchObjectKind::RegularPolygon:
+    case SketchObjectKind::CurveGroup:
       break;
     }
     const bool dynamicRoles = object.kind == SketchObjectKind::Polyline ||
-                              object.kind == SketchObjectKind::RegularPolygon;
+                              object.kind == SketchObjectKind::RegularPolygon ||
+                              object.kind == SketchObjectKind::CurveGroup;
     if ((dynamicRoles && object.members.empty()) ||
         (object.kind == SketchObjectKind::RegularPolygon &&
          object.members.size() < 3U) ||
@@ -1436,7 +1467,13 @@ Result<void> validate(const Definition &definition,
           object.kind == SketchObjectKind::RegularPolygon ? "side_"
                                                           : "segment_";
       const bool validRole =
-          dynamicRoles
+          object.kind == SketchObjectKind::CurveGroup
+              ? !member.role.empty() && member.role.size() <= 32U &&
+                    std::ranges::all_of(member.role, [](unsigned char value) {
+                      return (value >= 'a' && value <= 'z') ||
+                             (value >= '0' && value <= '9') || value == '_';
+                    })
+              : dynamicRoles
               ? member.role == dynamicPrefix + std::to_string(index + 1U)
               : std::ranges::find(expectedRoles, member.role) !=
                     expectedRoles.end();

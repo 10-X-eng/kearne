@@ -22,6 +22,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QSaveFile>
+#include <QSGRendererInterface>
 #include <QSet>
 #include <QTimer>
 #include <QUuid>
@@ -70,6 +71,33 @@ QJsonObject imageStatistics(const QImage &image) {
       {QStringLiteral("sampled_luminance_min"), minimumLuminance},
       {QStringLiteral("sampled_luminance_max"), maximumLuminance},
   };
+}
+
+QString graphicsApiName(QQuickWindow &window) {
+  const auto *renderer = window.rendererInterface();
+  if (!renderer)
+    return QStringLiteral("unknown");
+  switch (renderer->graphicsApi()) {
+  case QSGRendererInterface::Software:
+    return QStringLiteral("software");
+  case QSGRendererInterface::OpenVG:
+    return QStringLiteral("openvg");
+  case QSGRendererInterface::OpenGL:
+    return QStringLiteral("opengl");
+  case QSGRendererInterface::Direct3D11:
+    return QStringLiteral("d3d11");
+  case QSGRendererInterface::Vulkan:
+    return QStringLiteral("vulkan");
+  case QSGRendererInterface::Metal:
+    return QStringLiteral("metal");
+  case QSGRendererInterface::Null:
+    return QStringLiteral("null");
+  case QSGRendererInterface::Direct3D12:
+    return QStringLiteral("d3d12");
+  case QSGRendererInterface::Unknown:
+    return QStringLiteral("unknown");
+  }
+  return QStringLiteral("unknown");
 }
 
 void writeFile(const QString &path, const QByteArray &bytes) {
@@ -450,6 +478,8 @@ void ObservationController::framePresented() {
              .count()},
         {QStringLiteral("preview_visible"),
          session_.sketchGesturePreviewVisible()},
+        {QStringLiteral("preview_generation"),
+         static_cast<qint64>(session_.sketchGesturePreviewGeneration())},
         {QStringLiteral("hovered_entity"),
          session_.sketchHoveredEntityId()},
         {QStringLiteral("hovered_point"), session_.sketchHoveredPointKey()}});
@@ -721,6 +751,8 @@ void ObservationController::performNextOperation() {
             action == QStringLiteral("pointerClick")
                 ? start
                 : pointerPosition(*item, input, QStringLiteral("to"));
+        sendMouseEvent(window_, QEvent::MouseMove, start, Qt::NoButton,
+                       Qt::NoButton, modifiers);
         if (action == QStringLiteral("pointerDrag")) {
           sendMouseEvent(window_, QEvent::MouseButtonPress, start, button,
                          button, modifiers);
@@ -870,6 +902,12 @@ void ObservationController::capture() {
     QSet<QObject *> visited;
     collectSemanticNodes(window_, window_, nodes, visited);
     const QJsonArray receipts = jsonArray(actionReceipts_);
+    QJsonArray sketchSelection;
+    for (const SketchSelectionScope &selection :
+         session_.selectedSketchScopes())
+      sketchSelection.push_back(
+          QJsonObject{{QStringLiteral("entity_id"), selection.entityId},
+                      {QStringLiteral("point_key"), selection.pointKey}});
     QJsonObject semantic{
         {QStringLiteral("schema"), QStringLiteral("kearne.semantic-ui/v1")},
         {QStringLiteral("surface_id"), session_.activeSurfaceId()},
@@ -880,6 +918,7 @@ void ObservationController::capture() {
          static_cast<qint64>(session_.generation())},
         {QStringLiteral("actions"), receipts},
         {QStringLiteral("nodes"), nodes},
+        {QStringLiteral("sketch_selection"), sketchSelection},
     };
     if (auto *sourceEditor = qobject_cast<QQuickItem *>(findSemanticObject(
             window_, QStringLiteral("inspector.source.editor")));
@@ -910,6 +949,7 @@ void ObservationController::capture() {
         {QStringLiteral("session_id"), sessionId_},
         {QStringLiteral("qt_version"), QString::fromLatin1(qVersion())},
         {QStringLiteral("platform"), QGuiApplication::platformName()},
+        {QStringLiteral("graphics_api"), graphicsApiName(window_)},
         {QStringLiteral("locale"), QLocale().name()},
         {QStringLiteral("theme_id"), themes_.activeThemeId()},
         {QStringLiteral("theme_selection"), themes_.selectionId()},

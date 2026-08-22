@@ -510,6 +510,7 @@ _OBJECT_WIRE: dict[ObjectKind, tuple[str, tuple[str, ...]]] = {
     "chamfer": ("SKETCH_OBJECT_KIND_CHAMFER", ("curve",)),
     "offset": ("SKETCH_OBJECT_KIND_OFFSET", ("curve",)),
     "joined_curve": ("SKETCH_OBJECT_KIND_JOINED_CURVE", ("curve",)),
+    "curve_group": ("SKETCH_OBJECT_KIND_CURVE_GROUP", ()),
     "slot": (
         "SKETCH_OBJECT_KIND_SLOT",
         ("start_cap", "end_cap", "top_side", "bottom_side"),
@@ -544,7 +545,9 @@ def _write_object(message: _WireMessage, value: SketchObject) -> None:
     members = _repeated(message, "members")
     prefix = {"polyline": "segment", "regular_polygon": "side"}.get(value.kind)
     roles = (
-        tuple(f"{prefix}_{index + 1}" for index in range(len(value.entities)))
+        value.roles
+        if value.kind == "curve_group"
+        else tuple(f"{prefix}_{index + 1}" for index in range(len(value.entities)))
         if prefix is not None
         else contract[1]
     )
@@ -566,7 +569,9 @@ def _read_object(message: _WireMessage) -> SketchObject:
     members = tuple(_repeated(message, "members"))
     prefix = {"polyline": "segment", "regular_polygon": "side"}.get(kind)
     roles = (
-        tuple(f"{prefix}_{index + 1}" for index in range(len(members)))
+        tuple(cast(str, _scalar(member, "role")) for member in members)
+        if kind == "curve_group"
+        else tuple(f"{prefix}_{index + 1}" for index in range(len(members)))
         if prefix is not None
         else _OBJECT_WIRE[kind][1]
     )
@@ -583,6 +588,7 @@ def _read_object(message: _WireMessage) -> SketchObject:
         cast(str, _scalar(message, "label")),
         kind,
         tuple(by_role[role] for role in roles),
+        roles if kind == "curve_group" else (),
     )
 
 

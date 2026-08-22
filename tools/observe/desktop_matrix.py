@@ -184,6 +184,40 @@ def scenarios(mode: str) -> list[dict[str, object]]:
              ],
              "expected_preview_measurements": 2,
              "width": 1440, "height": 900},
+            {"name": "proof-sketch-point-selection", "surface": "editor",
+             "workspace": "sketch", "initial_workspace": "model",
+             "design_engine": True,
+             "operations": [
+                 *create,
+                 {"action": "invoke",
+                  "semantic_id": "command.sketch.rectangle"},
+                 {"action": "pointerDrag", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "from": [0.42, 0.43],
+                            "to": [0.58, 0.57]}},
+                 {"action": "pointerClick", "semantic_id": "viewport.primary",
+                  "value": {"button": "left", "position": [0.428, 0.418]}},
+             ],
+             "required": ["sketch.solve.state", "input.selection.type",
+                          "input.selection.x", "input.selection.y"],
+             "expected_values": {
+                 "sketch.solve.state": "underconstrained:4",
+                 "input.selection.type": "Point",
+                 "viewport.state": "current",
+             },
+             "expected_sketch_selection": "point",
+             "revision_evidence": [{
+                 "semantic_id": "viewport.primary", "action": "pointerClick",
+                 "occurrence": 1,
+                 "reference_semantic_id": "viewport.primary",
+                 "reference_action": "pointerDrag", "reference_occurrence": 1,
+                 "relation": "same",
+             }],
+             "action_evidence": [{
+                 "semantic_id": "viewport.primary", "action": "pointerClick",
+                 "max_current_scene_ms": 250,
+                 "require_native_scene": True,
+             }],
+             "width": 1440, "height": 900},
             {"name": "proof-sketch-rectangle-warm", "surface": "editor",
              "workspace": "sketch", "initial_workspace": "model",
              "design_engine": True,
@@ -236,7 +270,7 @@ def scenarios(mode: str) -> list[dict[str, object]]:
                   "value": {"button": "left", "from": [0.42, 0.43],
                             "to": [0.58, 0.57]}},
                  {"action": "pointerHover", "semantic_id": "viewport.primary",
-                  "value": {"from": [0.30, 0.30], "to": [0.50, 0.43],
+                  "value": {"from": [0.30, 0.30], "to": [0.50, 0.42],
                             "capture_preview": True}},
                  {"action": "pointerDrag", "semantic_id": "viewport.primary",
                   "value": {"button": "left", "from": [0.50, 0.42],
@@ -430,6 +464,64 @@ def scenarios(mode: str) -> list[dict[str, object]]:
                 "value": {"button": "left", "position": position},
             }
 
+        def set_value(semantic_id: str, value: str) -> dict[str, object]:
+            return {
+                "action": "setValue", "semantic_id": semantic_id,
+                "value": value,
+            }
+
+        bspline = [
+            invoke("command.sketch.bspline.control-points"),
+            drag([0.37, 0.58], [0.45, 0.40]),
+            click([0.55, 0.40]),
+            click([0.63, 0.58]),
+            invoke("inspector.apply"),
+        ]
+
+        def edit_bspline(command: str,
+                         fields: list[dict[str, object]] | None = None
+                         ) -> list[dict[str, object]]:
+            return [
+                {"action": "select",
+                 "semantic_id": "entity.sketch.bspline.1"},
+                invoke("command-menu.sketch.spline-edit"),
+                invoke(f"command.{command}"),
+                *(fields or []),
+                hover([0.45, 0.50], [0.50, 0.44], True),
+                click([0.50, 0.44]),
+                invoke("inspector.apply"),
+            ]
+
+        bspline_edits = [
+            ("sketch.bspline.increase-degree", []),
+            ("sketch.bspline.decrease-degree", [
+                set_value(
+                    "input.sketch.bspline.decrease-degree.maximum-deviation",
+                    "0.001 mm"),
+            ]),
+            ("sketch.bspline.insert-knot", [
+                set_value("input.sketch.bspline.insert-knot.parameter", "0.5"),
+            ]),
+            ("sketch.bspline.increase-knot-multiplicity", [
+                set_value(
+                    "input.sketch.bspline.increase-knot-multiplicity.knot",
+                    "2"),
+            ]),
+            ("sketch.bspline.decrease-knot-multiplicity", [
+                set_value(
+                    "input.sketch.bspline.decrease-knot-multiplicity.knot",
+                    "2"),
+                set_value(
+                    "input.sketch.bspline.decrease-knot-multiplicity."
+                    "maximum-deviation",
+                    "0.001 mm"),
+            ]),
+            ("sketch.bspline.pole-weight", [
+                set_value("input.sketch.bspline.pole-weight.pole", "2"),
+                set_value("input.sketch.bspline.pole-weight.weight", "1.5"),
+            ]),
+        ]
+
         def preview_scenario(name: str, operations: list[dict[str, object]],
                              measurement_count: int,
                              action: str = "pointerHover",
@@ -552,6 +644,528 @@ def scenarios(mode: str) -> list[dict[str, object]]:
                  drag([0.37, 0.58], [0.48, 0.40]),
                  hover([0.48, 0.40], [0.61, 0.56], True)],
                 1),
+            {
+                "name": "proof-sketch-bspline-create",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, *bspline,
+                    invoke("inspector.tab.source"),
+                ],
+                "required": ["sketch.solve.state",
+                             "entity.sketch.bspline.1",
+                             "inspector.source.editor"],
+                "expected_values": {"viewport.state": "current"},
+                "expected_source_contains": "bspline(",
+                "action_evidence": [{
+                    "semantic_id": "inspector.apply", "action": "invoke",
+                    "state_after_dispatch": "pending",
+                    "settled_state": "none",
+                    "max_first_presented_ms": 100,
+                    "max_current_scene_ms": 350,
+                    "max_settled_ms": 450,
+                    "require_native_scene": True,
+                }],
+                "revision_evidence": [{
+                    "semantic_id": "inspector.apply", "action": "invoke",
+                    "reference_semantic_id":
+                        "command.sketch.bspline.control-points",
+                    "reference_action": "invoke", "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-bspline-control-polygon",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, *bspline,
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.bspline.1"},
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.control-polygon"),
+                ],
+                "required": [
+                    "sketch.solve.state",
+                    "entity.sketch.bspline.1",
+                    "command.sketch.bspline.control-polygon",
+                    "input.selection.degree",
+                ],
+                "expected_values": {
+                    "viewport.state": "current",
+                    "command.sketch.bspline.control-polygon": "selected",
+                    "input.selection.degree": "3",
+                },
+                "action_evidence": [{
+                    "semantic_id":
+                        "command.sketch.bspline.control-polygon",
+                    "action": "invoke",
+                    "state_after_dispatch": "none",
+                    "settled_state": "none",
+                    "max_first_presented_ms": 100,
+                    "max_current_scene_ms": 250,
+                    "max_settled_ms": 350,
+                    "require_native_scene": True,
+                }],
+                "revision_evidence": [{
+                    "semantic_id":
+                        "command.sketch.bspline.control-polygon",
+                    "action": "invoke",
+                    "reference_semantic_id": "inspector.apply",
+                    "reference_action": "invoke",
+                    "relation": "same",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-bspline-curvature-comb",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, *bspline,
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.bspline.1"},
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.curvature-comb"),
+                ],
+                "required": [
+                    "sketch.solve.state",
+                    "entity.sketch.bspline.1",
+                    "command.sketch.bspline.curvature-comb",
+                    "input.selection.degree",
+                ],
+                "expected_values": {
+                    "viewport.state": "current",
+                    "command.sketch.bspline.curvature-comb": "selected",
+                    "input.selection.degree": "3",
+                },
+                "action_evidence": [{
+                    "semantic_id":
+                        "command.sketch.bspline.curvature-comb",
+                    "action": "invoke",
+                    "state_after_dispatch": "none",
+                    "settled_state": "none",
+                    "max_first_presented_ms": 100,
+                    "max_current_scene_ms": 250,
+                    "max_settled_ms": 350,
+                    "require_native_scene": True,
+                }],
+                "revision_evidence": [{
+                    "semantic_id":
+                        "command.sketch.bspline.curvature-comb",
+                    "action": "invoke",
+                    "reference_semantic_id": "inspector.apply",
+                    "reference_action": "invoke",
+                    "relation": "same",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-bspline-labels",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, *bspline,
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.bspline.1"},
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.control-polygon"),
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.degree-labels"),
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.knot-labels"),
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.weight-labels"),
+                ],
+                "required": [
+                    "entity.sketch.bspline.1",
+                    "command.sketch.bspline.control-polygon",
+                    "command.sketch.bspline.degree-labels",
+                    "command.sketch.bspline.knot-labels",
+                    "command.sketch.bspline.weight-labels",
+                ],
+                "expected_values": {
+                    "viewport.state": "current",
+                    "command.sketch.bspline.control-polygon": "selected",
+                    "command.sketch.bspline.degree-labels": "selected",
+                    "command.sketch.bspline.knot-labels": "selected",
+                    "command.sketch.bspline.weight-labels": "selected",
+                },
+                "action_evidence": [
+                    {
+                        "semantic_id": command,
+                        "action": "invoke",
+                        "state_after_dispatch": "none",
+                        "settled_state": "none",
+                        "max_first_presented_ms": 100,
+                        "max_current_scene_ms": 250,
+                        "max_settled_ms": 350,
+                        "require_native_scene": True,
+                    }
+                    for command in (
+                        "command.sketch.bspline.degree-labels",
+                        "command.sketch.bspline.knot-labels",
+                        "command.sketch.bspline.weight-labels",
+                    )
+                ],
+                "revision_evidence": [
+                    {
+                        "semantic_id": command,
+                        "action": "invoke",
+                        "reference_semantic_id": "inspector.apply",
+                        "reference_action": "invoke",
+                        "relation": "same",
+                    }
+                    for command in (
+                        "command.sketch.bspline.degree-labels",
+                        "command.sketch.bspline.knot-labels",
+                        "command.sketch.bspline.weight-labels",
+                    )
+                ],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-bspline-edit",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, *bspline,
+                    *(
+                        operation
+                        for command, fields in bspline_edits
+                        for operation in edit_bspline(command, fields)
+                    ),
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.bspline.1"},
+                ],
+                "required": ["sketch.solve.state",
+                             "entity.sketch.bspline.1",
+                             "input.selection.degree",
+                             "input.selection.control-points",
+                             "input.selection.weights"],
+                "expected_values": {
+                    "viewport.state": "current",
+                    "input.selection.degree": "3",
+                    "input.selection.control-points": "5",
+                    "input.selection.weights": "Rational",
+                },
+                "action_evidence": [
+                    {
+                        "semantic_id": "inspector.apply",
+                        "action": "invoke",
+                        "occurrence": occurrence,
+                        "state_after_dispatch": "pending",
+                        "settled_state": "none",
+                        "max_first_presented_ms": 100,
+                        "max_current_scene_ms": 350,
+                        "max_settled_ms": 450,
+                        "require_native_scene": True,
+                    }
+                    for occurrence in range(2, 8)
+                ],
+                "revision_evidence": [
+                    {
+                        "semantic_id": "inspector.apply",
+                        "action": "invoke",
+                        "occurrence": occurrence,
+                        "reference_semantic_id": "inspector.apply",
+                        "reference_action": "invoke",
+                        "reference_occurrence": occurrence - 1,
+                        "relation": "different",
+                    }
+                    for occurrence in range(2, 8)
+                ],
+                "width": 1440, "height": 900,
+            },
+        ])
+
+        rectangle = [
+            invoke("command.sketch.rectangle"),
+            drag([0.42, 0.43], [0.58, 0.57]),
+            {"action": "select",
+             "semantic_id": "entity.sketch.rectangle.1"},
+            invoke("command-menu.sketch.modify"),
+        ]
+
+        def rectangle_modification(
+            name: str, command: str, picks: list[list[float]],
+            result_id: str, fields: list[dict[str, object]],
+        ) -> dict[str, object]:
+            return {
+                "name": f"proof-sketch-modify-{name}",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, *rectangle, invoke(command), *fields,
+                    *(click(position) for position in picks),
+                    invoke("inspector.apply"),
+                ],
+                "required": [
+                    "sketch.solve.state",
+                    result_id,
+                    *(
+                        ["entity.sketch.curve-group.1"]
+                        if name in {"fillet", "chamfer"}
+                        else []
+                    ),
+                ],
+                "expected_values": {"viewport.state": "current"},
+                "revision_evidence": [{
+                    "semantic_id": "inspector.apply", "action": "invoke",
+                    "reference_semantic_id": "viewport.primary",
+                    "reference_action": "pointerDrag",
+                    "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            }
+
+        def detach(command: str) -> dict[str, object]:
+            return {
+                "action": "choose",
+                "semantic_id": f"input.{command}.external-constraints",
+                "value": "detach",
+            }
+
+        def size(command: str) -> dict[str, object]:
+            return {
+                "action": "setValue",
+                "semantic_id": f"input.{command}.size",
+                "value": "5 mm",
+            }
+        proofs.extend([
+            rectangle_modification(
+                "fillet", "command.sketch.fillet",
+                [[0.52, 0.58], [0.57, 0.52]],
+                "entity.sketch.fillet.1",
+                [size("sketch.fillet"), detach("sketch.fillet")]),
+            rectangle_modification(
+                "chamfer", "command.sketch.chamfer",
+                [[0.52, 0.58], [0.57, 0.52]],
+                "entity.sketch.chamfer.1",
+                [size("sketch.chamfer"), detach("sketch.chamfer")]),
+            rectangle_modification(
+                "offset", "command.sketch.offset", [[0.57, 0.50]],
+                "entity.sketch.offset.1",
+                [{"action": "setValue",
+                  "semantic_id": "input.sketch.offset.distance",
+                  "value": "5 mm"}]),
+            {
+                "name": "proof-sketch-modify-extend",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create, invoke("command.sketch.line"),
+                    drag([0.42, 0.56], [0.56, 0.44]),
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.line.1"},
+                    invoke("command-menu.sketch.modify"),
+                    invoke("command.sketch.extend"),
+                    click([0.54, 0.46]), click([0.68, 0.34]),
+                    invoke("inspector.apply"),
+                ],
+                "required": ["sketch.solve.state", "entity.sketch.line.1"],
+                "expected_values": {"viewport.state": "current"},
+                "revision_evidence": [{
+                    "semantic_id": "inspector.apply", "action": "invoke",
+                    "reference_semantic_id": "viewport.primary",
+                    "reference_action": "pointerDrag",
+                    "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-modify-trim",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create,
+                    invoke("command.sketch.line"),
+                    drag([0.36, 0.50], [0.64, 0.50]),
+                    invoke("command.sketch.line"),
+                    drag([0.45, 0.38], [0.45, 0.62]),
+                    invoke("command.sketch.line"),
+                    drag([0.55, 0.38], [0.55, 0.62]),
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.line.1"},
+                    invoke("command-menu.sketch.modify"),
+                    invoke("command.sketch.trim"),
+                    hover([0.40, 0.50], [0.50, 0.50], True),
+                    click([0.50, 0.50]),
+                ],
+                "required": ["sketch.solve.state",
+                             "entity.sketch.curve-group.1"],
+                "expected_values": {"viewport.state": "current",
+                                    "sketch.canvas": "sketch.trim:0",
+                                    "command.draft.state": "editing"},
+                "action_evidence": [
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerHover",
+                     "settled_state": "editing",
+                     "max_pointer_move_p95_ms": 50.0,
+                     "require_pointer_move_hover": True,
+                     "require_preview_frame": True,
+                     "require_preview_image": True,
+                     "require_native_scene": True},
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerClick",
+                     "state_after_dispatch": "pending",
+                     "settled_state": "editing",
+                     "max_first_presented_ms": 100,
+                     "max_settled_ms": 300,
+                     "require_native_scene": True},
+                ],
+                "revision_evidence": [{
+                    "semantic_id": "viewport.primary",
+                    "action": "pointerClick",
+                    "reference_semantic_id": "viewport.primary",
+                    "reference_action": "pointerHover",
+                    "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-modify-split",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create,
+                    invoke("command.sketch.line"),
+                    drag([0.36, 0.50], [0.64, 0.50]),
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.line.1"},
+                    invoke("command-menu.sketch.modify"),
+                    invoke("command.sketch.split"),
+                    hover([0.44, 0.50], [0.52, 0.50], True),
+                    click([0.52, 0.50]),
+                ],
+                "required": ["sketch.solve.state",
+                             "entity.sketch.curve-group.1"],
+                "expected_values": {"viewport.state": "current",
+                                    "sketch.canvas": "sketch.split:0",
+                                    "command.draft.state": "editing"},
+                "action_evidence": [
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerHover",
+                     "settled_state": "editing",
+                     "max_pointer_move_p95_ms": 50.0,
+                     "require_pointer_move_hover": True,
+                     "require_preview_frame": True,
+                     "require_preview_image": True,
+                     "require_native_scene": True},
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerClick",
+                     "state_after_dispatch": "pending",
+                     "settled_state": "editing",
+                     "max_first_presented_ms": 100,
+                     "max_settled_ms": 300,
+                     "require_native_scene": True},
+                ],
+                "revision_evidence": [{
+                    "semantic_id": "viewport.primary",
+                    "action": "pointerClick",
+                    "reference_semantic_id": "viewport.primary",
+                    "reference_action": "pointerHover",
+                    "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-modify-join",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create,
+                    invoke("command.sketch.line"),
+                    drag([0.42, 0.53], [0.52, 0.47]),
+                    invoke("command.sketch.line"),
+                    drag([0.52, 0.47], [0.62, 0.41]),
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.line.1"},
+                    invoke("command-menu.sketch.modify"),
+                    invoke("command.sketch.join"),
+                    hover([0.49, 0.49], [0.52, 0.47], True),
+                    click([0.52, 0.47]),
+                ],
+                "required": ["sketch.solve.state",
+                             "entity.sketch.joined-curve.1"],
+                "expected_values": {"viewport.state": "current",
+                                    "sketch.canvas": "sketch.join:0",
+                                    "command.draft.state": "editing"},
+                "action_evidence": [
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerHover",
+                     "settled_state": "editing",
+                     "max_pointer_move_p95_ms": 50.0,
+                     "require_pointer_move_hover": True,
+                     "require_preview_image": True,
+                     "require_native_scene": True},
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerClick",
+                     "state_after_dispatch": "pending",
+                     "settled_state": "editing",
+                     "max_first_presented_ms": 100,
+                     "max_settled_ms": 300,
+                     "require_native_scene": True},
+                ],
+                "revision_evidence": [{
+                    "semantic_id": "viewport.primary",
+                    "action": "pointerClick",
+                    "reference_semantic_id": "viewport.primary",
+                    "reference_action": "pointerHover",
+                    "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            },
+            {
+                "name": "proof-sketch-convert-to-nurbs",
+                "surface": "editor", "workspace": "sketch",
+                "initial_workspace": "model", "design_engine": True,
+                "operations": [
+                    *create,
+                    invoke("command.sketch.circle"),
+                    drag([0.50, 0.50], [0.62, 0.50]),
+                    {"action": "select",
+                     "semantic_id": "entity.sketch.circle.1"},
+                    invoke("command-menu.sketch.spline-edit"),
+                    invoke("command.sketch.bspline.convert-to-nurbs"),
+                    hover([0.42, 0.42], [0.50, 0.365], True),
+                    click([0.50, 0.365]),
+                    invoke("inspector.tab.source"),
+                ],
+                "required": ["sketch.solve.state",
+                             "entity.sketch.bspline.1",
+                             "inspector.source.editor"],
+                "expected_values": {
+                    "viewport.state": "current",
+                    "sketch.canvas": "sketch.bspline.convert-to-nurbs:0",
+                },
+                "expected_source_contains": "bspline_object(",
+                "action_evidence": [
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerHover",
+                     "settled_state": "editing",
+                     "max_pointer_move_p95_ms": 60.0,
+                     "require_pointer_move_hover": True,
+                     "require_preview_image": True,
+                     "require_native_scene": True},
+                    {"semantic_id": "viewport.primary",
+                     "action": "pointerClick",
+                     "state_after_dispatch": "pending",
+                     "settled_state": "editing",
+                     "max_first_presented_ms": 100,
+                     "max_current_scene_ms": 350,
+                     "max_settled_ms": 450,
+                     "require_native_scene": True},
+                ],
+                "revision_evidence": [{
+                    "semantic_id": "viewport.primary",
+                    "action": "pointerClick",
+                    "reference_semantic_id": "viewport.primary",
+                    "reference_action": "pointerHover",
+                    "relation": "different",
+                }],
+                "width": 1440, "height": 900,
+            },
         ])
         return proofs
     result = [
@@ -559,6 +1173,18 @@ def scenarios(mode: str) -> list[dict[str, object]]:
          "actions": [action], "width": 1440, "height": 900}
         for surface, (initial, action) in ROUTE_ACTIONS.items()
     ]
+    result.append(
+        {"name": "route-editor-projects-round-trip", "surface": "editor",
+         "design_engine": True,
+         "operations": [
+             {"action": "invoke", "semantic_id": "navigation.projects"},
+             {"action": "invoke", "semantic_id": "navigation.editor"},
+         ],
+         "required": ["viewport.primary", "navigation.projects",
+                      "navigation.editor"],
+         "expected_values": {"viewport.state": "current"},
+         "width": 1440, "height": 900}
+    )
     result.extend(
         {"name": f"workspace-{workspace}", "surface": "editor", "workspace": workspace,
          "initial_workspace": "model", "actions": [f"workspace.{workspace}"],
@@ -1087,7 +1713,7 @@ class VirtualDisplay:
 
 
 def launch(executable: Path, scenario: dict[str, object], output: Path,
-           display: str | None) -> None:
+           display: str | None, graphics: str) -> None:
     width = int(scenario["width"])
     height = int(scenario["height"])
     command = [
@@ -1118,8 +1744,17 @@ def launch(executable: Path, scenario: dict[str, object], output: Path,
     environment["XDG_CACHE_HOME"] = str(profile / "cache")
     environment.setdefault("QT_QUICK_BACKEND", "rhi")
     if sys.platform.startswith("linux"):
-        environment.setdefault("QSG_RHI_BACKEND", "opengl")
-        environment.setdefault("LIBGL_ALWAYS_SOFTWARE", "1")
+        if graphics == "software-opengl":
+            environment["QSG_RHI_BACKEND"] = "opengl"
+            environment["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        elif graphics == "vulkan":
+            environment["QSG_RHI_BACKEND"] = "vulkan"
+            environment.pop("LIBGL_ALWAYS_SOFTWARE", None)
+            environment.setdefault("QT_VK_PHYSICAL_DEVICE_INDEX", "0")
+    elif graphics != "platform":
+        raise RuntimeError(
+            f"the {graphics} observation backend is only available on Linux"
+        )
     if display:
         environment["DISPLAY"] = display
     elif sys.platform.startswith("linux") and "DISPLAY" not in environment:
@@ -1267,7 +1902,8 @@ def bounds_overlap(left: list[object], right: list[object]) -> bool:
                                            right_y + right_height))
 
 
-def validate(output: Path, scenario: dict[str, object]) -> list[str]:
+def validate(output: Path, scenario: dict[str, object],
+             graphics: str) -> list[str]:
     failures: list[str] = []
     image_path = output / "application-session.png"
     metadata_path = output / "capture.json"
@@ -1295,6 +1931,14 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
     semantic_schema, capture_schema = protocol_schemas()
     if metadata.get("schema") != capture_schema:
         failures.append("capture schema mismatch")
+    expected_graphics = {
+        "software-opengl": "opengl", "vulkan": "vulkan"
+    }.get(graphics)
+    if (expected_graphics is not None
+            and metadata.get("graphics_api") != expected_graphics):
+        failures.append(
+            f"graphics API is {metadata.get('graphics_api')}, expected {expected_graphics}"
+        )
     if semantic.get("schema") != semantic_schema:
         failures.append("semantic schema mismatch")
     if metadata.get("target") != "ApplicationSession" or metadata.get("surface_count", 0) < 1:
@@ -1392,7 +2036,10 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
                         or not isinstance(frame, int) or frame <= prior_move_frame
                         or not isinstance(latency_ms, (int, float))
                         or not math.isfinite(latency_ms) or latency_ms < 0
-                        or not isinstance(move_frame.get("preview_visible"), bool)):
+                        or not isinstance(move_frame.get("preview_visible"), bool)
+                        or not isinstance(
+                            move_frame.get("preview_generation"), int)
+                        or move_frame.get("preview_generation", -1) < 0):
                     failures.append(
                         "pointer motion presented-move evidence is invalid")
                     break
@@ -1438,6 +2085,11 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
         if (receipt.get("settled_ms", math.inf)
                 > evidence.get("max_settled_ms", math.inf)):
             failures.append(f"{evidence['semantic_id']}: settlement exceeded budget")
+        if (receipt.get("current_scene_ms", math.inf)
+                > evidence.get("max_current_scene_ms", math.inf)):
+            failures.append(
+                f"{evidence['semantic_id']}: current native scene exceeded budget"
+            )
         if (receipt.get("settled_after_input_ms", math.inf)
                 > evidence.get("max_settled_after_input_ms", math.inf)):
             failures.append(
@@ -1471,6 +2123,15 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
                     or not all(visible_moves[first_visible:])):
                 failures.append(
                     f"{evidence['semantic_id']}: pointer preview did not remain visible"
+                )
+            visible_generations = [
+                move.get("preview_generation")
+                for move in move_frames
+                if move.get("preview_visible") is True
+            ]
+            if len(set(visible_generations)) < 2:
+                failures.append(
+                    f"{evidence['semantic_id']}: pointer preview geometry did not update"
                 )
         if (evidence.get("forbid_pointer_move_preview")
                 and any(move.get("preview_visible") is True
@@ -1633,6 +2294,13 @@ def validate(output: Path, scenario: dict[str, object]) -> list[str]:
                 or not source_snapshot.get("path")
                 or not source_snapshot.get("revision")):
             failures.append("canonical source snapshot differs from scenario")
+    if scenario.get("expected_sketch_selection") == "point":
+        selection = semantic.get("sketch_selection")
+        if (not isinstance(selection, list) or len(selection) != 1
+                or not isinstance(selection[0], dict)
+                or not selection[0].get("entity_id")
+                or not selection[0].get("point_key")):
+            failures.append("captured Sketch point selection is missing")
     nodes = semantic.get("nodes")
     if not isinstance(nodes, list) or not nodes:
         return [*failures, "semantic snapshot has no nodes"]
@@ -1801,6 +2469,11 @@ def main() -> int:
         "--scenario", action="append", metavar="GLOB",
         help="Run only scenario names matching this repeatable glob.",
     )
+    parser.add_argument(
+        "--graphics", choices=("platform", "software-opengl", "vulkan"),
+        default="software-opengl" if sys.platform.startswith("linux") else "platform",
+        help="Select the deterministic Linux graphics backend.",
+    )
     arguments = parser.parse_args()
     executable = arguments.executable.resolve()
     if not executable.is_file():
@@ -1835,8 +2508,9 @@ def main() -> int:
             output = root / name
             output.mkdir()
             try:
-                launch(executable, scenario, output, display)
-                failures = validate(output, scenario)
+                launch(executable, scenario, output, display,
+                       arguments.graphics)
+                failures = validate(output, scenario, arguments.graphics)
             except (OSError, subprocess.SubprocessError, RuntimeError) as error:
                 failures = [str(error)]
             outcomes.append((index, name, failures))

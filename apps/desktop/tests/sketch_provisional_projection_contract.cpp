@@ -341,6 +341,34 @@ void verifyToolCatalogAndGeneratedGestures(
         require(native && *native &&
                     (*native)->primitives().size() == complete->size(),
                 "catalog gesture did not reach native provisional geometry");
+        if (isLocalSketchBSpline(definition.kind)) {
+          const SketchPrimitiveProjection &curve = complete->front();
+          const PackedSketchProvisionalPrimitive &packed =
+              (*native)->primitives().front();
+          require(curve.kind == ui::SketchPrimitiveKind::BSpline &&
+                      packed.kind == render::SketchPrimitiveKind::BSpline &&
+                      packed.pointCount == 0U && packed.spline == 0U &&
+                      (*native)->splines().size() == 1U,
+                  "B-spline preview was not retained as one native curve");
+          const PackedSketchSpline spline = (*native)->splines().front();
+          require(spline.controlPointCount == curve.points.size() &&
+                      spline.degree == curve.splineDegree &&
+                      spline.periodic == curve.splinePeriodic &&
+                      std::ranges::equal((*native)->splineKnots(),
+                                         curve.splineKnots) &&
+                      std::ranges::equal((*native)->splineWeights(),
+                                         curve.splineWeights),
+                  "B-spline preview lost its native definition");
+          const auto coordinates =
+              (*native)->splineControlPointCoordinates();
+          require(coordinates.size() == curve.points.size() * 2U,
+                  "B-spline preview lost control coordinates");
+          for (std::size_t point = 0U; point < curve.points.size(); ++point)
+            require(coordinates[point * 2U] == curve.points[point].xMetres &&
+                        coordinates[point * 2U + 1U] ==
+                            curve.points[point].yMetres,
+                    "B-spline preview changed a control coordinate");
+        }
       });
 }
 

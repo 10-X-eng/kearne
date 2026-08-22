@@ -325,6 +325,7 @@ enum class SketchObjectKind : std::uint8_t {
   Chamfer = 17,
   Offset = 18,
   JoinedCurve = 19,
+  CurveGroup = 20,
 };
 
 struct SketchObjectMember {
@@ -427,6 +428,11 @@ constraintEntityIds(const Constraint &constraint);
 [[nodiscard]] Result<Point2> resolvePoint(const Definition &definition,
                                           PointRef reference);
 [[nodiscard]] std::size_t closedProfileCount(const Definition &definition);
+[[nodiscard]] Result<void>
+validate(const Entity &entity, const NumericalProfile &profile = {});
+[[nodiscard]] Result<void>
+validateConstraint(const Definition &definition, const Constraint &constraint,
+                   const NumericalProfile &profile = {});
 [[nodiscard]] Result<void> validate(const Definition &definition,
                                     const NumericalProfile &profile);
 [[nodiscard]] Result<std::vector<ConstraintResidual>>

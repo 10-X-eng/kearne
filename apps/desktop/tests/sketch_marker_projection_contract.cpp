@@ -240,6 +240,26 @@ MarkerInput categoryFixture(const SketchSceneSnapshot &base) {
       SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{-0.0, -0.02}}}};
   input.add(30U, SketchMarkerKind::TranslationDegreeOfFreedom, 0.0,
             freedomAnchors);
+  const std::array controlSegmentAnchors{
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{-0.02, 0.01}}},
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.03, 0.04}}}};
+  input.add(60U, SketchMarkerKind::SplineControlSegment, 0.0,
+            controlSegmentAnchors);
+  const std::array controlPoleAnchors{
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.03, 0.04}}}};
+  input.add(70U, SketchMarkerKind::SplineControlPole, 0.0,
+            controlPoleAnchors);
+  const std::array curvatureAnchors{
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{-0.01, 0.0}}},
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{-0.01, 0.03}}}};
+  input.add(80U, SketchMarkerKind::SplineCurvatureSegment, 0.0,
+            curvatureAnchors);
+  const std::array labelAnchor{
+      SketchMarkerAnchor{SketchCanonicalMarkerAnchor{{0.0, 0.02}}}};
+  input.add(90U, SketchMarkerKind::SplineDegreeLabel, 3.0, labelAnchor);
+  input.add(100U, SketchMarkerKind::SplineKnotMultiplicityLabel, 4.0,
+            labelAnchor);
+  input.add(110U, SketchMarkerKind::SplinePoleWeightLabel, 1.5, labelAnchor);
   return input;
 }
 
@@ -317,12 +337,12 @@ void verifyCategoriesAnchorsAndOrder() {
   require(std::ranges::is_sorted((*prepared)->markers(), {},
                                  &SketchMarkerRenderRecord::handle) &&
               (*prepared)->markers().front().handle.value() == 10U &&
-              (*prepared)->markers().back().handle.value() == 50U &&
+              (*prepared)->markers().back().handle.value() == 110U &&
               baseScene->points().data() == basePoints &&
               draft->primitives().data() == draftPrimitives,
           "marker projection changed deterministic order or source geometry");
 
-  std::array<bool, 5> categories{};
+  std::array<bool, 8> categories{};
   for (const SketchMarkerRenderRecord &marker : (*prepared)->markers())
     categories[static_cast<std::size_t>(marker.category) - 1U] = true;
   require(std::ranges::all_of(categories, [](bool present) { return present; }),

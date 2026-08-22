@@ -6,9 +6,11 @@
 #include <kearne/base/value.hpp>
 
 #include <QObject>
+#include <QPointF>
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -16,12 +18,14 @@
 #include <vector>
 
 class QQuickItem;
+class QQuickWindow;
 
 namespace kearne::ui {
 
 class UiSession;
 struct SketchPickSelection;
 struct SketchPrimitiveProjection;
+struct SketchSelectionScope;
 
 // Publishes the frontend's immutable Sketch scene to one native Quick item.
 // Geometry preparation stays off the UI thread; the bridge only validates and
@@ -52,7 +56,9 @@ private:
   [[nodiscard]] Result<void> publishCamera();
   [[nodiscard]] Result<void>
   publishOverlay(std::optional<std::pair<QString, QString>> hover,
-                 std::span<const QString> selected);
+                 std::span<const SketchSelectionScope> selected);
+  void subscribeToWindow(QQuickWindow *window);
+  void repickHoverAfterPresentedFrame();
   void synchronizeGeometry();
   void record(Result<void> result);
 
@@ -65,17 +71,25 @@ private:
   std::shared_ptr<const render::SketchSceneSnapshot> publishedScene_;
   std::shared_ptr<const render::SketchPresentationOverlay> overlay_;
   std::shared_ptr<const render::SketchProvisionalGeometry> provisional_;
+  std::shared_ptr<const render::SketchMarkerPacket> markers_;
   std::array<render::SketchOverlayRoleSetPtr, 4> overlayRoleSets_;
   std::optional<std::pair<QString, QString>> hovered_;
-  std::vector<QString> selected_;
+  std::optional<QPointF> lastPickItemPoint_;
+  std::optional<QPointF> lastHoverItemPoint_;
+  std::optional<SketchProductStamp> requestedProducts_;
+  std::vector<SketchSelectionScope> selected_;
   std::vector<SketchPrimitiveProjection> publishedDraft_;
   QString provisionalCommand_;
   std::uint64_t toolInstanceGeneration_ = 0U;
   std::uint64_t provisionalGeneration_ = 0U;
   std::uint64_t productGeneration_ = 0U;
   std::uint64_t presentationGeneration_ = 0U;
+  std::uint64_t markerGeneration_ = 0U;
+  QMetaObject::Connection frameSwappedConnection_;
   Diagnostic lastDiagnostic_;
+  bool hoverRepickPending_ = false;
   bool presentationPublished_ = false;
+  std::uint8_t splineAnnotationsPublished_ = 0U;
   bool stopped_ = false;
 };
 

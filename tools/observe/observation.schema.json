@@ -66,12 +66,16 @@
     },
     "pointerMoveFrame": {
       "type": "object",
-      "required": ["move", "frame", "latency_ms", "preview_visible"],
+      "required": [
+        "move", "frame", "latency_ms", "preview_visible",
+        "preview_generation"
+      ],
       "properties": {
         "move": { "type": "integer", "minimum": 1 },
         "frame": { "type": "integer", "minimum": 1 },
         "latency_ms": { "type": "number", "minimum": 0 },
         "preview_visible": { "type": "boolean" },
+        "preview_generation": { "type": "integer", "minimum": 0 },
         "hovered_entity": { "type": "string" },
         "hovered_point": { "type": "string" }
       },
@@ -214,6 +218,7 @@
       "type": "object",
       "required": [
         "schema", "application_version", "build_type", "session_id", "qt_version", "platform",
+        "graphics_api",
         "locale", "theme_id", "theme_selection", "captured_at", "capture_method", "target",
         "scope", "surface_count", "ui_generation", "project_revision",
         "presented_frames", "actions", "image", "semantic_snapshot"
@@ -225,6 +230,9 @@
         "session_id": { "type": "string", "minLength": 1 },
         "qt_version": { "type": "string", "minLength": 1 },
         "platform": { "type": "string", "minLength": 1 },
+        "graphics_api": {
+          "enum": ["software", "openvg", "opengl", "d3d11", "vulkan", "metal", "null", "d3d12", "unknown"]
+        },
         "locale": { "type": "string", "minLength": 1 },
         "theme_id": { "type": "string", "minLength": 1 },
         "theme_selection": { "type": "string", "minLength": 1 },

@@ -564,49 +564,35 @@ projectLocalSketchToolGesture(const LocalSketchToolGesture &gesture,
         gesture.degree, isLocalSketchPeriodicBSpline(gesture.kind));
     if (!geometry)
       return std::unexpected(std::move(geometry.error()));
-    std::vector<double> controlCoordinates;
     std::vector<double> knots;
     std::vector<double> weights;
-    controlCoordinates.reserve(geometry->controlPoints.size() * 2U);
     knots.reserve(geometry->knots.size());
     weights.reserve(geometry->weights.size());
-    for (const sketch::Point2 &control : geometry->controlPoints) {
-      controlCoordinates.push_back(control.x.si());
-      controlCoordinates.push_back(control.y.si());
-    }
     for (const sketch::DimensionlessValue knot : geometry->knots)
       knots.push_back(knot.si());
     for (const sketch::DimensionlessValue weight : geometry->weights)
       weights.push_back(weight.si());
-    double minimumX = points.front().xMetres;
-    double minimumY = points.front().yMetres;
-    double maximumX = minimumX;
-    double maximumY = minimumY;
-    for (const PlanePoint point : points) {
-      minimumX = std::min(minimumX, point.xMetres);
-      minimumY = std::min(minimumY, point.yMetres);
-      maximumX = std::max(maximumX, point.xMetres);
-      maximumY = std::max(maximumY, point.yMetres);
-    }
-    const double previewTolerance = std::max(
-        1.0e-9, std::hypot(maximumX - minimumX, maximumY - minimumY) * 1.0e-4);
-    auto polyline = sketch::tessellateNurbs(
-        {controlCoordinates, knots, weights, geometry->degree},
-        previewTolerance, 4'096U);
-    if (!polyline)
-      return std::unexpected(std::move(polyline.error()));
-
     std::vector<SketchPrimitiveProjection> result;
-    result.reserve(polyline->points.size() + points.size() * 2U);
-    for (std::size_t index = 1U; index < polyline->points.size(); ++index) {
-      const sketch::NurbsPoint first = polyline->points[index - 1U];
-      const sketch::NurbsPoint second = polyline->points[index];
-      auto segment =
-          linePrimitive({first.x, first.y}, {second.x, second.y},
-                        static_cast<int>(index - 1U), gesture.construction);
-      segment.id = QStringLiteral("draft.curve.%1").arg(index - 1U);
-      result.push_back(std::move(segment));
+    result.reserve(1U + points.size() * 2U);
+    SketchPrimitiveProjection curve;
+    curve.id = QStringLiteral("draft.curve");
+    curve.kind = SketchPrimitiveKind::BSpline;
+    curve.points.reserve(geometry->controlPoints.size());
+    curve.pointKeys.reserve(geometry->controlPoints.size());
+    for (std::size_t index = 0U; index < geometry->controlPoints.size();
+         ++index) {
+      const sketch::Point2 &control = geometry->controlPoints[index];
+      curve.points.push_back({control.x.si(), control.y.si()});
+      curve.pointKeys.push_back(
+          QStringLiteral("control.%1").arg(index + 1U));
     }
+    curve.splineKnots = std::move(knots);
+    curve.splineWeights = std::move(weights);
+    curve.splineDegree = geometry->degree;
+    curve.splinePeriodic = isLocalSketchPeriodicBSpline(gesture.kind);
+    curve.construction = gesture.construction;
+    curve.draft = true;
+    result.push_back(std::move(curve));
 
     const bool interpolated = isLocalSketchInterpolatedBSpline(gesture.kind);
     if (!interpolated) {

@@ -33,7 +33,7 @@ Item {
                ? parent.width - menuButton.width : parent.width
         semanticId: "command." + root.primaryCommand.id
         semanticName: root.primaryCommand.label + " · " + root.label
-        semanticValue: root.primaryCommand.shortcut
+        semanticValue: checked ? "selected" : root.primaryCommand.shortcut
         iconName: root.primaryCommand.icon
         iconAbove: true
         iconSize: 19
@@ -41,7 +41,8 @@ Item {
         compact: true
         quiet: true
         checkable: true
-        checked: App.ui.activeCommandId === root.primaryCommand.id
+        checked: root.primaryCommand.checked
+                 || App.ui.activeCommandId === root.primaryCommand.id
         text: root.label
         onClicked: App.ui.requestCommand(root.primaryCommand.id)
     }
@@ -104,12 +105,13 @@ Item {
                     width: familyMenu.availableWidth
                     semanticId: "command." + modelData.id
                     semanticName: modelData.label
-                    semanticValue: modelData.shortcut
+                    semanticValue: checked ? "selected" : modelData.shortcut
                     iconName: modelData.icon
                     shortcut: modelData.shortcut
                     quiet: true
                     checkable: true
-                    checked: App.ui.activeCommandId === modelData.id
+                    checked: modelData.checked
+                             || App.ui.activeCommandId === modelData.id
                     text: modelData.label
                     onClicked: {
                         familyMenu.close()

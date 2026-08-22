@@ -36,6 +36,7 @@ public:
 
   [[nodiscard]] bool visible() const { return visible_; }
   [[nodiscard]] bool construction() const { return construction_; }
+  [[nodiscard]] std::uint64_t generation() const { return generation_; }
   [[nodiscard]] std::span<const SketchPrimitiveProjection> primitives() const {
     return primitives_;
   }
@@ -63,6 +64,7 @@ private:
   std::vector<QPointF> inputPoints_;
   std::vector<SketchPrimitiveProjection> primitives_;
   std::vector<SketchPreviewMeasurement> measurements_;
+  std::uint64_t generation_ = 0U;
   bool visible_ = false;
   bool construction_ = false;
 };

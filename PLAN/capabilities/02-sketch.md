@@ -27,6 +27,8 @@ Generated operation, point, line, circle, arc, and constraint declarations carry
 
 The graphical editor transforms a recognized concrete syntax structure against an expected source digest. It preserves unrelated source or refuses. Operation objects, member entities, and constraints change atomically. The editor does not maintain a hidden sketch entity table or rewrite arbitrary Python with regular expressions.
 
+Topology edits constrain new endpoints to their cutting curves. Existing constraints that cannot be preserved are refused or removed only through an explicit command policy.
+
 ## 3. MVP geometry and constraints
 
 MVP geometry:
@@ -55,7 +57,7 @@ The authoritative [Sketch tool inventory](02-sketch-tool-inventory.md) is the en
 - projected/intersection geometry, linked sketch copy, sketch merge, whole-sketch mirror, attachment mapping, and reorientation;
 - coincident/point-on-object, horizontal, vertical, parallel, perpendicular, tangent, equal, symmetric, block, group, distance, horizontal/vertical distance, radius, diameter, angle, lock, and Snell constraints;
 - driving/reference and active/suppressed constraint conversion;
-- spline degree, knot multiplicity, knot insertion, pole weight, control polygon, curvature comb, and NURBS conversion;
+- spline degree, knot multiplicity, knot insertion, pole weight, control polygon, curvature comb, degree/knot/weight labels, and NURBS conversion;
 - DOF, associated-element, redundant, partially redundant, conflicting, and malformed-constraint inspection; validation, repair, virtual-space review, grid, and snap tools.
 
 Every row declares generated source shape, typed inputs, editable selections, solver/profile effects, topology-label behavior, refusal conditions, and conformance enrollment before the command is enabled. Tool grouping may differ from another CAD system; established pointer, keyboard, continuation, cancel, and selection behavior SHOULD remain familiar unless Kearne has a measured usability reason to differ.

@@ -488,6 +488,7 @@ class SketchObject:
     label: str
     kind: ObjectKind
     entities: tuple[str, ...]
+    roles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "id", validate_stable_id(self.id))
@@ -521,7 +522,7 @@ class SketchObject:
             "arc_slot": 4,
         }
         if (
-            self.kind not in {"polyline", "regular_polygon"}
+            self.kind not in {"polyline", "regular_polygon", "curve_group"}
             and self.kind not in member_counts
         ):
             raise SketchDefinitionError("sketch object kind is invalid")
@@ -530,9 +531,37 @@ class SketchObject:
             "entities",
             tuple(validate_stable_id(value) for value in self.entities),
         )
+        object.__setattr__(self, "roles", tuple(self.roles))
+        if self.kind == "curve_group":
+            if (
+                not self.entities
+                or len(self.roles) != len(self.entities)
+                or len(set(self.roles)) != len(self.roles)
+                or any(
+                    not isinstance(role, str)
+                    or not role
+                    or len(role.encode()) > 32
+                    or any(
+                        not (
+                            character.isascii()
+                            and (character.islower() or character.isdigit())
+                        )
+                        and character != "_"
+                        for character in role
+                    )
+                    for role in self.roles
+                )
+            ):
+                raise SketchDefinitionError("sketch curve-group members are invalid")
+        elif self.roles:
+            raise SketchDefinitionError("sketch object roles are inferred by kind")
         expected_count = member_counts.get(self.kind)
         if (
-            (expected_count is None and not self.entities)
+            (
+                self.kind != "curve_group"
+                and expected_count is None
+                and not self.entities
+            )
             or (self.kind == "regular_polygon" and len(self.entities) < 3)
             or (expected_count is not None and len(self.entities) != expected_count)
             or len(set(self.entities)) != len(self.entities)
@@ -683,6 +712,26 @@ def offset_object(id: str, label: str, curve: str, /) -> SketchObject:
 
 def joined_curve_object(id: str, label: str, curve: str, /) -> SketchObject:
     return SketchObject(id, label, "joined_curve", (curve,))
+
+
+def curve_group(
+    id: str, label: str, members: tuple[tuple[str, str], ...], /
+) -> SketchObject:
+    members = tuple(members)
+    if not members or any(
+        not isinstance(member, tuple)
+        or len(member) != 2
+        or not all(isinstance(value, str) for value in member)
+        for member in members
+    ):
+        raise SketchDefinitionError("sketch curve-group members are invalid")
+    return SketchObject(
+        id,
+        label,
+        "curve_group",
+        tuple(member[1] for member in members),
+        tuple(member[0] for member in members),
+    )
 
 
 def slot(
@@ -1092,6 +1141,16 @@ def validate_sketch_values(
         "chamfer": LineEntity,
         "offset": (LineEntity, CircleEntity, ArcEntity),
         "joined_curve": BSplineEntity,
+        "curve_group": (
+            LineEntity,
+            CircleEntity,
+            ArcEntity,
+            EllipseEntity,
+            EllipticalArcEntity,
+            HyperbolicArcEntity,
+            ParabolicArcEntity,
+            BSplineEntity,
+        ),
         "rectangle": LineEntity,
         "polyline": LineEntity,
         "regular_polygon": LineEntity,
@@ -1145,6 +1204,7 @@ __all__ = [
     "coincident",
     "collinear",
     "concentric",
+    "curve_group",
     "diameter",
     "distance",
     "ellipse",

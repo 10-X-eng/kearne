@@ -868,6 +868,11 @@ def _line_prefix(source: bytes, offset: int) -> bytes | None:
     return prefix if not prefix.strip() else None
 
 
+def _indented_continuations(call: bytes, indent: bytes, newline: bytes) -> bytes:
+    normalized = call.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return normalized.replace(b"\n", newline + indent)
+
+
 _Splice: TypeAlias = tuple[int, int, bytes]
 
 
@@ -883,7 +888,7 @@ def _append_edits(
     section: _ParsedSection,
     spans: Sequence[_Span],
     call: bytes,
-) -> tuple[list[_Splice], int]:
+) -> tuple[list[_Splice], _Span]:
     close_line = _line_start(source, section.close)
     close_indent = _line_prefix(source, section.close)
     multiline = close_line > section.span.start and close_indent is not None
@@ -905,14 +910,16 @@ def _append_edits(
             if close_line >= 2 and source[close_line - 2 : close_line] == b"\r\n"
             else b"\n"
         )
-        insertion = (close_line, close_line, indent + call + b"," + newline)
+        formatted = _indented_continuations(call, indent, newline)
+        insertion = (close_line, close_line, indent + formatted + b"," + newline)
         call_start = close_line + sum(
             len(replacement) - (end - start)
             for start, end, replacement in edits
             if end <= close_line
         )
         edits.append(insertion)
-        return edits, call_start + len(indent)
+        call_start += len(indent)
+        return edits, _Span(call_start, call_start + len(formatted))
 
     if not spans:
         prefix = b""
@@ -923,7 +930,10 @@ def _append_edits(
     else:
         prefix = b" "
         inserted = prefix + call + b","
-    return [(section.close, section.close, inserted)], section.close + len(prefix)
+    start = section.close + len(prefix)
+    return [(section.close, section.close, inserted)], _Span(
+        start, start + len(call)
+    )
 
 
 def _delete_edits(
@@ -1069,15 +1079,13 @@ def _apply_operation(
             raise SourceError(
                 "source.edit.duplicate-stable-id", "appended stable ID already exists"
             )
-        splices, call_start = _append_edits(state.source, section, spans, replacement)
+        splices, call_span = _append_edits(
+            state.source, section, spans, replacement
+        )
         state.source = _apply_bytes(state.source, splices)
         state.relocate(splices)
         _, relocated = state.selected(edit.section)
-        relocated.append(
-            _BatchEntry(
-                replacement_id, _Span(call_start, call_start + len(replacement))
-            )
-        )
+        relocated.append(_BatchEntry(replacement_id, call_span))
         return
 
     if isinstance(edit, ReplaceCall):
@@ -1089,10 +1097,23 @@ def _apply_operation(
             )
         index = _target(entries, edit.id)
         start = entries[index].span.start
-        splices = [(start, entries[index].span.end, replacement)]
+        target_indent = _line_prefix(state.source, start)
+        formatted = replacement
+        if target_indent is not None:
+            line_end = _line_end(state.source, entries[index].span.end)
+            newline = (
+                b"\r\n"
+                if line_end >= 2
+                and state.source[line_end - 2 : line_end] == b"\r\n"
+                else b"\n"
+            )
+            formatted = _indented_continuations(
+                replacement, target_indent, newline
+            )
+        splices = [(start, entries[index].span.end, formatted)]
         state.source = _apply_bytes(state.source, splices)
         state.relocate(splices)
-        entries[index].span = _Span(start, start + len(replacement))
+        entries[index].span = _Span(start, start + len(formatted))
         return
 
     index = _target(entries, edit.id)

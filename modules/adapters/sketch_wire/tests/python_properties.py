@@ -427,6 +427,13 @@ def complete_definition(seed: int) -> SketchDefinition:
             "oblong",
             oblong_curves,
         ),
+        SketchObject(
+            uuid7(seed + 13),
+            "Imported guides (modified)",
+            "curve_group",
+            (second_line, second_circle),
+            ("guide", "clearance"),
+        ),
     )
     return SketchDefinition(PLANE, entities, constraints, objects)
 

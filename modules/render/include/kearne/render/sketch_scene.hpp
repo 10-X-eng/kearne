@@ -376,7 +376,7 @@ private:
 using SketchOverlayRoleSetPtr = std::shared_ptr<const SketchOverlayRoleSet>;
 
 // An overlay retains its exact immutable base and exactly one immutable set
-// for each role. It never owns geometry, pick data, or tessellation data.
+// for each role. It never owns geometry or pick data.
 class SketchPresentationOverlay final {
 public:
   [[nodiscard]] static Result<std::shared_ptr<const SketchPresentationOverlay>>
@@ -527,7 +527,16 @@ struct PackedSketchProvisionalPrimitive {
   double sweepAngleRadians = 0.0;
   double secondaryRadius = 0.0;
   double rotationAngleRadians = 0.0;
+  std::uint32_t spline = std::numeric_limits<std::uint32_t>::max();
   bool operator==(const PackedSketchProvisionalPrimitive &) const = default;
+};
+
+struct SketchProvisionalBatch {
+  std::vector<PackedSketchProvisionalPrimitive> primitives;
+  std::vector<double> splineControlPointCoordinates;
+  std::vector<double> splineKnots;
+  std::vector<double> splineWeights;
+  std::vector<PackedSketchSpline> splines;
 };
 
 struct SketchProvisionalLimits {
@@ -548,14 +557,32 @@ public:
          std::span<const PackedSketchProvisionalPrimitive> primitives,
          SketchProvisionalLimits limits = {});
   [[nodiscard]] static Result<std::shared_ptr<const SketchProvisionalGeometry>>
+  create(SketchProvisionalStamp stamp, SketchProvisionalBatch batch,
+         SketchProvisionalLimits limits = {});
+  [[nodiscard]] static Result<std::shared_ptr<const SketchProvisionalGeometry>>
   create(SketchProvisionalStamp stamp,
          std::span<const PackedSketchProvisionalPrimitive> primitives,
+         SketchProvisionalLimits limits, std::stop_token cancellation);
+  [[nodiscard]] static Result<std::shared_ptr<const SketchProvisionalGeometry>>
+  create(SketchProvisionalStamp stamp, SketchProvisionalBatch batch,
          SketchProvisionalLimits limits, std::stop_token cancellation);
 
   [[nodiscard]] const SketchProvisionalStamp &stamp() const { return stamp_; }
   [[nodiscard]] std::span<const PackedSketchProvisionalPrimitive>
   primitives() const {
     return primitives_;
+  }
+  [[nodiscard]] std::span<const double> splineControlPointCoordinates() const {
+    return splineControlPointCoordinates_;
+  }
+  [[nodiscard]] std::span<const double> splineKnots() const {
+    return splineKnots_;
+  }
+  [[nodiscard]] std::span<const double> splineWeights() const {
+    return splineWeights_;
+  }
+  [[nodiscard]] std::span<const PackedSketchSpline> splines() const {
+    return splines_;
   }
   [[nodiscard]] const PackedSketchProvisionalPrimitive *
   findPrimitive(SketchProvisionalPrimitiveHandle handle) const;
@@ -568,11 +595,18 @@ private:
   SketchProvisionalGeometry(
       SketchProvisionalStamp stamp,
       std::vector<PackedSketchProvisionalPrimitive> primitives,
+      std::vector<double> splineControlPointCoordinates,
+      std::vector<double> splineKnots, std::vector<double> splineWeights,
+      std::vector<PackedSketchSpline> splines,
       std::size_t inputBytes, std::size_t retainedBytes,
       std::size_t scratchBytes, std::size_t peakBuildBytes);
 
   SketchProvisionalStamp stamp_;
   std::vector<PackedSketchProvisionalPrimitive> primitives_;
+  std::vector<double> splineControlPointCoordinates_;
+  std::vector<double> splineKnots_;
+  std::vector<double> splineWeights_;
+  std::vector<PackedSketchSpline> splines_;
   std::size_t inputBytes_ = 0;
   std::size_t retainedBytes_ = 0;
   std::size_t scratchBytes_ = 0;
@@ -753,6 +787,12 @@ enum class SketchMarkerKind : std::uint8_t {
   IntersectionSnap,
   QuadrantSnap,
   GridSnap,
+  SplineControlSegment = 160,
+  SplineControlPole,
+  SplineCurvatureSegment,
+  SplineDegreeLabel,
+  SplineKnotMultiplicityLabel,
+  SplinePoleWeightLabel,
 };
 
 enum class SketchMarkerCategory : std::uint8_t {
@@ -761,6 +801,9 @@ enum class SketchMarkerCategory : std::uint8_t {
   DegreeOfFreedom = 3,
   Dimension = 4,
   SnapCursor = 5,
+  SplineGuide = 6,
+  SplineAnalysis = 7,
+  SplineLabel = 8,
 };
 
 [[nodiscard]] std::optional<SketchMarkerCategory>

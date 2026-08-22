@@ -22,6 +22,7 @@ from kearne.sketch import (
     ParabolicArcEntity,
     PointEntity,
     PointRef,
+    SketchObject,
 )
 from kearne.sketch_source import (
     append_value,
@@ -249,11 +250,25 @@ class SketchSourceProperties(unittest.TestCase):
 
         namespace = {name: getattr(sketch_api, name) for name in HELPERS}
         namespace.update({"m": m, "rad": rad})
-        for value in (*entities, *constraints):
+        curve_group = SketchObject(
+            uuid7(seed + 1_000),
+            "Rectangle 1 (modified)",
+            "curve_group",
+            (entities[1].id, entities[2].id),
+            ("bottom", "right"),
+        )
+        for value in (*entities, *constraints, curve_group):
             call = emit_call(value)
             parsed = ast.parse(call, mode="eval")
             self.assertIsInstance(parsed.body, ast.Call)
-            self.assertEqual(ast.unparse(parsed.body), call)
+            normalized = ast.parse(ast.unparse(parsed.body), mode="eval")
+            self.assertEqual(
+                ast.dump(normalized, include_attributes=False),
+                ast.dump(parsed, include_attributes=False),
+            )
+            if isinstance(value, BSplineEntity):
+                self.assertGreater(len(call.splitlines()), 1)
+                self.assertLessEqual(max(map(len, call.splitlines())), 100)
             reconstructed = eval(  # noqa: S307 -- generated, validated call only
                 compile(parsed, "<generated-sketch-call>", "eval"),
                 {"__builtins__": {}},
@@ -261,6 +276,12 @@ class SketchSourceProperties(unittest.TestCase):
             )
             self.assertEqual(reconstructed, value)
             self.assertEqual(parse_call(call), value)
+        with self.assertRaises(sketch_api.SketchDefinitionError):
+            sketch_api.curve_group(
+                uuid7(seed + 1_001),
+                "Broken group",
+                (("edge",),),  # type: ignore[arg-type]
+            )
         self.assertIn("construction=True", emit_call(entities[1]))
         self.assertIn(
             "mode='internal'",
@@ -315,7 +336,7 @@ class SketchSourceProperties(unittest.TestCase):
         self.assertIsNotNone(final)
         assert final is not None
         self.assertEqual(len(final.constraints), len(constraints) - 1)
-        self.assertEqual(final.entities[1].code, emit_call(replacement))
+        self.assertEqual(parse_call(final.entities[1].code), replacement)
 
         with self.assertRaises(SourceError) as stale:
             append_value(deleted.source, "profile", digest, constraints[-1])

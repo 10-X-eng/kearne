@@ -15,6 +15,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <variant>
 #include <vector>
 
 namespace kearne::ui {
@@ -204,6 +205,40 @@ struct LocalExtendEdit {
       LocalExternalConstraintPolicy::Refuse;
 };
 
+struct LocalTrimEdit {
+  LocalCurvePick curve;
+  LocalExternalConstraintPolicy constraints =
+      LocalExternalConstraintPolicy::Refuse;
+};
+
+struct LocalTrimPreview {
+  std::vector<LocalSketchToolPoint> boundaries;
+  bool deletesCurve = false;
+};
+
+struct LocalSplitEdit {
+  LocalCurvePick curve;
+  LocalExternalConstraintPolicy constraints =
+      LocalExternalConstraintPolicy::Refuse;
+};
+
+struct LocalSplitPreview {
+  LocalSketchToolPoint point;
+};
+
+struct LocalJoinEdit {
+  LocalSketchConstraintSelection first;
+  LocalSketchConstraintSelection second;
+  LocalExternalConstraintPolicy constraints =
+      LocalExternalConstraintPolicy::Refuse;
+};
+
+struct LocalConvertToNurbsEdit {
+  QString entityId;
+  LocalExternalConstraintPolicy constraints =
+      LocalExternalConstraintPolicy::Refuse;
+};
+
 struct LocalSketchCurveDrag {
   QString entityId;
   double firstXMetres = 0.0;
@@ -244,6 +279,10 @@ public:
       std::function<void(Result<LocalSketchProjection> projection)>;
   using CurvePreviewCompletion = std::function<void(
       Result<std::shared_ptr<const render::SketchSceneSnapshot>> scene)>;
+  using TrimPreviewCompletion =
+      std::function<void(Result<LocalTrimPreview> preview)>;
+  using SplitPreviewCompletion =
+      std::function<void(Result<LocalSplitPreview> preview)>;
 
   explicit LocalSketchSession(LocalSketchSessionConfig config,
                               QObject *parent = nullptr);
@@ -267,11 +306,20 @@ public:
   [[nodiscard]] bool modifyCorner(LocalCornerEdit edit, Completion completion);
   [[nodiscard]] bool offset(LocalOffsetEdit edit, Completion completion);
   [[nodiscard]] bool extend(LocalExtendEdit edit, Completion completion);
+  [[nodiscard]] bool trim(LocalTrimEdit edit, Completion completion);
+  [[nodiscard]] bool split(LocalSplitEdit edit, Completion completion);
+  [[nodiscard]] bool join(LocalJoinEdit edit, Completion completion);
+  [[nodiscard]] bool convertToNurbs(LocalConvertToNurbsEdit edit,
+                                    Completion completion);
   [[nodiscard]] bool dragCurve(LocalSketchCurveDrag drag,
                                Completion completion);
   [[nodiscard]] bool previewCurveDrag(LocalSketchCurveDrag drag,
                                       CurvePreviewCompletion completion);
-  void cancelCurveDragPreview();
+  [[nodiscard]] bool previewTrim(LocalCurvePick curve,
+                                 TrimPreviewCompletion completion);
+  [[nodiscard]] bool previewSplit(LocalCurvePick curve,
+                                  SplitPreviewCompletion completion);
+  void cancelPreview();
   [[nodiscard]] bool replaceSource(LocalSourceReplacement replacement,
                                    Completion completion);
   [[nodiscard]] bool undo(Completion completion);

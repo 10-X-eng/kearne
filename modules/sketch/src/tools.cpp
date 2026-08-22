@@ -73,8 +73,19 @@ std::string_view sketchObjectLabelPrefix(SketchObjectKind kind) noexcept {
     return "Offset ";
   case SketchObjectKind::JoinedCurve:
     return "Joined curve ";
+  case SketchObjectKind::CurveGroup:
+    return "Curve group ";
   }
   return "Sketch object ";
+}
+
+SketchObject curveGroupAfterPartialEdit(const SketchObject &object) {
+  SketchObject result = object;
+  if (result.kind == SketchObjectKind::CurveGroup)
+    return result;
+  result.kind = SketchObjectKind::CurveGroup;
+  result.label += " (modified)";
+  return result;
 }
 
 namespace {
